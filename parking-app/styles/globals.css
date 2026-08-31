@@ -1,0 +1,192 @@
+:root {
+  --navy: #1f4e78;
+  --navy-dark: #14304a;
+  --light: #eaf1f8;
+  --orange: #e67e22;
+  --red: #c0392b;
+  --green: #2e8b57;
+  --text: #1b2a38;
+  --gray: #5b6b79;
+  --border: #d3dde6;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  padding: 0;
+  margin: 0;
+  background: #f6f8fa;
+  color: var(--text);
+  font-family: "Sarabun", "Segoe UI", Tahoma, sans-serif;
+  font-size: 16px;
+}
+
+a { color: var(--navy); }
+
+.page {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px 16px 60px;
+}
+
+.top-bar {
+  background: var(--navy-dark);
+  color: white;
+  padding: 18px 16px;
+  margin-bottom: 24px;
+}
+
+.top-bar .inner {
+  max-width: 720px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.top-bar h1 {
+  font-size: 18px;
+  margin: 0;
+}
+
+.top-bar a.back {
+  color: #cadcfc;
+  text-decoration: none;
+  font-size: 14px;
+}
+
+h2 {
+  font-size: 20px;
+  color: var(--navy);
+  margin: 0 0 6px;
+}
+
+.subtitle {
+  color: var(--gray);
+  font-size: 14px;
+  margin: 0 0 24px;
+}
+
+.card {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+.nav-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.nav-card {
+  display: block;
+  background: white;
+  border: 1px solid var(--border);
+  border-left: 5px solid var(--navy);
+  border-radius: 10px;
+  padding: 18px 20px;
+  text-decoration: none;
+  color: var(--text);
+  transition: box-shadow 0.15s ease;
+}
+.nav-card:hover { box-shadow: 0 2px 10px rgba(31, 78, 120, 0.15); }
+.nav-card .title { font-weight: 700; color: var(--navy); font-size: 17px; margin-bottom: 4px; }
+.nav-card .desc { font-size: 14px; color: var(--gray); }
+
+label {
+  display: block;
+  font-weight: 600;
+  font-size: 14px;
+  margin: 14px 0 6px;
+  color: var(--text);
+}
+label:first-child { margin-top: 0; }
+
+select, input[type="date"], input[type="time"], input[type="text"] {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 15px;
+  background: white;
+  font-family: inherit;
+  color: var(--text);
+}
+select:focus, input:focus {
+  outline: 2px solid var(--navy);
+  outline-offset: 1px;
+}
+
+.btn {
+  display: inline-block;
+  padding: 12px 22px;
+  border-radius: 8px;
+  border: none;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+}
+.btn-primary { background: var(--navy); color: white; }
+.btn-primary:hover { background: var(--navy-dark); }
+.btn-primary:disabled { background: #9db3c4; cursor: not-allowed; }
+.btn-danger { background: var(--red); color: white; }
+.btn-secondary { background: white; color: var(--navy); border: 1px solid var(--navy); }
+.btn-row { display: flex; gap: 10px; margin-top: 20px; }
+
+.alert {
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+.alert-error { background: #fbeae7; color: var(--red); border: 1px solid #f0c3bb; }
+.alert-success { background: #e9f5ee; color: var(--green); border: 1px solid #b8e0c8; }
+.alert-warning { background: #fbebd9; color: #9c4e12; border: 1px solid #f0d2a8; }
+
+.booking-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  cursor: pointer;
+}
+.booking-row:hover { border-color: var(--navy); }
+.booking-row.selected { border-color: var(--navy); background: var(--light); }
+.booking-row .slot-code { font-weight: 700; color: var(--navy); }
+.booking-row .meta { font-size: 13px; color: var(--gray); }
+
+.status-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.status-open { background: #e9f5ee; color: var(--green); }
+.status-closed { background: #fbeae7; color: var(--red); }
+
+.slot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+.slot-btn {
+  padding: 10px 4px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: white;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: center;
+}
+.slot-btn.open { color: var(--green); }
+.slot-btn.closed { color: var(--red); background: #fbeae7; }
+.slot-btn.active { outline: 2px solid var(--navy); }
