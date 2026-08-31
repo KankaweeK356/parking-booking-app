@@ -24,7 +24,7 @@ export default function RequiredSummary() {
     try {
       const res = await fetch("/api/required-summary");
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "เกิดข้อผิดพลาดในการโหลดข้อมูล");
+      if (!res.ok) throw new Error(data.error || "เกิดข้อผิดพลาดในการโหลดข้อมูลจาก Google Sheet");
       setRows(data.rows || []);
       if (data.date) {
         setCurrentDate(data.date);
@@ -49,7 +49,7 @@ export default function RequiredSummary() {
         body: JSON.stringify({ date: newDate }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "เกิดข้อผิดพลาดในการอัปเดตวันที่");
+      if (!res.ok) throw new Error(data.error || "เกิดข้อผิดพลาดในการคำนวณวันที่ใหม่");
       setRows(data.rows || []);
       if (data.date) {
         setCurrentDate(data.date);
@@ -75,13 +75,13 @@ export default function RequiredSummary() {
       <div className="page">
         <h2>สรุปจำนวนตั๋วที่ต้องตีต่อวัน</h2>
         <p className="subtitle">
-          ดูข้อมูลลูกค้าที่มีการจองและจำนวนตั๋วที่ต้องเตรียมแจ้งด่าน (แสดงเฉพาะรายที่มี Required &gt; 0)
+          ตรวจสอบรายชื่อลูกค้าที่มีการจองและจำนวนตั๋วที่ต้องเตรียมแจ้งด่าน (แสดงเฉพาะรายที่มียอดจองมากกว่า 0 ใบ)
         </p>
 
         {error && <div className="alert alert-error">{error}</div>}
 
         <div className="card">
-          <label>เลือกวันที่ต้องการตรวจ (ระบบจะส่งไปคำนวณใน Google Sheet ช่อง F1):</label>
+          <label>เลือกวันที่ต้องการตรวจสอบ (Google Sheet จะนำไปคำนวณผลลัพธ์ให้อัตโนมัติ):</label>
           <div style={{ display: "flex", gap: "10px", alignItems: "center", marginTop: "6px" }}>
             <input
               type="date"
@@ -90,25 +90,25 @@ export default function RequiredSummary() {
               disabled={loading || updating}
               style={{ maxWidth: "240px" }}
             />
-            {updating && <span style={{ fontSize: "14px", color: "var(--navy)" }}>⏳ กำลังคำนวณข้อมูลใหม่...</span>}
+            {updating && <span style={{ fontSize: "14px", color: "var(--navy)" }}>⏳ กำลังส่งคำนวณข้อมูลใหม่...</span>}
           </div>
         </div>
 
         {loading ? (
           <div className="card" style={{ textAlign: "center", padding: "40px" }}>
-            <p className="subtitle" style={{ margin: 0 }}>กำลังโหลดข้อมูลจาก Google Sheet...</p>
+            <p className="subtitle" style={{ margin: 0 }}>กำลังดึงข้อมูลสรุปจาก Google Sheet...</p>
           </div>
         ) : (
           <div className="card">
             <div className="summary-stat">
               <div className="stat-box">
-                <div className="stat-label">วันที่ตรวจ</div>
+                <div className="stat-label">วันที่ตรวจสอบ</div>
                 <div className="stat-value" style={{ fontSize: "18px" }}>
                   {currentDate || selectedDate}
                 </div>
               </div>
               <div className="stat-box">
-                <div className="stat-label">จำนวนลูกค้าที่มีจอง</div>
+                <div className="stat-label">ลูกค้าที่มียอดจอง</div>
                 <div className="stat-value">{rows.length} ราย</div>
               </div>
               <div className="stat-box">
@@ -121,7 +121,7 @@ export default function RequiredSummary() {
 
             {rows.length === 0 ? (
               <div className="alert alert-warning" style={{ marginTop: "16px", marginBottom: 0 }}>
-                ไม่มีรายการที่ต้องตีตั๋วในวันที่เลือก (Required = 0 ทุกราย)
+                ไม่มีรายการที่ต้องตีตั๋วในวันที่เลือก (ไม่พบยอดการจองในระบบ)
               </div>
             ) : (
               <div className="table-container">

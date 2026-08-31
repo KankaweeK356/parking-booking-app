@@ -7,7 +7,18 @@ export default async function handler(req, res) {
     if (!slot) return res.status(400).json({ error: "ต้องระบุ slot" });
     try {
       const active = await getActiveBookingsForSlot(slot);
-      return res.status(200).json({ hasActiveBooking: active.length > 0, bookings: active });
+      const mapped = active.map((b) => ({
+        rowNumber: b.rowNumber,
+        customer: b.customer,
+        docId: b.docId,
+        lot: b.lot,
+        slot: b.slot,
+        startDate: b.startDate,
+        endDate: b.endDate,
+        startTime: b.startTime,
+        endTime: b.endTime,
+      }));
+      return res.status(200).json({ hasActiveBooking: mapped.length > 0, bookings: mapped });
     } catch (err) {
       return res.status(500).json({ error: err.message });
     }

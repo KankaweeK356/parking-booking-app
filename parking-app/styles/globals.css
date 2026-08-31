@@ -259,3 +259,73 @@ table.data-table tr:hover td {
   font-weight: 700;
   color: var(--navy-dark);
 }
+
+.type-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.type-btn {
+  padding: 14px 16px;
+  border-radius: 8px;
+  border: 2px solid var(--border);
+  background: white;
+  color: var(--text);
+  font-weight: 700;
+  font-size: 15px;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.type-btn:hover {
+  border-color: var(--navy);
+}
+
+.type-btn.active {
+  border-color: var(--navy);
+  background: var(--light);
+  color: var(--navy);
+}
+
+.slot-group-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  margin-bottom: 12px;
+  background: #ffffff;
+}
+
+.slot-group-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed var(--border);
+}
+
+.timeblock-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  background: #f9fafb;
+  border: 1px solid var(--border);
+}
+
+.timeblock-item:hover {
+  background: #f3f4f6;
+}
+
+.timeblock-item.selected {
+  background: var(--light);
+  border-color: #fca5a5;
+}
+
