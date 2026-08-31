@@ -24,8 +24,13 @@ export default function Home() {
             <div className="title">ปิด / เปิดช่องจอด</div>
             <div className="desc">จัดการช่องที่เสีย/ซ่อม พร้อมเตือนถ้ามีคนจองอยู่</div>
           </Link>
+          <Link href="/required-summary" className="nav-card">
+            <div className="title">สรุปจำนวนตั๋วที่ต้องตี</div>
+            <div className="desc">ดูว่าวันนี้/วันที่เลือก ลูกค้าคนไหนต้องตีตั๋วกี่ใบ — ใช้เตรียมแจ้งด่าน</div>
+          </Link>
         </div>
       </div>
     </div>
   );
 }
+
