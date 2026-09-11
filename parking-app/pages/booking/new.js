@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
-const LOTS = ["A", "B", "C", "D"];
-
 function today() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -10,14 +8,15 @@ function today() {
 export default function NewBooking() {
   const [customers, setCustomers] = useState([]);
   const [slots, setSlots] = useState([]);
+  const [lots, setLots] = useState([]);
   const [customer, setCustomer] = useState("");
-  const [lot, setLot] = useState("A");
+  const [lot, setLot] = useState("");
   const [selectedSlots, setSelectedSlots] = useState([]);
   const [startDate, setStartDate] = useState(today());
   const [endDate, setEndDate] = useState("");
   const [startTime, setStartTime] = useState("07:00");
   const [submitting, setSubmitting] = useState(false);
-  const [results, setResults] = useState(null); // [{slot, ok, error}]
+  const [result, setResult] = useState(null); // { ok, error, message }
   const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
@@ -27,8 +26,14 @@ export default function NewBooking() {
     ])
       .then(([m, s]) => {
         if (m.error || s.error) throw new Error(m.error || s.error);
-        setCustomers(m);
-        setSlots(s);
+        setCustomers(Array.isArray(m) ? m : []);
+        const slotList = Array.isArray(s) ? s : (s.slots || []);
+        const lotList = s.lots || Array.from(new Set(slotList.map((item) => item.lot).filter(Boolean))).sort();
+        setSlots(slotList);
+        setLots(lotList);
+        if (lotList.length > 0) {
+          setLot(lotList[0]);
+        }
       })
       .catch((e) => setLoadError(e.message));
   }, []);
@@ -46,25 +51,38 @@ export default function NewBooking() {
     e.preventDefault();
     if (!customer || selectedSlots.length === 0 || !startDate || !startTime) return;
     setSubmitting(true);
-    setResults(null);
-    const outcomes = [];
-    for (const slot of selectedSlots) {
-      try {
-        const res = await fetch("/api/bookings", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ customer, lot, slot, startDate, endDate, startTime }),
+    setResult(null);
+
+    try {
+      const res = await fetch("/api/bookings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customer,
+          lot,
+          slots: selectedSlots,
+          startDate,
+          endDate,
+          startTime,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setResult({
+          ok: false,
+          error: data.error || "เกิดข้อผิดพลาดในการบันทึกการจอง",
         });
-        const data = await res.json();
-        outcomes.push({ slot, ok: res.ok, error: data.error });
-      } catch (err) {
-        outcomes.push({ slot, ok: false, error: err.message });
+      } else {
+        setResult({
+          ok: true,
+          message: `✓ บันทึกการจองสำเร็จเรียบร้อยแล้ว ทั้งหมด ${selectedSlots.length} ช่อง (${selectedSlots.join(", ")})`,
+        });
+        setSelectedSlots([]);
       }
-    }
-    setResults(outcomes);
-    setSubmitting(false);
-    if (outcomes.every((o) => o.ok)) {
-      setSelectedSlots([]);
+    } catch (err) {
+      setResult({ ok: false, error: err.message });
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -85,13 +103,13 @@ export default function NewBooking() {
             <select value={customer} onChange={(e) => setCustomer(e.target.value)} required>
               <option value="">— เลือกลูกค้า —</option>
               {customers.map((c) => (
-                <option key={c.docId} value={c.name}>{c.name}</option>
+                <option key={c.docId || c.name} value={c.name}>{c.name}</option>
               ))}
             </select>
 
             <label>ลาน</label>
             <select value={lot} onChange={(e) => { setLot(e.target.value); setSelectedSlots([]); }}>
-              {LOTS.map((l) => (
+              {lots.map((l) => (
                 <option key={l} value={l}>ลาน {l}</option>
               ))}
             </select>
@@ -99,7 +117,7 @@ export default function NewBooking() {
             <label>เลือกช่อง (เลือกได้หลายช่อง)</label>
             <div className="slot-grid">
               {slotsInLot.map((s) => {
-                const disabled = s.status === "ปิด";
+                const disabled = s.status === "ปิด" || s.isRoad;
                 const active = selectedSlots.includes(s.slotCode);
                 return (
                   <button
@@ -107,7 +125,7 @@ export default function NewBooking() {
                     key={s.slotCode}
                     className={`slot-btn ${disabled ? "closed" : "open"} ${active ? "active" : ""}`}
                     onClick={() => toggleSlot(s.slotCode, disabled)}
-                    title={disabled ? `ปิดใช้งาน: ${s.reason || "ไม่ระบุเหตุผล"}` : "ว่าง"}
+                    title={disabled ? `ปิดใช้งาน: ${s.reason || (s.isRoad ? "ถนน/ไม่เปิดใช้งาน" : "สถานะพื้นฐานปิดใช้งาน")}` : "ว่าง"}
                   >
                     {s.slotCode}
                   </button>
@@ -126,19 +144,15 @@ export default function NewBooking() {
             <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} required />
           </div>
 
-          {results && (
-            <div className="card">
-              {results.map((r) => (
-                <div key={r.slot} className={`alert ${r.ok ? "alert-success" : "alert-error"}`}>
-                  {r.ok ? `✓ ช่อง ${r.slot} จองสำเร็จ` : `✗ ช่อง ${r.slot}: ${r.error}`}
-                </div>
-              ))}
+          {result && (
+            <div className={`alert ${result.ok ? "alert-success" : "alert-error"}`}>
+              {result.ok ? result.message : `✗ ไม่สามารถบันทึกการจองได้: ${result.error}`}
             </div>
           )}
 
           <div className="btn-row">
             <button type="submit" className="btn btn-primary" disabled={submitting || selectedSlots.length === 0}>
-              {submitting ? "กำลังบันทึก..." : `บันทึกการจอง (${selectedSlots.length} ช่อง)`}
+              {submitting ? "กำลังตรวจสอบและบันทึก..." : `บันทึกการจอง (${selectedSlots.length} ช่อง)`}
             </button>
           </div>
         </form>

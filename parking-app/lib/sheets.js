@@ -3,24 +3,26 @@
 //
 // โครงสร้างชีตที่โค้ดนี้อ้างอิง:
 //   Master            : Header แถว 1, ข้อมูลแถว 2+   [Doc_Id, ชื่อลูกค้า, สถานะ]
-//   Slot_Master       : Header แถว 1, ข้อมูลแถว 2+   [Slot_Code, ลาน, หมายเลขช่อง]
-//   Booking_Input     : Header แถว 1, ข้อมูลแถว 2+   [ลูกค้า, Doc_Id(สูตร), ลาน, ช่อง, วันเริ่ม, วันสิ้นสุด,
-//                                                     วันสิ้นสุด effective(สูตร), เวลาเริ่ม, เวลาสิ้นสุด(สูตร), เหตุผล]
+//   Slot_Master       : Header แถว 1, ข้อมูลแถว 2+   [Slot_Code, ลาน, หมายเลขช่อง, ตำแหน่ง, สถานะพื้นฐาน]
+//   Booking_Input     : Header แถว 1, ข้อมูลแถว 2+   [ลูกค้า, Doc_Id, ลาน, ช่อง, วันเริ่ม, วันสิ้นสุด,
+//                                                     วันสิ้นสุด effective, เวลาเริ่ม, เวลาสิ้นสุด, เหตุผล]
 //   Slot_Status_Log   : Header แถว 1, ข้อมูลแถว 2+   [ลาน+ช่อง, การกระทำ, เหตุผล, Timestamp]
-//   Required_Summary  : ข้อมูลแถว 2+                 [Doc_Id, ชื่อลูกค้า, Required], F1 = วันที่ตรวจ
+//   Required_Summary  : ดูจากรายงาน (คำนวณสดในแอป ไม่เขียนค่าทับชีต)
+//   Booking_Change_Log: Header แถว 1, ข้อมูลแถว 2+   [เวลาที่แก้ไข, การกระทำ, ลูกค้า, ลาน, ช่อง, RowNumber, วันเริ่มเดิม, วันสิ้นสุดเดิม, เวลาเริ่มเดิม, วันเริ่มใหม่, วันสิ้นสุดใหม่, เวลาเริ่มใหม่]
+//   Transection       : Header แถว 1, ข้อมูลแถว 2+   [BoothCode, DocDate]
 
 import { google } from "googleapis";
 
 const SHEET_ID = process.env.GOOGLE_SHEET_ID;
 
 const BOOKING_FIRST_ROW = 2;
-const BOOKING_LAST_ROW = 400;
 const MASTER_FIRST_ROW = 2;
 const SLOT_FIRST_ROW = 2;
 const SLOT_LOG_FIRST_ROW = 2;
 
 const GOOGLE_SHEETS_EPOCH = Date.UTC(1899, 11, 30); // 1899-12-30
 const MS_PER_DAY = 86400000;
+const FAR_FUTURE_SERIAL = 73050; // 2099-12-31
 
 function getAuthClient() {
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
@@ -44,7 +46,6 @@ function getSheetsClient() {
 
 // ---------- Helper Functions สำหรับคำนวณ Serial Number ของ Google Sheet ----------
 
-// serialToDateOnly(serial) แปลง Serial เป็นวันที่ (ตัดเวลาออก) แบบ UTC
 export function serialToDateOnly(serial) {
   if (serial === null || serial === undefined || serial === "") return null;
   const num = typeof serial === "number" ? serial : Number(serial);
@@ -52,7 +53,6 @@ export function serialToDateOnly(serial) {
   return Math.floor(num);
 }
 
-// serialToMinutes(serial) แปลงเวลา (เศษส่วนของวัน) เป็นนาที
 export function serialToMinutes(serial) {
   if (serial === null || serial === undefined || serial === "") return 0;
   if (typeof serial === "string" && serial.includes(":")) {
@@ -65,7 +65,6 @@ export function serialToMinutes(serial) {
   return Math.round(frac * 24 * 60) % 1440;
 }
 
-// isoDateToSerial(isoStr) แปลง "YYYY-MM-DD" (จาก <input type="date">) เป็น Serial ให้เทียบกับข้อมูลจาก Sheet ได้ตรงกัน
 export function isoDateToSerial(isoStr) {
   if (!isoStr) return null;
   if (typeof isoStr === "number") return Math.floor(isoStr);
@@ -77,7 +76,6 @@ export function isoDateToSerial(isoStr) {
   return Math.round(ms / MS_PER_DAY);
 }
 
-// isoFromSerial(serial) แปลง Serial กลับเป็น "YYYY-MM-DD" ไว้โชว์หน้าจอ
 export function isoFromSerial(serial) {
   if (serial === null || serial === undefined || serial === "") return "";
   if (typeof serial === "string" && /^\d{4}-\d{2}-\d{2}$/.test(serial.trim())) {
@@ -108,6 +106,19 @@ export function getTodaySerial() {
   return isoDateToSerial(`${y}-${m}-${d}`);
 }
 
+export function addDaysIso(isoStr, days) {
+  const serial = isoDateToSerial(isoStr);
+  if (!serial) return "";
+  return isoFromSerial(serial + days);
+}
+
+// ตรวจสอบว่าข้อความในคอลัมน์เหตุผลถือเป็น Closing reason (ปิด/ยกเลิก/ย้ายออกไปแล้ว) หรือไม่
+// ใช้เฉพาะในหน้า Edit Booking และ Slot Status (linked bookings) เท่านั้น
+export function isClosingReason(reason) {
+  const r = String(reason || "");
+  return r.includes("ยกเลิก") || r.includes("ย้ายออก") || r.includes("ปิดช่อง");
+}
+
 // ---------- Master (รายชื่อลูกค้า) ----------
 
 export async function getMasterList() {
@@ -124,22 +135,37 @@ export async function getMasterList() {
     .filter((c) => c.status === "Normal" || c.status === "");
 }
 
-// ---------- Slot_Master (ลาน + ช่องจอด) ----------
+export async function lookupDocId(customerName) {
+  const master = await getMasterList();
+  const found = master.find((m) => m.name === customerName);
+  return found ? found.docId : "";
+}
 
+// ---------- Slot_Master (A:E) + Slot_Status_Log ----------
+// A: Slot_Code, B: ลาน, C: หมายเลขช่อง, D: ตำแหน่ง, E: สถานะพื้นฐาน
 export async function getSlotList() {
   const sheets = getSheetsClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: `Slot_Master!A${SLOT_FIRST_ROW}:C`,
+    range: `Slot_Master!A${SLOT_FIRST_ROW}:E`,
     valueRenderOption: "UNFORMATTED_VALUE",
   });
   const rows = res.data.values || [];
   return rows
     .filter((r) => r[0])
-    .map((r) => ({ slotCode: String(r[0]).trim(), lot: String(r[1]).trim(), number: String(r[2]).trim() }));
+    .map((r) => ({
+      slotCode: String(r[0]).trim(),
+      lot: String(r[1] || "").trim(),
+      number: String(r[2] || "").trim(),
+      position: String(r[3] || "").trim(),
+      baseStatus: String(r[4] || "เปิด").trim(),
+    }));
 }
 
-// ---------- Slot_Status_Log (ปิด/เปิดช่อง) ----------
+export async function getLots() {
+  const slots = await getSlotList();
+  return Array.from(new Set(slots.map((s) => s.lot).filter(Boolean))).sort();
+}
 
 export async function getSlotStatusMap() {
   const sheets = getSheetsClient();
@@ -149,8 +175,7 @@ export async function getSlotStatusMap() {
     valueRenderOption: "UNFORMATTED_VALUE",
   });
   const rows = res.data.values || [];
-  // สถานะปัจจุบันของช่อง = แถวล่าสุด (Timestamp ล่าสุด) ของช่องนั้น เทียบด้วยตัวเลขตรงๆ
-  const latestByslot = {};
+  const latestBySlot = {};
   for (const r of rows) {
     const [slotCodeRaw, actionRaw, reasonRaw, tsRaw] = r;
     const slotCode = slotCodeRaw ? String(slotCodeRaw).trim() : "";
@@ -166,9 +191,9 @@ export async function getSlotStatusMap() {
       tsNum = isNaN(parsed) ? 0 : parsed;
     }
 
-    const existing = latestByslot[slotCode];
+    const existing = latestBySlot[slotCode];
     if (!existing || tsNum >= existing.tsNum) {
-      latestByslot[slotCode] = {
+      latestBySlot[slotCode] = {
         action,
         reason,
         ts: tsNum,
@@ -177,7 +202,39 @@ export async function getSlotStatusMap() {
       };
     }
   }
-  return latestByslot; // { A05: { action: 'ปิด', reason: '...', ts: 45535.5, tsNum: 45535.5, tsStr: '...' }, ... }
+  return latestBySlot;
+}
+
+// getSlotsWithStatus ตาม Apps Script Production
+// สถานะปัจจุบันเริ่มจาก baseStatus
+// หากมีรายการล่าสุดใน Slot_Status_Log ให้ action ล่าสุด override
+// isRoad = baseStatus === "ปิด" && ไม่มี action "เปิด" มาทับ
+export async function getSlotsWithStatus() {
+  const [slots, statusMap] = await Promise.all([
+    getSlotList(),
+    getSlotStatusMap(),
+  ]);
+
+  return slots.map((s) => {
+    const st = statusMap[s.slotCode];
+    let currentStatus = s.baseStatus || "เปิด";
+    let currentReason = "";
+    if (st) {
+      currentStatus = st.action;
+      currentReason = st.reason;
+    }
+    const isRoad = s.baseStatus === "ปิด" && (!st || st.action !== "เปิด");
+    return {
+      slotCode: s.slotCode,
+      lot: s.lot,
+      number: s.number,
+      position: s.position,
+      baseStatus: s.baseStatus,
+      status: currentStatus,
+      reason: currentReason,
+      isRoad,
+    };
+  });
 }
 
 export async function appendSlotStatusLog({ slotCode, action, reason }) {
@@ -192,17 +249,94 @@ export async function appendSlotStatusLog({ slotCode, action, reason }) {
   });
 }
 
+// ---------- Booking_Change_Log ----------
+
+export async function ensureChangeLogSheet() {
+  const sheets = getSheetsClient();
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID });
+  const sheetNames = (meta.data.sheets || []).map((s) => s.properties?.title);
+  if (!sheetNames.includes("Booking_Change_Log")) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: SHEET_ID,
+      requestBody: {
+        requests: [
+          {
+            addSheet: {
+              properties: {
+                title: "Booking_Change_Log",
+              },
+            },
+          },
+        ],
+      },
+    });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID,
+      range: "Booking_Change_Log!A1:L1",
+      valueInputOption: "USER_ENTERED",
+      requestBody: {
+        values: [[
+          "เวลาที่แก้ไข", "การกระทำ", "ลูกค้า", "ลาน", "ช่อง", "RowNumber",
+          "วันเริ่มเดิม", "วันสิ้นสุดเดิม", "เวลาเริ่มเดิม",
+          "วันเริ่มใหม่", "วันสิ้นสุดใหม่", "เวลาเริ่มใหม่",
+        ]],
+      },
+    });
+  }
+}
+
+export async function appendBookingChangeLog({
+  action,
+  customer,
+  lot,
+  slot,
+  rowNumber,
+  oldStartDate = "",
+  oldEndDate = "",
+  oldStartTime = "",
+  newStartDate = "",
+  newEndDate = "",
+  newStartTime = "",
+}) {
+  await ensureChangeLogSheet();
+  const sheets = getSheetsClient();
+  const timestamp = new Date().toISOString();
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SHEET_ID,
+    range: "Booking_Change_Log!A:L",
+    valueInputOption: "USER_ENTERED",
+    insertDataOption: "INSERT_ROWS",
+    requestBody: {
+      values: [[
+        timestamp, action, customer, lot, slot, rowNumber,
+        oldStartDate, oldEndDate, oldStartTime,
+        newStartDate, newEndDate, newStartTime,
+      ]],
+    },
+  });
+}
+
 // ---------- Booking_Input ----------
 
-// อ่านทุกแถวที่มีข้อมูลจริง พร้อมเลขแถวจริงใน Sheet (ใช้ตอนจะ Update แถวนั้นทีหลัง)
-async function getAllBookingRows() {
+export async function getAllBookingRows() {
   const sheets = getSheetsClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: `Booking_Input!A${BOOKING_FIRST_ROW}:J${BOOKING_LAST_ROW}`,
+    range: `Booking_Input!A${BOOKING_FIRST_ROW}:J`,
     valueRenderOption: "UNFORMATTED_VALUE",
   });
   const rows = res.data.values || [];
+
+  let masterMap = null;
+  const hasEmptyDocId = rows.some((r) => r[0] && (!r[1] || !String(r[1]).trim()));
+  if (hasEmptyDocId) {
+    const masterList = await getMasterList();
+    masterMap = new Map();
+    masterList.forEach((m) => {
+      masterMap.set(m.name, m.docId);
+    });
+  }
+
   return rows.map((r, idx) => {
     const rawStart = r[4];
     const rawEnd = r[5];
@@ -212,7 +346,7 @@ async function getAllBookingRows() {
 
     const startSerial = typeof rawStart === "number" ? serialToDateOnly(rawStart) : (rawStart ? isoDateToSerial(rawStart) : null);
     const endSerial = typeof rawEnd === "number" ? serialToDateOnly(rawEnd) : (rawEnd ? isoDateToSerial(rawEnd) : null);
-    const endEffectiveSerial = typeof rawEndEff === "number" ? serialToDateOnly(rawEndEff) : (rawEndEff ? isoDateToSerial(rawEndEff) : endSerial);
+    const endEffectiveSerial = typeof rawEndEff === "number" ? serialToDateOnly(rawEndEff) : (rawEndEff ? isoDateToSerial(rawEndEff) : (endSerial || FAR_FUTURE_SERIAL));
 
     const startStr = typeof rawStart === "number" ? isoFromSerial(rawStart) : (rawStart ? String(rawStart).trim() : "");
     const endStr = typeof rawEnd === "number" ? isoFromSerial(rawEnd) : (rawEnd ? String(rawEnd).trim() : "");
@@ -224,20 +358,22 @@ async function getAllBookingRows() {
     const startTimeStr = startMinutes !== null ? minutesToTimeStr(startMinutes) : (rawStartTime ? String(rawStartTime).trim() : "");
     const endTimeStr = endMinutes !== null ? minutesToTimeStr(endMinutes) : (rawEndTime ? String(rawEndTime).trim() : "");
 
+    const customer = r[0] ? String(r[0]).trim() : "";
+    const rawDocId = r[1] !== undefined && r[1] !== null ? String(r[1]).trim() : "";
+    const docId = rawDocId || (masterMap && customer ? (masterMap.get(customer) || "") : "");
+
     return {
       rowNumber: BOOKING_FIRST_ROW + idx,
-      customer: r[0] ? String(r[0]).trim() : "",
-      docId: r[1] !== undefined && r[1] !== null ? String(r[1]).trim() : "",
+      customer,
+      docId,
       lot: r[2] ? String(r[2]).trim() : "",
       slot: r[3] ? String(r[3]).trim() : "",
-      // ข้อมูล String สำหรับแสดงผลหน้าบ้าน
       startDate: startStr,
       endDate: endStr,
       endDateEffective: endEffectiveStr,
       startTime: startTimeStr,
       endTime: endTimeStr,
       reason: r[9] ? String(r[9]).trim() : "",
-      // ข้อมูล Serial และตัวเลข สำหรับใช้เปรียบเทียบตรรกะ
       startSerial,
       endSerial,
       endEffectiveSerial,
@@ -247,45 +383,62 @@ async function getAllBookingRows() {
   });
 }
 
-function isActiveToday(row) {
-  const today = getTodaySerial();
-  const start = row.startSerial;
-  const endEff = row.endEffectiveSerial !== null && row.endEffectiveSerial !== undefined ? row.endEffectiveSerial : 999999;
-  if (!start) return false;
-  return start <= today && today <= endEff;
+export async function getBookingRow(rowNumber) {
+  const all = await getAllBookingRows();
+  return all.find((r) => r.rowNumber === Number(rowNumber)) || null;
 }
 
-// รายการจองที่ Active วันนี้ ของลูกค้าคนหนึ่ง — ใช้ในหน้า "แก้ไข/ยกเลิก"
+// รายการจองที่ยัง Active ของลูกค้าคนหนึ่ง — ใช้ในหน้า "ปรับ/ยกเลิกการจอง"
+// ซ่อนเฉพาะรายการที่มี closing reason (เช่น ยกเลิก, ย้ายออก, ปิดช่อง) เท่านั้น
 export async function getActiveBookingsForCustomer(customerName) {
   const all = await getAllBookingRows();
-  return all.filter((r) => r.customer === customerName && !r.reason && isActiveToday(r));
-  // !r.reason กันไม่ให้แถวที่ถูกปิดไปแล้ว (มีเหตุผลติดอยู่) โผล่มาให้เลือกปิดซ้ำอีก
+  const today = getTodaySerial();
+  return all
+    .filter((r) => {
+      if (r.customer !== customerName) return false;
+      const endEff = r.endEffectiveSerial !== null && r.endEffectiveSerial !== undefined ? r.endEffectiveSerial : FAR_FUTURE_SERIAL;
+      if (endEff < today) return false;
+      if (isClosingReason(r.reason)) return false;
+      return true;
+    })
+    .sort((a, b) => (a.startSerial || 0) - (b.startSerial || 0));
 }
 
-// รายการจองที่ Active วันนี้ ของช่องหนึ่ง — ใช้เตือนตอน CS จะกดปิดช่องที่มีคนจองอยู่
+// รายการจองที่ Active ของช่องหนึ่ง — ใช้เตือนตอน CS จะกดปิดช่อง
+// ซ่อนเฉพาะรายการที่มี closing reason
 export async function getActiveBookingsForSlot(slotCode) {
   const all = await getAllBookingRows();
-  return all.filter((r) => r.slot === slotCode && !r.reason && isActiveToday(r));
+  const today = getTodaySerial();
+  return all.filter((r) => {
+    if (String(r.slot) !== String(slotCode)) return false;
+    const endEff = r.endEffectiveSerial !== null && r.endEffectiveSerial !== undefined ? r.endEffectiveSerial : FAR_FUTURE_SERIAL;
+    if (endEff < today) return false;
+    if (isClosingReason(r.reason)) return false;
+    return true;
+  });
 }
 
+// ตรวจสอบการชนกันของเวลา (Conflict Check)
+// กฎ: ตัดสินจากช่วงวันและเวลาทับกันเท่านั้น ไม่นำคอลัมน์เหตุผลมาตัดสินหรือข้ามแถว
 export async function findConflict({ slot, startDate, endDate, startTime, excludeRowNumber }) {
   const all = await getAllBookingRows();
   const newStart = typeof startDate === "number" ? serialToDateOnly(startDate) : isoDateToSerial(startDate);
-  const newEnd = endDate ? (typeof endDate === "number" ? serialToDateOnly(endDate) : isoDateToSerial(endDate)) : 999999;
+  const newEnd = endDate ? (typeof endDate === "number" ? serialToDateOnly(endDate) : isoDateToSerial(endDate)) : FAR_FUTURE_SERIAL;
   const newStartMin = typeof startTime === "number" ? serialToMinutes(startTime) : (typeof startTime === "string" ? serialToMinutes(startTime) : 0);
-  const newEndMin = newStartMin + 4 * 60;
+  const newEndMin = newStartMin + 240;
 
   for (const r of all) {
     if (r.rowNumber === excludeRowNumber) continue;
-    if (r.slot !== slot) continue;
-    if (r.reason) continue; // แถวที่ปิดไปแล้วไม่ต้องเช็คชน
+    if (String(r.slot) !== String(slot)) continue;
+    if (!r.startSerial) continue;
+
     const rStart = r.startSerial;
-    const rEnd = r.endEffectiveSerial !== null && r.endEffectiveSerial !== undefined ? r.endEffectiveSerial : 999999;
-    if (!rStart) continue;
+    const rEnd = r.endEffectiveSerial !== null && r.endEffectiveSerial !== undefined ? r.endEffectiveSerial : FAR_FUTURE_SERIAL;
     const dateOverlap = rStart <= newEnd && rEnd >= newStart;
     if (!dateOverlap) continue;
+
     const rStartMin = r.startMinutes !== null ? r.startMinutes : 0;
-    const rEndMin = r.endMinutes !== null ? r.endMinutes : (rStartMin + 4 * 60);
+    const rEndMin = r.endMinutes !== null ? r.endMinutes : (rStartMin + 240);
     const timeOverlap = rStartMin < newEndMin && newStartMin < rEndMin;
     if (timeOverlap) {
       return { conflict: true, withCustomer: r.customer, withSlot: r.slot };
@@ -294,96 +447,455 @@ export async function findConflict({ slot, startDate, endDate, startTime, exclud
   return { conflict: false };
 }
 
-// หาแถวว่างแถวแรก (คอลัมน์ A ว่าง) เพื่อเขียนการจองใหม่ โดยไม่ไปแตะแถวที่มีสูตรของแถวอื่นอยู่แล้ว
-async function findNextEmptyRow() {
-  const all = await getAllBookingRows();
-  for (const r of all) {
-    if (!r.customer) return r.rowNumber;
+// จองใหม่แบบหลายช่องพร้อมกัน (Multi-Slot Batch Booking)
+// ตรวจสอบสถานะและ Time Conflict ทุกช่องล่วงหน้าก่อนบันทึก
+// ช่องที่ baseStatus เป็นปิด หรือ status เป็นปิด ต้องห้ามจอง แม้ยังไม่มี Slot_Status_Log
+// ใช้ append ต่อท้ายตาม Apps Script production
+export async function createBookingBatch({ customer, lot, slots, startDate, endDate, startTime, reason = "จองใหม่" }) {
+  const slotList = Array.isArray(slots) ? slots : [slots];
+  if (!customer || !lot || slotList.length === 0 || !startDate || !startTime) {
+    throw new Error("กรอกข้อมูลไม่ครบถ้วน (ลูกค้า, ลาน, ช่อง, วันเริ่ม, เวลาเริ่ม)");
   }
-  return BOOKING_FIRST_ROW + all.length; // เผื่อกรณีทุกแถวเต็มพอดี ต่อท้ายเลย
-}
 
-// เขียนการจองใหม่ — เขียนเฉพาะคอลัมน์ A,C,D,E,F,H เท่านั้น ไม่แตะ B,G,I เพราะเป็นสูตรที่ตั้งไว้ล่วงหน้าในชีต
-export async function createBooking({ customer, lot, slot, startDate, endDate, startTime }) {
+  // 1. ตรวจสอบช่องซ้ำในชุดที่ส่งมา
+  const uniqueSlots = Array.from(new Set(slotList));
+  if (uniqueSlots.length !== slotList.length) {
+    throw new Error("มีช่องจอดซ้ำกันในรายการที่เลือก");
+  }
+
+  // 2. ดึงสถานะรวม (baseStatus + Slot_Status_Log) และตรวจสอบล่วงหน้าทุกช่อง
+  const slotsWithStatus = await getSlotsWithStatus();
+  const statusMap = {};
+  slotsWithStatus.forEach((s) => {
+    statusMap[s.slotCode] = s;
+  });
+
+  for (const slot of slotList) {
+    const slotInfo = statusMap[slot];
+    if (!slotInfo || slotInfo.status === "ปิด" || slotInfo.isRoad) {
+      throw new Error(`ช่อง ${slot} ถูกปิดใช้งานอยู่ (${slotInfo?.reason || "สถานะพื้นฐานปิดใช้งาน"}) ไม่สามารถจองได้`);
+    }
+    const conflict = await findConflict({ slot, startDate, endDate, startTime });
+    if (conflict.conflict) {
+      throw new Error(`ช่อง ${slot} ช่วงเวลานี้ชนกับการจองของ "${conflict.withCustomer}" แล้ว`);
+    }
+  }
+
+  // 3. เตรียมข้อมูลและบันทึกแบบ Batch Append ต่อท้ายชีตตาม Production
+  const docId = await lookupDocId(customer);
+  const endEff = endDate || "2099-12-31";
+  const startMin = serialToMinutes(startTime);
+  const endMin = startMin + 240;
+  const endTimeStr = minutesToTimeStr(endMin);
+
+  const rowsToAppend = slotList.map((slot) => [
+    customer,
+    docId,
+    lot,
+    slot,
+    startDate,
+    endDate || "",
+    endEff,
+    startTime,
+    endTimeStr,
+    reason,
+  ]);
+
   const sheets = getSheetsClient();
-  const rowNumber = await findNextEmptyRow();
-  await sheets.spreadsheets.values.batchUpdate({
+  const res = await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
+    range: "Booking_Input!A:J",
+    valueInputOption: "USER_ENTERED",
+    insertDataOption: "INSERT_ROWS",
     requestBody: {
-      valueInputOption: "USER_ENTERED",
-      data: [
-        { range: `Booking_Input!A${rowNumber}`, values: [[customer]] },
-        { range: `Booking_Input!C${rowNumber}:F${rowNumber}`, values: [[lot, slot, startDate, endDate || ""]] },
-        { range: `Booking_Input!H${rowNumber}`, values: [[startTime]] },
-      ],
+      values: rowsToAppend,
     },
   });
-  return { rowNumber };
+
+  return { ok: true, count: rowsToAppend.length, updatedRange: res.data.updates?.updatedRange };
 }
 
-// ปิดแถวเดิม (แก้ไข/ยกเลิก) — เขียนแค่ F (วันสิ้นสุด) กับ J (เหตุผล) ของแถวที่ระบุ ห้ามแตะคอลัมน์อื่นเด็ดขาด
+export async function createBooking(params) {
+  return createBookingBatch({
+    ...params,
+    slots: [params.slot],
+  });
+}
+
+// ปิดแถวเดิม (ยกเลิก / ลดจำนวนช่อง) พร้อมบันทึก Booking_Change_Log
 export async function closeBookingRow({ rowNumber, endDate, reason }) {
   const sheets = getSheetsClient();
+  const oldRow = await getBookingRow(rowNumber);
+
+  await appendBookingChangeLog({
+    action: reason || "ปิด/ยกเลิก",
+    customer: oldRow?.customer || "",
+    lot: oldRow?.lot || "",
+    slot: oldRow?.slot || "",
+    rowNumber,
+    oldStartDate: oldRow?.startDate || "",
+    oldEndDate: oldRow?.endDate || "",
+    oldStartTime: oldRow?.startTime || "",
+    newStartDate: oldRow?.startDate || "",
+    newEndDate: endDate,
+    newStartTime: oldRow?.startTime || "",
+  });
+
   await sheets.spreadsheets.values.batchUpdate({
     spreadsheetId: SHEET_ID,
     requestBody: {
       valueInputOption: "USER_ENTERED",
       data: [
-        { range: `Booking_Input!F${rowNumber}`, values: [[endDate]] },
+        { range: `Booking_Input!F${rowNumber}:G${rowNumber}`, values: [[endDate, endDate]] },
         { range: `Booking_Input!J${rowNumber}`, values: [[reason]] },
       ],
     },
   });
+  return { ok: true };
 }
 
-// ---------- Required_Summary (จำนวนตั๋วที่ต้องตีต่อวัน) ----------
-
-export async function getRequiredSummary() {
-  const sheets = getSheetsClient();
-  const [dateRes, rowsRes] = await Promise.all([
-    sheets.spreadsheets.values.get({
-      spreadsheetId: SHEET_ID,
-      range: "Required_Summary!F1",
-      valueRenderOption: "UNFORMATTED_VALUE",
-    }),
-    sheets.spreadsheets.values.get({
-      spreadsheetId: SHEET_ID,
-      range: "Required_Summary!A2:C",
-      valueRenderOption: "UNFORMATTED_VALUE",
-    }),
-  ]);
-
-  const rawDate = dateRes.data.values?.[0]?.[0];
-  let dateStr = "";
-  if (typeof rawDate === "number") {
-    dateStr = isoFromSerial(rawDate);
-  } else if (rawDate) {
-    dateStr = String(rawDate).trim();
+export async function closeMultipleBookingRows(rowNumbers, endDate, reason) {
+  const outcomes = [];
+  for (const rn of rowNumbers) {
+    try {
+      await closeBookingRow({ rowNumber: rn, endDate, reason });
+      outcomes.push({ rowNumber: rn, ok: true });
+    } catch (err) {
+      outcomes.push({ rowNumber: rn, ok: false, error: err.message });
+    }
   }
-  if (!dateStr) {
-    dateStr = isoFromSerial(getTodaySerial());
-  }
-
-  const rawRows = rowsRes.data.values || [];
-  const rows = rawRows
-    .filter((r) => r[1] && Number(r[2]) > 0)
-    .map((r) => ({
-      docId: r[0] ? String(r[0]).trim() : "",
-      customer: String(r[1]).trim(),
-      required: Number(r[2]),
-    }));
-
-  return { date: dateStr, rows };
+  return outcomes;
 }
 
-export async function updateRequiredSummaryDate(dateStr) {
+// ปรับวัน-เวลาจอง (Extend booking) ช่องเดิมตรงๆ
+export async function extendBooking({ rowNumber, lot, slot, startDate, endDate, startTime }) {
+  const oldRow = await getBookingRow(rowNumber);
+  if (!oldRow) throw new Error(`ไม่พบรายการจองแถวที่ ${rowNumber}`);
+
+  // 1. เช็คสถานะช่องจาก getSlotsWithStatus
+  const slotsWithStatus = await getSlotsWithStatus();
+  const slotInfo = slotsWithStatus.find((s) => s.slotCode === slot);
+  if (!slotInfo || slotInfo.status === "ปิด" || slotInfo.isRoad) {
+    throw new Error(`ช่อง ${slot} ถูกปิดใช้งานอยู่ (${slotInfo?.reason || "สถานะพื้นฐานปิดใช้งาน"}) ไม่สามารถแก้ไขได้`);
+  }
+
+  // 2. เช็คเวลาชนกัน โดยไม่นับแถวตัวเอง
+  const conflict = await findConflict({
+    slot,
+    startDate,
+    endDate,
+    startTime,
+    excludeRowNumber: Number(rowNumber),
+  });
+  if (conflict.conflict) {
+    throw new Error(`ช่วงเวลานี้ชนกับการจองของ "${conflict.withCustomer}" แล้ว`);
+  }
+
+  // 3. บันทึก log ก่อนเขียนทับ
+  await appendBookingChangeLog({
+    action: "ปรับวัน-เวลาจอง",
+    customer: oldRow.customer,
+    lot: lot || oldRow.lot,
+    slot: slot || oldRow.slot,
+    rowNumber,
+    oldStartDate: oldRow.startDate,
+    oldEndDate: oldRow.endDate,
+    oldStartTime: oldRow.startTime,
+    newStartDate: startDate,
+    newEndDate: endDate || "",
+    newStartTime: startTime,
+  });
+
+  // 4. แก้ไขแถวเดิมตรงๆ
+  const startMin = serialToMinutes(startTime);
+  const endMin = startMin + 240;
+  const endTimeStr = minutesToTimeStr(endMin);
+  const endEff = endDate || "2099-12-31";
+
   const sheets = getSheetsClient();
   await sheets.spreadsheets.values.update({
     spreadsheetId: SHEET_ID,
-    range: "Required_Summary!F1",
+    range: `Booking_Input!E${rowNumber}:J${rowNumber}`,
     valueInputOption: "USER_ENTERED",
-    requestBody: { values: [[dateStr]] },
+    requestBody: {
+      values: [[startDate, endDate || "", endEff, startTime, endTimeStr, "ปรับวัน-เวลาจอด"]],
+    },
   });
-  return getRequiredSummary();
+
+  return { ok: true };
 }
 
+// ย้ายช่องจอดอย่างปลอดภัย: ตรวจสอบความพร้อมของช่องใหม่ก่อนเสมอ
+export async function changeSlot({
+  oldRowNumber,
+  oldEndDate,
+  customer,
+  newLot,
+  newSlot,
+  newStartDate,
+  newEndDate,
+  newStartTime,
+}) {
+  const oldRow = await getBookingRow(oldRowNumber);
+  if (!oldRow) throw new Error(`ไม่พบรายการจองเดิมแถวที่ ${oldRowNumber}`);
+
+  // 1. เช็คสถานะช่องใหม่จาก getSlotsWithStatus
+  const slotsWithStatus = await getSlotsWithStatus();
+  const slotInfo = slotsWithStatus.find((s) => s.slotCode === newSlot);
+  if (!slotInfo || slotInfo.status === "ปิด" || slotInfo.isRoad) {
+    throw new Error(`ช่อง ${newSlot} ถูกปิดใช้งานอยู่ (${slotInfo?.reason || "สถานะพื้นฐานปิดใช้งาน"}) ไม่สามารถย้ายไปได้`);
+  }
+
+  // 2. เช็คเวลาชนกันของช่องใหม่ก่อนเสมอ
+  const conflict = await findConflict({
+    slot: newSlot,
+    startDate: newStartDate,
+    endDate: newEndDate,
+    startTime: newStartTime,
+  });
+  if (conflict.conflict) {
+    throw new Error(`ช่อง ${newSlot} ช่วงเวลานี้ชนกับการจองของ "${conflict.withCustomer}" แล้ว กรุณาเลือกช่องอื่น`);
+  }
+
+  // 3. ปิดแถวเดิม
+  await closeBookingRow({
+    rowNumber: oldRowNumber,
+    endDate: oldEndDate,
+    reason: "ย้ายออก (เปลี่ยนช่องจอด)",
+  });
+
+  // 4. สร้างการจองช่องใหม่
+  const createResult = await createBookingBatch({
+    customer,
+    lot: newLot,
+    slots: [newSlot],
+    startDate: newStartDate,
+    endDate: newEndDate,
+    startTime: newStartTime,
+    reason: "ย้ายเข้า (เปลี่ยนช่องจอด)",
+  });
+
+  return { ok: true, createResult };
+}
+
+// ปิดช่องจอด + ปิดการจองที่ค้างอยู่ไปพร้อมกัน
+export async function closeSlotWithBookings({ slotCode, reason, bookingRowNumbersToClose }) {
+  await appendSlotStatusLog({ slotCode, action: "ปิด", reason });
+  const today = isoFromSerial(getTodaySerial());
+  const bookingResults = [];
+  for (const rn of bookingRowNumbersToClose || []) {
+    try {
+      await closeBookingRow({ rowNumber: rn, endDate: today, reason: `ปิดช่อง: ${reason}` });
+      bookingResults.push({ rowNumber: rn, ok: true });
+    } catch (err) {
+      bookingResults.push({ rowNumber: rn, ok: false, error: err.message });
+    }
+  }
+  return { ok: true, bookingResults };
+}
+
+// เปิดช่องจอดกลับมาใช้งาน
+export async function openSlot(slotCode) {
+  await appendSlotStatusLog({ slotCode, action: "เปิด", reason: "" });
+  return { ok: true };
+}
+
+// ---------- Required_Summary (คำนวณสด In-Memory เทียบ Apps Script Production) ----------
+// กฎ Production: เมื่อเลือกวันที่ X ให้นับ booking ที่ active ในวัน X + 1 (เตรียมตั๋วล่วงหน้า 1 วัน)
+// Active วัน X+1: startDate <= (X+1) && (X+1) <= endDateEffective
+// รวมตาม docId/ชื่อลูกค้า และห้ามเขียนค่าลง Required_Summary!F1
+export async function getRequiredSummary(dateStr) {
+  const selectedDateStr = dateStr || isoFromSerial(getTodaySerial());
+  const selectedSerial = isoDateToSerial(selectedDateStr);
+  const targetSerial = selectedSerial + 1; // วันที่ X + 1
+  const targetDateStr = isoFromSerial(targetSerial);
+
+  const allBookings = await getAllBookingRows();
+
+  const countMap = {}; // key: docId (หรือชื่อลูกค้าถ้าไม่มี docId)
+  for (const b of allBookings) {
+    if (!b.startSerial) continue;
+    const endEff = b.endEffectiveSerial !== null && b.endEffectiveSerial !== undefined ? b.endEffectiveSerial : FAR_FUTURE_SERIAL;
+    if (b.startSerial <= targetSerial && targetSerial <= endEff) {
+      const key = b.docId || b.customer;
+      if (!countMap[key]) {
+        countMap[key] = {
+          docId: b.docId || "",
+          name: b.customer,
+          customer: b.customer,
+          required: 0,
+        };
+      }
+      countMap[key].required += 1;
+    }
+  }
+
+  const rows = Object.values(countMap);
+  rows.sort((a, b) => String(a.name).localeCompare(String(b.name), "th"));
+
+  return {
+    selectedDate: selectedDateStr,
+    targetDate: targetDateStr,
+    date: targetDateStr,
+    rows,
+  };
+}
+
+// ---------- Transection (รายการจ่ายเงิน) ----------
+// อ่านตามชื่อหัวคอลัมน์ BoothCode และ DocDate (ไม่ยึดตำแหน่งคอลัมน์ตายตัว)
+// ต้อง throw error เมื่อ header หายหรือ API fail ห้ามคืน []
+export async function getTransectionRows() {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "Transection!A1:Z",
+    valueRenderOption: "UNFORMATTED_VALUE",
+  });
+  const rows = res.data.values || [];
+  if (rows.length < 2) return [];
+  const headers = rows[0].map((h) => String(h || "").trim());
+  const boothCodeIdx = headers.indexOf("BoothCode");
+  const docDateIdx = headers.indexOf("DocDate");
+  if (boothCodeIdx === -1 || docDateIdx === -1) {
+    throw new Error('ไม่พบคอลัมน์ "BoothCode" หรือ "DocDate" ในหัวตารางแท็บ Transection กรุณาตรวจสอบชื่อหัวตาราง');
+  }
+
+  return rows.slice(1).filter((r) => r[boothCodeIdx] && r[docDateIdx]).map((r) => {
+    const rawDate = r[docDateIdx];
+    const dateSerial = typeof rawDate === "number" ? serialToDateOnly(rawDate) : (rawDate ? isoDateToSerial(rawDate) : null);
+    return {
+      boothCode: String(r[boothCodeIdx]).trim(),
+      dateSerial,
+      dateStr: isoFromSerial(dateSerial),
+    };
+  });
+}
+
+// ---------- CS Overview ----------
+// Parity กับ Apps Script Production: หาการจองที่ยังไม่หมดอายุ (endDateEffective >= today)
+// ไม่ตัด future booking ออก และไม่เช็คเงื่อนไขการจ่ายเงิน
+export async function getCsOverviewData() {
+  const today = getTodaySerial();
+  const [allBookings, slotsWithStatus] = await Promise.all([
+    getAllBookingRows(),
+    getSlotsWithStatus(),
+  ]);
+
+  const bookingBySlot = {};
+  for (const b of allBookings) {
+    const endEff = b.endEffectiveSerial !== null && b.endEffectiveSerial !== undefined ? b.endEffectiveSerial : FAR_FUTURE_SERIAL;
+    if (endEff < today) continue;
+
+    const existing = bookingBySlot[b.slot];
+    if (!existing || (b.startSerial || 0) < (existing.startSerial || 0)) {
+      bookingBySlot[b.slot] = b;
+    }
+  }
+
+  return {
+    slots: slotsWithStatus.map((s) => ({
+      code: s.slotCode,
+      lot: s.lot,
+      number: s.number,
+      position: s.position,
+      baseStatus: s.baseStatus,
+      status: s.status,
+      isClosed: s.status === "ปิด",
+      isRoad: s.isRoad,
+      closedReason: s.reason,
+    })),
+    assignments: Object.keys(bookingBySlot).map((slotCode) => {
+      const b = bookingBySlot[slotCode];
+      return {
+        slot: slotCode,
+        customer: b.customer,
+        docId: b.docId,
+        lot: b.lot,
+        startDate: b.startDate,
+        endDate: b.endDate,
+        startTime: b.startTime,
+        startMin: b.startMinutes !== null ? b.startMinutes : 420,
+        endMin: b.endMinutes !== null ? b.endMinutes : 660,
+      };
+    }),
+  };
+}
+
+// ---------- Dashboard & Mobile View Data ----------
+// Logic Production เดิม:
+// 1. หา booking ที่ active ในวัน targetDate (startDate <= targetDate && targetDate <= endDateEffective)
+// 2. ตรวจสอบการชำระเงินจาก Transection: นับว่าจ่ายเมื่อมีรายการของ Doc_Id ในวันก่อนหน้า target date 1 วัน (dayBefore)
+// 3. ห้ามแสดง unpaid booking เป็น occupied: ช่องที่ unpaid ต้องเป็นสถานะว่าง (green) เพื่อให้ทีมสนามตรวจแอบจอด
+export async function getDashboardData(dateStr) {
+  const targetDateStr = dateStr || isoFromSerial(getTodaySerial());
+  const targetSerial = isoDateToSerial(targetDateStr);
+  const dayBeforeSerial = targetSerial - 1;
+  const dayBeforeStr = isoFromSerial(dayBeforeSerial);
+
+  const [allBookings, slotsWithStatus, transectionRows] = await Promise.all([
+    getAllBookingRows(),
+    getSlotsWithStatus(),
+    getTransectionRows(),
+  ]);
+
+  // หา bookings ที่ active ในวันเป้าหมาย
+  const activeBookings = allBookings.filter((b) => {
+    if (!b.startSerial) return false;
+    const endEff = b.endEffectiveSerial !== null && b.endEffectiveSerial !== undefined ? b.endEffectiveSerial : FAR_FUTURE_SERIAL;
+    return b.startSerial <= targetSerial && targetSerial <= endEff;
+  });
+
+  // เช็คว่าลูกค้าแต่ละคนมีการชำระเงินในวันก่อนหน้าหรือไม่ (at least 1 proof)
+  const paidDocIds = new Set();
+  transectionRows.forEach((t) => {
+    if (t.dateSerial === dayBeforeSerial && t.boothCode) {
+      paidDocIds.add(t.boothCode);
+    }
+  });
+
+  // แมปสถานะการชำระเงินเดิม
+  const paidBookings = [];
+  const unpaidBookings = [];
+
+  activeBookings.forEach((b) => {
+    const isPaid = paidDocIds.has(b.docId);
+    const bookingInfo = {
+      slot: b.slot,
+      lot: b.lot,
+      customer: b.customer,
+      docId: b.docId,
+      startDate: b.startDate,
+      endDate: b.endDate,
+      startTime: b.startTime,
+      endTime: b.endTime,
+      startMin: b.startMinutes !== null ? b.startMinutes : 420,
+      endMin: b.endMinutes !== null ? b.endMinutes : 660,
+      isPaid,
+    };
+    if (isPaid) {
+      paidBookings.push(bookingInfo);
+    } else {
+      unpaidBookings.push(bookingInfo);
+    }
+  });
+
+  const slots = slotsWithStatus.map((s) => ({
+    code: s.slotCode,
+    lot: s.lot,
+    number: s.number,
+    position: s.position,
+    baseStatus: s.baseStatus,
+    status: s.status,
+    isClosed: s.status === "ปิด",
+    isRoad: s.isRoad,
+    closedReason: s.reason,
+  }));
+
+  return {
+    date: targetDateStr,
+    dayBefore: dayBeforeStr,
+    slots,
+    bookings: paidBookings, // เฉพาะที่ชำระเงินแล้วเท่านั้นที่เป็น occupied
+    unpaidBookings,        // ส่งไปเพื่อข้อมูลอ้างอิง แต่ไม่นับเป็น occupied
+  };
+}

@@ -1,9 +1,10 @@
-import { getRequiredSummary, updateRequiredSummaryDate } from "../../lib/sheets";
+import { getRequiredSummary } from "../../lib/sheets";
 
 export default async function handler(req, res) {
   if (req.method === "GET") {
+    const { date } = req.query;
     try {
-      const data = await getRequiredSummary();
+      const data = await getRequiredSummary(date);
       return res.status(200).json(data);
     } catch (err) {
       return res.status(500).json({ error: err.message });
@@ -12,11 +13,8 @@ export default async function handler(req, res) {
 
   if (req.method === "POST") {
     const { date } = req.body || {};
-    if (!date) {
-      return res.status(400).json({ error: "ต้องระบุ date (YYYY-MM-DD)" });
-    }
     try {
-      const data = await updateRequiredSummaryDate(date);
+      const data = await getRequiredSummary(date);
       return res.status(200).json(data);
     } catch (err) {
       return res.status(500).json({ error: err.message });

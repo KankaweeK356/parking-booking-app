@@ -7,29 +7,25 @@ function today() {
 
 export default function RequiredSummary() {
   const [selectedDate, setSelectedDate] = useState(today());
-  const [currentDate, setCurrentDate] = useState("");
+  const [targetDate, setTargetDate] = useState("");
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [updating, setUpdating] = useState(false);
   const [error, setError] = useState("");
 
-  // โหลดข้อมูลครั้งแรก
   useEffect(() => {
-    loadData();
+    loadData(today());
   }, []);
 
-  async function loadData() {
+  async function loadData(date) {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("/api/required-summary");
+      const res = await fetch(`/api/required-summary?date=${encodeURIComponent(date)}`);
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "เกิดข้อผิดพลาดในการโหลดข้อมูลจาก Google Sheet");
+      if (!res.ok) throw new Error(data.error || "เกิดข้อผิดพลาดในการคำนวณข้อมูลสรุปตั๋ว");
       setRows(data.rows || []);
-      if (data.date) {
-        setCurrentDate(data.date);
-        setSelectedDate(data.date);
-      }
+      setTargetDate(data.targetDate || "");
+      setSelectedDate(data.selectedDate || date);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -37,28 +33,10 @@ export default function RequiredSummary() {
     }
   }
 
-  async function handleDateChange(newDate) {
+  function handleDateChange(newDate) {
     if (!newDate) return;
     setSelectedDate(newDate);
-    setUpdating(true);
-    setError("");
-    try {
-      const res = await fetch("/api/required-summary", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date: newDate }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "เกิดข้อผิดพลาดในการคำนวณวันที่ใหม่");
-      setRows(data.rows || []);
-      if (data.date) {
-        setCurrentDate(data.date);
-      }
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setUpdating(false);
-    }
+    loadData(newDate);
   }
 
   const totalTickets = rows.reduce((sum, r) => sum + (Number(r.required) || 0), 0);
@@ -73,46 +51,51 @@ export default function RequiredSummary() {
       </div>
 
       <div className="page">
-        <h2>สรุปจำนวนตั๋วที่ต้องตีต่อวัน</h2>
+        <h2>สรุปจำนวนตั๋วที่ต้องเตรียมแจ้งด่าน</h2>
         <p className="subtitle">
-          ตรวจสอบรายชื่อลูกค้าที่มีการจองและจำนวนตั๋วที่ต้องเตรียมแจ้งด่าน (แสดงเฉพาะรายที่มียอดจองมากกว่า 0 ใบ)
+          เลือกวันที่ X เพื่อดูยอดจองที่ active ในวัน <strong>X + 1</strong> (เตรียมตั๋วล่วงหน้า 1 วันตามเกณฑ์ด่าน)
         </p>
 
         {error && <div className="alert alert-error">{error}</div>}
 
         <div className="card">
-          <label>เลือกวันที่ต้องการตรวจสอบ (Google Sheet จะนำไปคำนวณผลลัพธ์ให้อัตโนมัติ):</label>
+          <label>เลือกวันที่ตรวจยอด (วันที่ X):</label>
           <div style={{ display: "flex", gap: "10px", alignItems: "center", marginTop: "6px" }}>
             <input
               type="date"
               value={selectedDate}
               onChange={(e) => handleDateChange(e.target.value)}
-              disabled={loading || updating}
+              disabled={loading}
               style={{ maxWidth: "240px" }}
             />
-            {updating && <span style={{ fontSize: "14px", color: "var(--navy)" }}>⏳ กำลังส่งคำนวณข้อมูลใหม่...</span>}
+            {loading && <span style={{ fontSize: "14px", color: "var(--navy)" }}>⏳ กำลังประมวลผล...</span>}
           </div>
+          {targetDate && (
+            <p className="subtitle" style={{ margin: "10px 0 0", color: "var(--navy)" }}>
+              📅 สำหรับวันใช้งาน: <strong>{targetDate}</strong> (วัน X+1)
+            </p>
+          )}
         </div>
 
         {loading ? (
           <div className="card" style={{ textAlign: "center", padding: "40px" }}>
-            <p className="subtitle" style={{ margin: 0 }}>กำลังดึงข้อมูลสรุปจาก Google Sheet...</p>
+            <p className="subtitle" style={{ margin: 0 }}>กำลังคำนวณข้อมูลสรุป...</p>
           </div>
         ) : (
           <div className="card">
             <div className="summary-stat">
               <div className="stat-box">
-                <div className="stat-label">วันที่ตรวจสอบ</div>
+                <div className="stat-label">วันที่ใช้งาน (X+1)</div>
                 <div className="stat-value" style={{ fontSize: "18px" }}>
-                  {currentDate || selectedDate}
+                  {targetDate || "-"}
                 </div>
               </div>
               <div className="stat-box">
-                <div className="stat-label">ลูกค้าที่มียอดจอง</div>
+                <div className="stat-label">ลูกค้าที่มีรายการจอง</div>
                 <div className="stat-value">{rows.length} ราย</div>
               </div>
               <div className="stat-box">
-                <div className="stat-label">รวมตั๋วที่ต้องตีทั้งหมด</div>
+                <div className="stat-label">รวมตั๋วที่ต้องเตรียม</div>
                 <div className="stat-value" style={{ color: "var(--navy)" }}>
                   {totalTickets} ใบ
                 </div>
@@ -121,7 +104,7 @@ export default function RequiredSummary() {
 
             {rows.length === 0 ? (
               <div className="alert alert-warning" style={{ marginTop: "16px", marginBottom: 0 }}>
-                ไม่มีรายการที่ต้องตีตั๋วในวันที่เลือก (ไม่พบยอดการจองในระบบ)
+                ไม่มีรายการที่ต้องตีตั๋วในวันที่ใช้งานนี้ ({targetDate})
               </div>
             ) : (
               <div className="table-container">
@@ -139,7 +122,7 @@ export default function RequiredSummary() {
                       <tr key={row.docId || index}>
                         <td style={{ textAlign: "center", color: "var(--gray)" }}>{index + 1}</td>
                         <td style={{ fontWeight: 600 }}>{row.docId || "-"}</td>
-                        <td>{row.customer}</td>
+                        <td>{row.name || row.customer}</td>
                         <td style={{ textAlign: "center" }}>
                           <span className="ticket-badge">{row.required}</span>
                         </td>

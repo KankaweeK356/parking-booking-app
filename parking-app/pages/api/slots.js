@@ -1,16 +1,14 @@
-import { getSlotList, getSlotStatusMap } from "../../lib/sheets";
+import { getSlotsWithStatus, getLots } from "../../lib/sheets";
 
 export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
   try {
-    const [slots, statusMap] = await Promise.all([getSlotList(), getSlotStatusMap()]);
-    const withStatus = slots.map((s) => ({
-      ...s,
-      status: statusMap[s.slotCode]?.action === "ปิด" ? "ปิด" : "เปิด",
-      reason: statusMap[s.slotCode]?.reason || "",
-    }));
-    res.status(200).json(withStatus);
+    const [slots, lots] = await Promise.all([getSlotsWithStatus(), getLots()]);
+    if (req.query.flat === "true") {
+      return res.status(200).json(slots);
+    }
+    return res.status(200).json({ slots, lots });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 }

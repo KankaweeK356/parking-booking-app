@@ -1,8 +1,6 @@
 import {
   getActiveBookingsForCustomer,
-  createBooking,
-  findConflict,
-  getSlotStatusMap,
+  createBookingBatch,
 } from "../../lib/sheets";
 
 export default async function handler(req, res) {
@@ -18,29 +16,25 @@ export default async function handler(req, res) {
   }
 
   if (req.method === "POST") {
-    const { customer, lot, slot, startDate, endDate, startTime } = req.body || {};
-    if (!customer || !lot || !slot || !startDate || !startTime) {
-      return res.status(400).json({ error: "กรอกข้อมูลไม่ครบ (ลูกค้า/ลาน/ช่อง/วันเริ่ม/เวลาเริ่ม)" });
+    const { customer, lot, slot, slots, startDate, endDate, startTime, reason } = req.body || {};
+    const slotList = Array.isArray(slots) ? slots : (slot ? [slot] : []);
+    if (!customer || !lot || slotList.length === 0 || !startDate || !startTime) {
+      return res.status(400).json({ error: "กรอกข้อมูลไม่ครบถ้วน (ลูกค้า/ลาน/ช่อง/วันเริ่ม/เวลาเริ่ม)" });
     }
     try {
-      // Hard block 1: ช่องปิดอยู่ไหม
-      const statusMap = await getSlotStatusMap();
-      if (statusMap[slot]?.action === "ปิด") {
-        return res.status(409).json({
-          error: `ช่อง ${slot} ถูกปิดใช้งานอยู่ (เหตุผล: ${statusMap[slot].reason || "ไม่ระบุ"}) — กรุณาไปกดเปิดช่องนี้ก่อนถึงจะจองได้`,
-        });
-      }
-      // Hard block 2: เวลาชนกับคนอื่นไหม
-      const conflict = await findConflict({ slot, startDate, endDate, startTime });
-      if (conflict.conflict) {
-        return res.status(409).json({
-          error: `ช่วงเวลานี้ชนกับ "${conflict.withCustomer}" ที่จองช่อง ${conflict.withSlot} ไว้แล้ว`,
-        });
-      }
-      const result = await createBooking({ customer, lot, slot, startDate, endDate, startTime });
+      const result = await createBookingBatch({
+        customer,
+        lot,
+        slots: slotList,
+        startDate,
+        endDate,
+        startTime,
+        reason: reason || "จองใหม่",
+      });
       return res.status(200).json({ ok: true, ...result });
     } catch (err) {
-      return res.status(500).json({ error: err.message });
+      // If error is conflict or closed slot, return 409 Conflict
+      return res.status(409).json({ error: err.message });
     }
   }
 

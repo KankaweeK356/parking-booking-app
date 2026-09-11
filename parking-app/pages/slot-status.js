@@ -1,15 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
-const LOTS = ["A", "B", "C", "D"];
-
-function today() {
-  return new Date().toISOString().slice(0, 10);
-}
-
 export default function SlotStatus() {
   const [slots, setSlots] = useState([]);
-  const [lot, setLot] = useState("A");
+  const [lots, setLots] = useState([]);
+  const [lot, setLot] = useState("");
   const [selected, setSelected] = useState(null);
   const [reason, setReason] = useState("");
   const [warning, setWarning] = useState(null); // { hasActiveBooking: true, bookings: [...] }
@@ -19,7 +14,15 @@ export default function SlotStatus() {
   const [message, setMessage] = useState(null);
 
   function loadSlots() {
-    fetch("/api/slots").then((r) => r.json()).then(setSlots);
+    fetch("/api/slots")
+      .then((r) => r.json())
+      .then((data) => {
+        const slotList = Array.isArray(data) ? data : (data.slots || []);
+        const lotList = data.lots || Array.from(new Set(slotList.map((item) => item.lot).filter(Boolean))).sort();
+        setSlots(slotList);
+        setLots(lotList);
+        if (!lot && lotList.length > 0) setLot(lotList[0]);
+      });
   }
   useEffect(loadSlots, []);
 
@@ -33,14 +36,12 @@ export default function SlotStatus() {
     setSelectedBookingRowsToClose([]);
 
     if (s.status === "เปิด") {
-      // กำลังจะปิดช่อง — เช็คก่อนว่ามีคนจองอยู่ไหม
       setChecking(true);
       try {
         const res = await fetch(`/api/slot-status?slot=${encodeURIComponent(s.slotCode)}`);
         const data = await res.json();
         if (data.hasActiveBooking && data.bookings?.length > 0) {
           setWarning(data);
-          // ค่าเริ่มต้น: ติ๊กเลือกปิดการจองทั้งหมดที่ค้างอยู่ในช่องนี้โดยอัตโนมัติ
           setSelectedBookingRowsToClose(data.bookings.map((b) => b.rowNumber));
         }
       } catch (err) {
@@ -66,55 +67,33 @@ export default function SlotStatus() {
     setMessage(null);
 
     try {
-      // ขั้นที่ 1: บันทึกสถานะปิด/เปิดช่องใน Slot_Status_Log
       const res = await fetch("/api/slot-status", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slotCode: selected.slotCode, action, reason }),
+        body: JSON.stringify({
+          slotCode: selected.slotCode,
+          action,
+          reason,
+          bookingRowNumbersToClose: action === "ปิด" ? selectedBookingRowsToClose : [],
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "เกิดข้อผิดพลาดในการบันทึกสถานะช่อง");
 
-      // ขั้นที่ 2: หากเป็นกรณีปิดช่อง และมีติ๊กเลือกปิด Booking ที่ค้างอยู่
-      if (action === "ปิด" && selectedBookingRowsToClose.length > 0 && warning?.bookings) {
-        const outcomes = [];
-        for (const rowNum of selectedBookingRowsToClose) {
-          const bookingObj = warning.bookings.find((b) => b.rowNumber === rowNum);
-          const custName = bookingObj ? `คุณ${bookingObj.customer} (รอบ ${bookingObj.startTime || "-"} น.)` : `รายการที่ ${rowNum}`;
-          try {
-            const closeRes = await fetch("/api/bookings/close", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                rowNumber: rowNum,
-                endDate: today(),
-                reason: "ช่องถูกปิดใช้งาน",
-              }),
-            });
-            const closeData = await closeRes.json();
-            if (!closeRes.ok) throw new Error(closeData.error || "ล้มเหลว");
-            outcomes.push({ rowNum, custName, ok: true });
-          } catch (err) {
-            outcomes.push({ rowNum, custName, ok: false, error: err.message });
-          }
-        }
-
-        const failedList = outcomes.filter((o) => !o.ok);
-        const successList = outcomes.filter((o) => o.ok);
-
-        if (failedList.length > 0) {
+      if (action === "ปิด") {
+        if (data.bookingResults && data.bookingResults.some((r) => !r.ok)) {
           setMessage({
             type: "warning",
-            text: `⚠️ ปิดช่อง ${selected.slotCode} สำเร็จแล้ว แต่ระบบไม่สามารถยกเลิกการจองบางรายการได้:\n• ${failedList.map((f) => `${f.custName} (สาเหตุ: ${f.error})`).join("\n• ")}\n➔ คำแนะนำ: กรุณาไปที่หน้า "ปรับ / ยกเลิกการจอง" เพื่อตรวจสอบและปิดรายการของลูกค้าที่ค้างอยู่ด้วยตนเอง`,
+            text: `⚠️ ปิดช่อง ${selected.slotCode} เรียบร้อยแล้ว แต่ยกเลิกการจองบางรายการไม่สำเร็จ`,
           });
         } else {
           setMessage({
             type: "success",
-            text: `✓ ปิดช่อง ${selected.slotCode} เรียบร้อยแล้ว (และยกเลิกรายการจองของ ${successList.map((s) => s.custName).join(", ")} ให้เรียบร้อย)`,
+            text: `✓ ปิดช่อง ${selected.slotCode} เรียบร้อยแล้ว${selectedBookingRowsToClose.length > 0 ? " (และปิดสิทธิ์การจองที่เกี่ยวข้องแล้ว)" : ""}`,
           });
         }
       } else {
-        setMessage({ type: "success", text: `✓ ${action === "เปิด" ? "เปิดใช้งาน" : "ปิด"}ช่อง ${selected.slotCode} เรียบร้อยแล้ว` });
+        setMessage({ type: "success", text: `✓ เปิดใช้งานช่อง ${selected.slotCode} เรียบร้อยแล้ว` });
       }
 
       setSelected(null);
@@ -143,7 +122,7 @@ export default function SlotStatus() {
         <div className="card">
           <label>1. เลือกลานที่ต้องการจัดการ</label>
           <select value={lot} onChange={(e) => { setLot(e.target.value); setSelected(null); }}>
-            {LOTS.map((l) => (
+            {lots.map((l) => (
               <option key={l} value={l}>ลาน {l}</option>
             ))}
           </select>
@@ -154,8 +133,9 @@ export default function SlotStatus() {
               <button
                 type="button"
                 key={s.slotCode}
-                className={`slot-btn ${s.status === "ปิด" ? "closed" : "open"} ${selected?.slotCode === s.slotCode ? "active" : ""}`}
+                className={`slot-btn ${s.status === "ปิด" || s.isRoad ? "closed" : "open"} ${selected?.slotCode === s.slotCode ? "active" : ""}`}
                 onClick={() => selectSlot(s)}
+                title={s.status === "ปิด" || s.isRoad ? `ปิดใช้งาน: ${s.reason || (s.isRoad ? "ถนน/ไม่เปิดใช้งาน" : "สถานะพื้นฐานปิดใช้งาน")}` : "เปิดใช้งานปกติ"}
               >
                 {s.slotCode}
               </button>
@@ -163,7 +143,7 @@ export default function SlotStatus() {
           </div>
           <p className="subtitle" style={{ marginTop: 12 }}>
             <span style={{ color: "var(--green)" }}>■</span> เปิดใช้งานปกติ &nbsp;&nbsp;
-            <span style={{ color: "var(--red)" }}>■</span> ปิดใช้งานชั่วคราว
+            <span style={{ color: "var(--red)" }}>■</span> ปิดใช้งานชั่วคราว / ถนน
           </p>
         </div>
 
@@ -171,8 +151,8 @@ export default function SlotStatus() {
           <div className="card">
             <h2 style={{ fontSize: 16 }}>
               ช่อง {selected.slotCode} — สถานะปัจจุบัน: {" "}
-              <span className={`status-badge ${selected.status === "ปิด" ? "status-closed" : "status-open"}`}>
-                {selected.status === "ปิด" ? "ปิดใช้งานชั่วคราว" : "เปิดใช้งานปกติ"}
+              <span className={`status-badge ${selected.status === "ปิด" || selected.isRoad ? "status-closed" : "status-open"}`}>
+                {selected.status === "ปิด" || selected.isRoad ? (selected.isRoad ? "ถนน / ปิดใช้งาน" : "ปิดใช้งานชั่วคราว") : "เปิดใช้งานปกติ"}
               </span>
             </h2>
 
@@ -248,16 +228,7 @@ export default function SlotStatus() {
             )}
 
             {message && (
-              <div
-                className={`alert ${
-                  message.type === "success"
-                    ? "alert-success"
-                    : message.type === "warning"
-                    ? "alert-warning"
-                    : "alert-error"
-                }`}
-                style={{ marginTop: 14, whiteSpace: "pre-line", lineHeight: "1.5" }}
-              >
+              <div className={`alert ${message.type === "success" ? "alert-success" : message.type === "warning" ? "alert-warning" : "alert-error"}`} style={{ marginTop: 12 }}>
                 {message.text}
               </div>
             )}
