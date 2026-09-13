@@ -336,7 +336,7 @@ export async function getUrgentAccessLogs() {
   await ensureUrgentAccessLogSheet();
   const sheets = getSheetsClient();
   const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "Urgent_Access_Log!A2:N", valueRenderOption: "UNFORMATTED_VALUE" });
-  return (res.data.values || []).map((r) => ({ createdAt: String(r[0] || ""), ticketIssuedDate: typeof r[1] === "number" ? isoFromSerial(r[1]) : String(r[1] || ""), accessDate: typeof r[2] === "number" ? isoFromSerial(r[2]) : String(r[2] || ""), actionType: String(r[3] || ""), customer: String(r[4] || ""), docId: String(r[5] || ""), bookingRowNumber: Number(r[6] || 0), lot: String(r[7] || ""), slot: String(r[8] || ""), number: String(r[9] || ""), startTime: String(r[10] || ""), ticketCount: Number(r[11] || 1), reason: String(r[12] || ""), note: String(r[13] || "") }));
+  return (res.data.values || []).map((r) => ({ createdAt: String(r[0] || ""), ticketIssuedDate: typeof r[1] === "number" ? isoFromSerial(r[1]) : String(r[1] || ""), accessDate: typeof r[2] === "number" ? isoFromSerial(r[2]) : String(r[2] || ""), actionType: String(r[3] || ""), customer: String(r[4] || ""), docId: String(r[5] || ""), bookingRowNumber: Number(r[6] || 0), lot: String(r[7] || ""), slot: String(r[8] || ""), number: String(r[9] || ""), startTime: typeof r[10] === "number" ? minutesToTimeStr(serialToMinutes(r[10])) : String(r[10] || ""), ticketCount: Number(r[11] || 1), reason: String(r[12] || ""), note: String(r[13] || "") }));
 }
 
 export async function appendUrgentAccessLogs({ customer, accessDate, entries, reason, note = "", actionType = "เปิดสิทธิ์จาก booking เดิม" }) {
