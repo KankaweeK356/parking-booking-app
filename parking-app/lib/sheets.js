@@ -12,7 +12,7 @@
 //   Transection       : Header แถว 1, ข้อมูลแถว 2+   [BoothCode, DocDate]
 
 import { google } from "googleapis";
-import { isOperationalTimeBlock } from "./operational-day";
+import { getCurrentOperationalDateIso, isOperationalTimeBlock } from "./operational-day";
 
 const SHEET_ID = process.env.GOOGLE_SHEET_ID;
 
@@ -322,6 +322,33 @@ export async function appendBookingChangeLog({
   });
 }
 
+// ---------- Urgent_Access_Log ----------
+export async function ensureUrgentAccessLogSheet() {
+  const sheets = getSheetsClient();
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID });
+  const names = (meta.data.sheets || []).map((sheet) => sheet.properties?.title);
+  if (names.includes("Urgent_Access_Log")) return;
+  await sheets.spreadsheets.batchUpdate({ spreadsheetId: SHEET_ID, requestBody: { requests: [{ addSheet: { properties: { title: "Urgent_Access_Log" } } }] } });
+  await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: "Urgent_Access_Log!A1:N1", valueInputOption: "USER_ENTERED", requestBody: { values: [["Created_At", "Ticket_Issued_Date", "Access_Operational_Date", "Action_Type", "Customer", "Doc_Id", "Booking_Row_Number", "Lot", "Slot_Code", "Slot_Number", "Start_Time", "Ticket_Count", "Reason", "Note"]] } });
+}
+
+export async function getUrgentAccessLogs() {
+  await ensureUrgentAccessLogSheet();
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "Urgent_Access_Log!A2:N", valueRenderOption: "UNFORMATTED_VALUE" });
+  return (res.data.values || []).map((r) => ({ createdAt: String(r[0] || ""), ticketIssuedDate: typeof r[1] === "number" ? isoFromSerial(r[1]) : String(r[1] || ""), accessDate: typeof r[2] === "number" ? isoFromSerial(r[2]) : String(r[2] || ""), actionType: String(r[3] || ""), customer: String(r[4] || ""), docId: String(r[5] || ""), bookingRowNumber: Number(r[6] || 0), lot: String(r[7] || ""), slot: String(r[8] || ""), number: String(r[9] || ""), startTime: String(r[10] || ""), ticketCount: Number(r[11] || 1), reason: String(r[12] || ""), note: String(r[13] || "") }));
+}
+
+export async function appendUrgentAccessLogs({ customer, accessDate, entries, reason, note = "", actionType = "เปิดสิทธิ์จาก booking เดิม" }) {
+  if (!customer || !accessDate || !Array.isArray(entries) || entries.length === 0 || !reason) throw new Error("กรอกข้อมูลเปิดสิทธิ์ด่วนไม่ครบถ้วน");
+  await ensureUrgentAccessLogSheet();
+  const docId = await lookupDocId(customer);
+  const rows = entries.map((entry) => [new Date().toISOString(), getCurrentOperationalDateIso(), accessDate, actionType, customer, docId, entry.rowNumber || "", entry.lot || "", entry.slot, entry.number || "", entry.startTime, 1, reason, note]);
+  const sheets = getSheetsClient();
+  await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: "Urgent_Access_Log!A:N", valueInputOption: "USER_ENTERED", insertDataOption: "INSERT_ROWS", requestBody: { values: rows } });
+  return { ok: true, count: rows.length };
+}
+
 // ---------- Booking_Input ----------
 
 export async function getAllBookingRows() {
@@ -485,7 +512,10 @@ export async function createBookingBatch({ customer, lot, slots, startDate, endD
     statusMap[s.slotCode] = s;
   });
 
-  for (const slot of slotList) {
+  // ช่องใน booking เดียวกันต้องมีลำดับคงที่ตามหมายเลขช่อง ไม่ขึ้นกับลำดับที่ CS คลิก
+  const orderedSlotList = [...slotList].sort((left, right) => String(statusMap[left]?.number || left).localeCompare(String(statusMap[right]?.number || right), "th", { numeric: true }));
+
+  for (const slot of orderedSlotList) {
     const slotInfo = statusMap[slot];
     if (!slotInfo || slotInfo.status === "ปิด" || slotInfo.isRoad) {
       throw new Error(`ช่อง ${slot} ถูกปิดใช้งานอยู่ (${slotInfo?.reason || "สถานะพื้นฐานปิดใช้งาน"}) ไม่สามารถจองได้`);
@@ -503,7 +533,7 @@ export async function createBookingBatch({ customer, lot, slots, startDate, endD
   const endMin = startMin + 240;
   const endTimeStr = minutesToTimeStr(endMin);
 
-  const rowsToAppend = slotList.map((slot) => [
+  const rowsToAppend = orderedSlotList.map((slot) => [
     customer,
     docId,
     lot,
@@ -849,15 +879,16 @@ export async function getCsOverviewData(dateStr) {
 // 2. ตรวจสอบการชำระเงินจาก Transection: นับว่าจ่ายเมื่อมีรายการของ Doc_Id ในวันก่อนหน้า target date 1 วัน (dayBefore)
 // 3. ห้ามแสดง unpaid booking เป็น occupied: ช่องที่ unpaid ต้องเป็นสถานะว่าง (green) เพื่อให้ทีมสนามตรวจแอบจอด
 export async function getDashboardData(dateStr) {
-  const targetDateStr = dateStr || isoFromSerial(getTodaySerial());
+  const targetDateStr = dateStr || getCurrentOperationalDateIso();
   const targetSerial = isoDateToSerial(targetDateStr);
   const dayBeforeSerial = targetSerial - 1;
   const dayBeforeStr = isoFromSerial(dayBeforeSerial);
 
-  const [allBookings, slotsWithStatus, transectionRows] = await Promise.all([
+  const [allBookings, slotsWithStatus, transectionRows, urgentLogs] = await Promise.all([
     getAllBookingRows(),
     getSlotsWithStatus(),
     getTransectionRows(),
+    getUrgentAccessLogs(),
   ]);
 
   // หา bookings ที่ active ในวันเป้าหมาย
@@ -867,20 +898,27 @@ export async function getDashboardData(dateStr) {
     return b.startSerial <= targetSerial && targetSerial <= endEff;
   });
 
-  // เช็คว่าลูกค้าแต่ละคนมีการชำระเงินในวันก่อนหน้าหรือไม่ (at least 1 proof)
-  const paidDocIds = new Set();
+  // ตั๋ว 1 ใบ = 1 Transection row. ตั๋วด่วนของวันก่อนถูกหักออกก่อนให้สิทธิ์วันนี้
+  const ticketCountByDocId = new Map();
   transectionRows.forEach((t) => {
     if (t.dateSerial === dayBeforeSerial && t.boothCode) {
-      paidDocIds.add(t.boothCode);
+      ticketCountByDocId.set(t.boothCode, (ticketCountByDocId.get(t.boothCode) || 0) + 1);
     }
   });
+  urgentLogs.filter((log) => log.ticketIssuedDate === dayBeforeStr && log.docId).forEach((log) => {
+    ticketCountByDocId.set(log.docId, Math.max(0, (ticketCountByDocId.get(log.docId) || 0) - log.ticketCount));
+  });
 
-  // แมปสถานะการชำระเงินเดิม
   const paidBookings = [];
   const unpaidBookings = [];
-
-  activeBookings.forEach((b) => {
-    const isPaid = paidDocIds.has(b.docId);
+  const activeByDoc = new Map();
+  activeBookings.forEach((booking) => { const key = booking.docId || booking.customer; if (!activeByDoc.has(key)) activeByDoc.set(key, []); activeByDoc.get(key).push(booking); });
+  activeByDoc.forEach((bookings, key) => {
+    let availableTickets = ticketCountByDocId.get(key) || 0;
+    bookings.sort((a, b) => a.rowNumber - b.rowNumber);
+    bookings.forEach((b) => {
+      const isPaid = availableTickets > 0;
+      if (isPaid) availableTickets -= 1;
     const bookingInfo = {
       slot: b.slot,
       lot: b.lot,
@@ -894,11 +932,21 @@ export async function getDashboardData(dateStr) {
       endMin: b.endMinutes !== null ? b.endMinutes : 660,
       isPaid,
     };
-    if (isPaid) {
+      if (isPaid) {
       paidBookings.push(bookingInfo);
     } else {
       unpaidBookings.push(bookingInfo);
     }
+    });
+  });
+
+  // สิทธิ์ด่วนมีผลทันทีใน operational day ที่ CS ระบุ
+  const existingKeys = new Set(paidBookings.map((b) => `${b.slot}::${b.startTime}`));
+  urgentLogs.filter((log) => log.accessDate === targetDateStr).forEach((log) => {
+    const booking = activeBookings.find((b) => b.slot === log.slot && b.startTime === log.startTime && (log.bookingRowNumber ? b.rowNumber === log.bookingRowNumber : true));
+    if (!booking) return;
+    const key = `${booking.slot}::${booking.startTime}`;
+    if (!existingKeys.has(key)) { paidBookings.push({ slot: booking.slot, lot: booking.lot, customer: booking.customer, docId: booking.docId, startDate: booking.startDate, endDate: booking.endDate, startTime: booking.startTime, endTime: booking.endTime, startMin: booking.startMinutes, endMin: booking.endMinutes, isPaid: true, isUrgent: true }); existingKeys.add(key); }
   });
 
   const slots = slotsWithStatus.map((s) => ({

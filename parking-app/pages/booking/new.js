@@ -137,7 +137,7 @@ export default function NewBooking() {
                     onClick={() => toggleSlot(s.slotCode, disabled)}
                     title={disabled ? `ปิดใช้งาน: ${s.reason || (s.isRoad ? "ถนน/ไม่เปิดใช้งาน" : "สถานะพื้นฐานปิดใช้งาน")}` : "ว่าง"}
                   >
-                    {s.slotCode}
+                    ช่อง {s.number || "-"}
                   </button>
                 );
               })}

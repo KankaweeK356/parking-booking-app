@@ -137,7 +137,7 @@ export default function SlotStatus() {
                 onClick={() => selectSlot(s)}
                 title={s.status === "ปิด" || s.isRoad ? `ปิดใช้งาน: ${s.reason || (s.isRoad ? "ถนน/ไม่เปิดใช้งาน" : "สถานะพื้นฐานปิดใช้งาน")}` : "เปิดใช้งานปกติ"}
               >
-                {s.slotCode}
+                ช่อง {s.number || "-"}
               </button>
             ))}
           </div>

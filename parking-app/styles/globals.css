@@ -345,6 +345,7 @@ table.data-table tr:hover td {
   color: var(--navy);
   font-size: 20px;
 }
+.home-tabs { display: flex; gap: 10px; margin: 24px 0 16px; }
 
 .section-heading-row,
 .timeline-controls {

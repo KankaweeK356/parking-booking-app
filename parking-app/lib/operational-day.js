@@ -22,3 +22,11 @@ export function addMonthsToIso(dateStr, months) {
   result.setUTCDate(finalDay);
   return result.toISOString().slice(0, 10);
 }
+
+export function getCurrentOperationalDateIso(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23" }).formatToParts(now);
+  const value = (type) => parts.find((part) => part.type === type)?.value;
+  const date = new Date(Date.UTC(Number(value("year")), Number(value("month")) - 1, Number(value("day"))));
+  if (Number(value("hour")) < 7) date.setUTCDate(date.getUTCDate() - 1);
+  return date.toISOString().slice(0, 10);
+}

@@ -36,7 +36,7 @@ export default function ParkingTimelineGrid({ slots, bookings, mode }) {
         <tbody>
           {slots.map((slot) => (
             <tr key={slot.code}>
-              <th scope="row" className="timeline-slot-heading">{slot.code}</th>
+              <th scope="row" className="timeline-slot-heading">ลาน {slot.lot}<br />ช่อง {slot.number || "-"}</th>
               {OPERATIONAL_TIME_BLOCKS.map((block) => {
                 const closed = slot.isClosed || slot.isRoad;
                 const booking = (bookingMap.get(slot.code) || []).find((item) => overlapsBlock(item, slot.code, block.startTime));
