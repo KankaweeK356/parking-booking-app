@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import OperationalTimePicker from "../../components/OperationalTimePicker";
+import EndDateField from "../../components/EndDateField";
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -19,7 +21,8 @@ export default function NewBooking() {
   const [result, setResult] = useState(null); // { ok, error, message }
   const [loadError, setLoadError] = useState("");
 
-  useEffect(() => {
+  function loadFormData() {
+    setLoadError("");
     Promise.all([
       fetch("/api/master").then((r) => r.json()),
       fetch("/api/slots").then((r) => r.json()),
@@ -36,7 +39,9 @@ export default function NewBooking() {
         }
       })
       .catch((e) => setLoadError(e.message));
-  }, []);
+  }
+
+  useEffect(() => { loadFormData(); }, []);
 
   const slotsInLot = useMemo(() => slots.filter((s) => s.lot === lot), [slots, lot]);
 
@@ -78,6 +83,7 @@ export default function NewBooking() {
           message: `✓ บันทึกการจองสำเร็จเรียบร้อยแล้ว ทั้งหมด ${selectedSlots.length} ช่อง (${selectedSlots.join(", ")})`,
         });
         setSelectedSlots([]);
+        loadFormData();
       }
     } catch (err) {
       setResult({ ok: false, error: err.message });
@@ -99,6 +105,10 @@ export default function NewBooking() {
 
         <form onSubmit={handleSubmit}>
           <div className="card">
+            <div className="section-heading-row">
+              <div><label>ข้อมูลการจอง</label></div>
+              <button type="button" className="btn btn-secondary" onClick={loadFormData}>↻ Refresh สถานะช่อง</button>
+            </div>
             <label>ลูกค้า</label>
             <select value={customer} onChange={(e) => setCustomer(e.target.value)} required>
               <option value="">— เลือกลูกค้า —</option>
@@ -137,11 +147,9 @@ export default function NewBooking() {
             <label>วันที่เริ่มจอง</label>
             <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} required />
 
-            <label>วันที่สิ้นสุด (เว้นว่าง = ยังไม่มีกำหนด)</label>
-            <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+            <EndDateField startDate={startDate} value={endDate} onChange={setEndDate} />
 
-            <label>เวลาเริ่ม (ใช้ต่อเนื่อง 4 ชั่วโมงเสมอ)</label>
-            <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} required />
+            <OperationalTimePicker value={startTime} onChange={setStartTime} label="เลือกรอบเวลา (รอบละ 4 ชั่วโมง)" required />
           </div>
 
           {result && (

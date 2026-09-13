@@ -13,7 +13,7 @@ export default async function handler(req, res) {
     newStartTime,
   } = req.body || {};
 
-  if (!oldRowNumber || !oldEndDate || !customer || !newLot || !newSlot || !newStartDate || !newStartTime) {
+  if (!oldRowNumber || !oldEndDate || !customer || !newLot || !newSlot || !newStartDate || !newEndDate || !newStartTime) {
     return res.status(400).json({ error: "กรอกข้อมูลไม่ครบถ้วนสำหรับการย้ายช่องจอด" });
   }
 

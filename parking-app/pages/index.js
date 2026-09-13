@@ -11,6 +11,7 @@ export default function Home() {
       <div className="page">
         <h2>เลือกงานที่ต้องการทำ</h2>
         <p className="subtitle">ข้อมูลทั้งหมดเชื่อมกับ Google Sheet โดยตรง บันทึกผลและอัปเดตแบบเรียลไทม์</p>
+        <h2 className="home-section-title">การจัดการการจอง</h2>
         <div className="nav-grid">
           <Link href="/booking/new" className="nav-card">
             <div className="title">📝 จองใหม่ / เพิ่มช่องจอด</div>
@@ -30,8 +31,11 @@ export default function Home() {
           </Link>
           <Link href="/cs-overview" className="nav-card">
             <div className="title">📋 ภาพรวมการจัดสรรพื้นที่ (CS Overview)</div>
-            <div className="desc">ดูภาพรวมการจัดสรรช่องจอดของลูกค้าที่ยังมีผลทั้งหมด แยกตามผังลานจอด</div>
+            <div className="desc">ดูชื่อลูกค้าที่ได้รับสิทธิ์ในแต่ละช่องและรอบเวลา</div>
           </Link>
+        </div>
+        <h2 className="home-section-title">การตรวจสอบพื้นที่</h2>
+        <div className="nav-grid">
           <Link href="/dashboard" className="nav-card">
             <div className="title">📊 ตารางสถานะลานจอด (Dashboard)</div>
             <div className="desc">ตรวจสอบสถานะช่องจอดประจำวัน พร้อมสถานะการชำระเงินตามประวัติ Transection</div>

@@ -12,6 +12,7 @@
 //   Transection       : Header แถว 1, ข้อมูลแถว 2+   [BoothCode, DocDate]
 
 import { google } from "googleapis";
+import { isOperationalTimeBlock } from "./operational-day";
 
 const SHEET_ID = process.env.GOOGLE_SHEET_ID;
 
@@ -23,6 +24,11 @@ const SLOT_LOG_FIRST_ROW = 2;
 const GOOGLE_SHEETS_EPOCH = Date.UTC(1899, 11, 30); // 1899-12-30
 const MS_PER_DAY = 86400000;
 const FAR_FUTURE_SERIAL = 73050; // 2099-12-31
+const OPERATIONAL_DAY_START_MINUTES = 7 * 60;
+
+function toOperationalMinutes(clockMinutes) {
+  return clockMinutes < OPERATIONAL_DAY_START_MINUTES ? clockMinutes + 1440 : clockMinutes;
+}
 
 function getAuthClient() {
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
@@ -352,8 +358,10 @@ export async function getAllBookingRows() {
     const endStr = typeof rawEnd === "number" ? isoFromSerial(rawEnd) : (rawEnd ? String(rawEnd).trim() : "");
     const endEffectiveStr = typeof rawEndEff === "number" ? isoFromSerial(rawEndEff) : (rawEndEff ? String(rawEndEff).trim() : (endStr || ""));
 
-    const startMinutes = rawStartTime !== undefined && rawStartTime !== null && rawStartTime !== "" ? serialToMinutes(rawStartTime) : null;
-    const endMinutes = rawEndTime !== undefined && rawEndTime !== null && rawEndTime !== "" ? serialToMinutes(rawEndTime) : (startMinutes !== null ? startMinutes + 240 : null);
+    const rawStartMinutes = rawStartTime !== undefined && rawStartTime !== null && rawStartTime !== "" ? serialToMinutes(rawStartTime) : null;
+    // Operational day runs from 07:00 to 07:00 next calendar day. 00:00–06:59 belong at its end.
+    const startMinutes = rawStartMinutes !== null ? toOperationalMinutes(rawStartMinutes) : null;
+    const endMinutes = startMinutes !== null ? startMinutes + 240 : null;
 
     const startTimeStr = startMinutes !== null ? minutesToTimeStr(startMinutes) : (rawStartTime ? String(rawStartTime).trim() : "");
     const endTimeStr = endMinutes !== null ? minutesToTimeStr(endMinutes) : (rawEndTime ? String(rawEndTime).trim() : "");
@@ -424,7 +432,8 @@ export async function findConflict({ slot, startDate, endDate, startTime, exclud
   const all = await getAllBookingRows();
   const newStart = typeof startDate === "number" ? serialToDateOnly(startDate) : isoDateToSerial(startDate);
   const newEnd = endDate ? (typeof endDate === "number" ? serialToDateOnly(endDate) : isoDateToSerial(endDate)) : FAR_FUTURE_SERIAL;
-  const newStartMin = typeof startTime === "number" ? serialToMinutes(startTime) : (typeof startTime === "string" ? serialToMinutes(startTime) : 0);
+  const rawNewStartMin = typeof startTime === "number" ? serialToMinutes(startTime) : (typeof startTime === "string" ? serialToMinutes(startTime) : 0);
+  const newStartMin = toOperationalMinutes(rawNewStartMin);
   const newEndMin = newStartMin + 240;
 
   for (const r of all) {
@@ -453,8 +462,14 @@ export async function findConflict({ slot, startDate, endDate, startTime, exclud
 // ใช้ append ต่อท้ายตาม Apps Script production
 export async function createBookingBatch({ customer, lot, slots, startDate, endDate, startTime, reason = "จองใหม่" }) {
   const slotList = Array.isArray(slots) ? slots : [slots];
-  if (!customer || !lot || slotList.length === 0 || !startDate || !startTime) {
-    throw new Error("กรอกข้อมูลไม่ครบถ้วน (ลูกค้า, ลาน, ช่อง, วันเริ่ม, เวลาเริ่ม)");
+  if (!customer || !lot || slotList.length === 0 || !startDate || !endDate || !startTime) {
+    throw new Error("กรอกข้อมูลไม่ครบถ้วน (ลูกค้า, ลาน, ช่อง, วันเริ่ม, วันสิ้นสุด, รอบเวลา)");
+  }
+  if (isoDateToSerial(endDate) < isoDateToSerial(startDate)) {
+    throw new Error("วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่ม");
+  }
+  if (!isOperationalTimeBlock(startTime)) {
+    throw new Error("รอบเวลาต้องเป็นหนึ่งใน 6 รอบของ operational day (เริ่ม 07:00)");
   }
 
   // 1. ตรวจสอบช่องซ้ำในชุดที่ส่งมา
@@ -483,8 +498,8 @@ export async function createBookingBatch({ customer, lot, slots, startDate, endD
 
   // 3. เตรียมข้อมูลและบันทึกแบบ Batch Append ต่อท้ายชีตตาม Production
   const docId = await lookupDocId(customer);
-  const endEff = endDate || "2099-12-31";
-  const startMin = serialToMinutes(startTime);
+  const endEff = endDate;
+  const startMin = toOperationalMinutes(serialToMinutes(startTime));
   const endMin = startMin + 240;
   const endTimeStr = minutesToTimeStr(endMin);
 
@@ -494,7 +509,7 @@ export async function createBookingBatch({ customer, lot, slots, startDate, endD
     lot,
     slot,
     startDate,
-    endDate || "",
+    endDate,
     endEff,
     startTime,
     endTimeStr,
@@ -571,6 +586,12 @@ export async function closeMultipleBookingRows(rowNumbers, endDate, reason) {
 export async function extendBooking({ rowNumber, lot, slot, startDate, endDate, startTime }) {
   const oldRow = await getBookingRow(rowNumber);
   if (!oldRow) throw new Error(`ไม่พบรายการจองแถวที่ ${rowNumber}`);
+  if (!isOperationalTimeBlock(startTime)) {
+    throw new Error("รอบเวลาต้องเป็นหนึ่งใน 6 รอบของ operational day (เริ่ม 07:00)");
+  }
+  if (endDate && isoDateToSerial(endDate) < isoDateToSerial(startDate)) {
+    throw new Error("วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่ม");
+  }
 
   // 1. เช็คสถานะช่องจาก getSlotsWithStatus
   const slotsWithStatus = await getSlotsWithStatus();
@@ -772,23 +793,35 @@ export async function getTransectionRows() {
 }
 
 // ---------- CS Overview ----------
-// Parity กับ Apps Script Production: หาการจองที่ยังไม่หมดอายุ (endDateEffective >= today)
-// ไม่ตัด future booking ออก และไม่เช็คเงื่อนไขการจ่ายเงิน
-export async function getCsOverviewData() {
-  const today = getTodaySerial();
+// CS grid: เลือก operational date แล้วหาการจองที่ active ในวันนั้น โดยไม่เช็คการจ่ายเงิน
+export async function getCsOverviewData(dateStr) {
+  const targetDateStr = dateStr || isoFromSerial(getTodaySerial());
+  const targetSerial = isoDateToSerial(targetDateStr);
   const [allBookings, slotsWithStatus] = await Promise.all([
     getAllBookingRows(),
     getSlotsWithStatus(),
   ]);
 
-  const bookingBySlot = {};
+  const assignments = [];
+  const futureAssignments = [];
   for (const b of allBookings) {
     const endEff = b.endEffectiveSerial !== null && b.endEffectiveSerial !== undefined ? b.endEffectiveSerial : FAR_FUTURE_SERIAL;
-    if (endEff < today) continue;
-
-    const existing = bookingBySlot[b.slot];
-    if (!existing || (b.startSerial || 0) < (existing.startSerial || 0)) {
-      bookingBySlot[b.slot] = b;
+    if (!b.startSerial || endEff < targetSerial) continue;
+    const assignment = {
+      slot: b.slot,
+      customer: b.customer,
+      docId: b.docId,
+      lot: b.lot,
+      startDate: b.startDate,
+      endDate: b.endDate,
+      startTime: b.startTime,
+      startMin: b.startMinutes !== null ? b.startMinutes : 420,
+      endMin: b.endMinutes !== null ? b.endMinutes : 660,
+    };
+    if (b.startSerial > targetSerial) {
+      futureAssignments.push(assignment);
+    } else {
+      assignments.push(assignment);
     }
   }
 
@@ -804,20 +837,9 @@ export async function getCsOverviewData() {
       isRoad: s.isRoad,
       closedReason: s.reason,
     })),
-    assignments: Object.keys(bookingBySlot).map((slotCode) => {
-      const b = bookingBySlot[slotCode];
-      return {
-        slot: slotCode,
-        customer: b.customer,
-        docId: b.docId,
-        lot: b.lot,
-        startDate: b.startDate,
-        endDate: b.endDate,
-        startTime: b.startTime,
-        startMin: b.startMinutes !== null ? b.startMinutes : 420,
-        endMin: b.endMinutes !== null ? b.endMinutes : 660,
-      };
-    }),
+    date: targetDateStr,
+    assignments,
+    futureAssignments,
   };
 }
 

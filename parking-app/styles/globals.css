@@ -340,3 +340,147 @@ table.data-table tr:hover td {
   border-color: #fcd34d;
 }
 
+.home-section-title {
+  margin: 32px 0 14px;
+  color: var(--navy);
+  font-size: 20px;
+}
+
+.section-heading-row,
+.timeline-controls {
+  display: flex;
+  gap: 16px;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.section-heading-row label {
+  margin: 0;
+}
+
+.date-shortcuts,
+.time-block-picker,
+.lot-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.date-shortcuts .btn,
+.lot-buttons .btn {
+  padding: 7px 12px;
+  font-size: 13px;
+}
+
+.time-picker-group,
+.end-date-field {
+  margin-top: 18px;
+}
+
+.time-block-btn {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 9px 12px;
+  background: #fff;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.time-block-btn.selected {
+  background: var(--navy);
+  color: #fff;
+  border-color: var(--navy);
+}
+
+.timeline-page {
+  max-width: 1400px;
+}
+
+.timeline-controls > div {
+  min-width: 180px;
+}
+
+.refresh-button {
+  align-self: end;
+}
+
+.timeline-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.timeline-grid {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: 100%;
+  min-width: 900px;
+  table-layout: fixed;
+}
+
+.timeline-grid th,
+.timeline-grid td {
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 10px 8px;
+  text-align: center;
+  font-size: 13px;
+}
+
+.timeline-grid thead th {
+  background: #f8fafc;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.timeline-grid tr:last-child th,
+.timeline-grid tr:last-child td {
+  border-bottom: 0;
+}
+
+.timeline-grid th:last-child,
+.timeline-grid td:last-child {
+  border-right: 0;
+}
+
+.timeline-slot-heading {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  width: 92px;
+  background: #f8fafc;
+  font-weight: 700;
+}
+
+.timeline-grid thead .timeline-slot-heading {
+  z-index: 2;
+}
+
+.timeline-cell {
+  min-width: 128px;
+  font-weight: 700;
+}
+
+.timeline-vacant { background: #e9f5ee; color: var(--green); }
+.timeline-booked { background: #fee2e2; color: #991b1b; }
+.timeline-closed { background: #e5e7eb; color: #4b5563; }
+
+.future-booking-list {
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+}
+
+@media (max-width: 640px) {
+  .timeline-page { padding: 16px 10px; }
+  .timeline-controls { align-items: stretch; }
+  .timeline-controls > div { width: 100%; }
+  .refresh-button { align-self: stretch; }
+  .timeline-grid { min-width: 820px; }
+}
+

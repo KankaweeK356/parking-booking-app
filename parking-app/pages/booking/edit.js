@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import OperationalTimePicker from "../../components/OperationalTimePicker";
+import EndDateField from "../../components/EndDateField";
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -55,7 +57,7 @@ export default function EditBooking() {
   const [submittingExtend, setSubmittingExtend] = useState(false);
 
   // โหลดรายชื่อลูกค้าและข้อมูลช่องจอด
-  useEffect(() => {
+  function loadReferenceData() {
     fetch("/api/master").then((r) => r.json()).then(setCustomers);
     fetch("/api/slots")
       .then((r) => r.json())
@@ -64,9 +66,15 @@ export default function EditBooking() {
         const lotList = data.lots || Array.from(new Set(slotList.map((item) => item.lot).filter(Boolean))).sort();
         setAllSlots(slotList);
         setLots(lotList);
-        if (lotList.length > 0) setNewLot(lotList[0]);
+        if (lotList.length > 0) setNewLot((current) => current || lotList[0]);
       });
-  }, []);
+  }
+  useEffect(() => { loadReferenceData(); }, []);
+
+  function refreshBookingStatus() {
+    loadReferenceData();
+    if (customer) loadCustomerBookings(customer);
+  }
 
   // โหลดรายการจองเมื่อเปลี่ยนลูกค้า
   useEffect(() => {
@@ -166,7 +174,7 @@ export default function EditBooking() {
 
   async function handleSubmitChange(e) {
     e.preventDefault();
-    if (!selectedChangeRow || !newSlot || !changeOldEndDate || !changeNewStartDate || !changeNewStartTime) {
+    if (!selectedChangeRow || !newSlot || !changeOldEndDate || !changeNewStartDate || !changeNewEndDate || !changeNewStartTime) {
       return;
     }
     setSubmittingChange(true);
@@ -263,7 +271,10 @@ export default function EditBooking() {
       </div>
       <div className="page">
         <div className="card">
-          <label>เลือกลูกค้า</label>
+          <div className="section-heading-row">
+            <label>เลือกลูกค้า</label>
+            <button type="button" className="btn btn-secondary" onClick={refreshBookingStatus}>↻ Refresh สถานะช่อง</button>
+          </div>
           <select value={customer} onChange={(e) => setCustomer(e.target.value)}>
             <option value="">— เลือกลูกค้า —</option>
             {customers.map((c) => (
@@ -444,26 +455,15 @@ export default function EditBooking() {
                   required
                 />
 
-                <label>วันที่สิ้นสุดของช่องใหม่ (เว้นว่าง = ยังไม่มีกำหนด)</label>
-                <input
-                  type="date"
-                  value={changeNewEndDate}
-                  onChange={(e) => setChangeNewEndDate(e.target.value)}
-                />
+                <EndDateField startDate={changeNewStartDate} value={changeNewEndDate} onChange={setChangeNewEndDate} label="วันที่สิ้นสุดของช่องใหม่" />
 
-                <label>เวลาเริ่มของช่องใหม่</label>
-                <input
-                  type="time"
-                  value={changeNewStartTime}
-                  onChange={(e) => setChangeNewStartTime(e.target.value)}
-                  required
-                />
+                <OperationalTimePicker value={changeNewStartTime} onChange={setChangeNewStartTime} label="เลือกรอบเวลาของช่องใหม่ (รอบละ 4 ชั่วโมง)" required />
 
                 <div className="btn-row">
                   <button
                     type="submit"
                     className="btn btn-primary"
-                    disabled={submittingChange || !newSlot}
+                    disabled={submittingChange || !newSlot || !changeNewEndDate}
                   >
                     {submittingChange ? "กำลังตรวจสอบและย้ายช่อง..." : `ยืนยันย้ายไปช่อง ${newSlot || "(กรุณาเลือกช่อง)"}`}
                   </button>
@@ -529,13 +529,7 @@ export default function EditBooking() {
                   onChange={(e) => setExtendEndDate(e.target.value)}
                 />
 
-                <label>เวลาเริ่ม (ใช้ต่อเนื่อง 4 ชั่วโมง)</label>
-                <input
-                  type="time"
-                  value={extendStartTime}
-                  onChange={(e) => setExtendStartTime(e.target.value)}
-                  required
-                />
+                <OperationalTimePicker value={extendStartTime} onChange={setExtendStartTime} label="เลือกรอบเวลา (รอบละ 4 ชั่วโมง)" required />
 
                 <div className="btn-row">
                   <button

@@ -18,8 +18,8 @@ export default async function handler(req, res) {
   if (req.method === "POST") {
     const { customer, lot, slot, slots, startDate, endDate, startTime, reason } = req.body || {};
     const slotList = Array.isArray(slots) ? slots : (slot ? [slot] : []);
-    if (!customer || !lot || slotList.length === 0 || !startDate || !startTime) {
-      return res.status(400).json({ error: "กรอกข้อมูลไม่ครบถ้วน (ลูกค้า/ลาน/ช่อง/วันเริ่ม/เวลาเริ่ม)" });
+    if (!customer || !lot || slotList.length === 0 || !startDate || !endDate || !startTime) {
+      return res.status(400).json({ error: "กรอกข้อมูลไม่ครบถ้วน (ลูกค้า/ลาน/ช่อง/วันเริ่ม/วันสิ้นสุด/รอบเวลา)" });
     }
     try {
       const result = await createBookingBatch({
