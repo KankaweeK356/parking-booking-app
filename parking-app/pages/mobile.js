@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import ParkingTimelineGrid from "../components/ParkingTimelineGrid";
+import { getCurrentOperationalDateIso } from "../lib/operational-day";
 
-function today() { return new Date().toISOString().slice(0, 10); }
+function today() { return getCurrentOperationalDateIso(); }
 
 export default function MobileView() {
   const [selectedDate, setSelectedDate] = useState(today());
@@ -30,7 +31,7 @@ export default function MobileView() {
 
   return (
     <div>
-      <div className="top-bar"><div className="inner"><h1>📱 การตรวจสอบพื้นที่</h1><Link href="/" className="back">หน้าหลัก</Link></div></div>
+      <div className="top-bar"><div className="inner"><h1>📱 ติดตามสถานะลานจอด</h1><Link href="/" className="back">หน้าหลัก</Link></div></div>
       <div className="page timeline-page mobile-timeline-page">
         {error && <div className="alert alert-error">{error}</div>}
         <div className="card timeline-controls">
@@ -38,7 +39,7 @@ export default function MobileView() {
           <div><label>ลาน</label><div className="lot-buttons">{lots.map((lot) => <button key={lot} type="button" className={`btn ${selectedLot === lot ? "btn-primary" : "btn-secondary"}`} onClick={() => setSelectedLot(lot)}>ลาน {lot}</button>)}</div></div>
           <button type="button" className="btn btn-secondary refresh-button" onClick={() => loadData(selectedDate)}>↻ Refresh</button>
         </div>
-        {loading ? <div className="card"><p className="subtitle">กำลังโหลดสถานะช่องจอด...</p></div> : <div className="card"><ParkingTimelineGrid slots={slotsInLot} bookings={paidBookingsInLot} mode="dashboard" /></div>}
+        {loading ? <div className="card"><p className="subtitle">กำลังโหลดสถานะช่องจอด...</p></div> : <div className="card"><ParkingTimelineGrid slots={slotsInLot} bookings={paidBookingsInLot} mode="dashboard" currentBlockStartTime={data.currentBlock?.startTime} isLiveOperationalDate={data.isLiveOperationalDate} /></div>}
       </div>
     </div>
   );

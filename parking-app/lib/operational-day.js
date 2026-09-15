@@ -30,3 +30,20 @@ export function getCurrentOperationalDateIso(now = new Date()) {
   if (Number(value("hour")) < 7) date.setUTCDate(date.getUTCDate() - 1);
   return date.toISOString().slice(0, 10);
 }
+
+export function getCurrentOperationalBlock(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(now);
+  const value = (type) => Number(parts.find((part) => part.type === type)?.value || 0);
+  const minutes = (value("hour") * 60) + value("minute");
+  const operationalMinutes = minutes < 420 ? minutes + 1440 : minutes;
+  return OPERATIONAL_TIME_BLOCKS.find((block) => {
+    const [hour, minute] = block.startTime.split(":").map(Number);
+    const start = ((hour * 60) + minute) < 420 ? (hour * 60) + minute + 1440 : (hour * 60) + minute;
+    return operationalMinutes >= start && operationalMinutes < start + 240;
+  }) || OPERATIONAL_TIME_BLOCKS[0];
+}
+
+export function getPreviousOperationalBlock(startTime) {
+  const index = OPERATIONAL_TIME_VALUES.indexOf(String(startTime || ""));
+  return OPERATIONAL_TIME_BLOCKS[(index <= 0 ? OPERATIONAL_TIME_BLOCKS.length : index) - 1];
+}

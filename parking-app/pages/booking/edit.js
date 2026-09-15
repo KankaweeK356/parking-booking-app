@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import OperationalTimePicker from "../../components/OperationalTimePicker";
 import EndDateField from "../../components/EndDateField";
+import { getCurrentOperationalDateIso } from "../../lib/operational-day";
 
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  return getCurrentOperationalDateIso();
 }
 
 function getNextDay(dateStr) {
@@ -55,6 +56,11 @@ export default function EditBooking() {
   const [extendStartTime, setExtendStartTime] = useState("07:00");
   const [extendMessage, setExtendMessage] = useState(null);
   const [submittingExtend, setSubmittingExtend] = useState(false);
+
+  function slotLabel(booking) {
+    const number = allSlots.find((slot) => slot.slotCode === booking.slot)?.number || "-";
+    return `ลาน ${booking.lot} / ช่อง ${number}`;
+  }
 
   // โหลดรายชื่อลูกค้าและข้อมูลช่องจอด
   function loadReferenceData() {
@@ -129,7 +135,7 @@ export default function EditBooking() {
         body: JSON.stringify({
           rowNumbers: selectedReduceRows,
           endDate: reduceEndDate,
-          reason: "ลดจำนวนช่อง-ช่วงเวลา",
+      reason: "ยกเลิกสิทธิ์",
         }),
       });
       const data = await res.json();
@@ -137,7 +143,7 @@ export default function EditBooking() {
 
       const outcomes = (data.outcomes || []).map((o) => {
         const target = bookings.find((b) => b.rowNumber === o.rowNumber);
-        const slotDesc = target ? `ลาน ${target.lot} / ช่อง ${target.slot} (รอบ ${target.startTime || "-"} น.)` : `แถวที่ ${o.rowNumber}`;
+        const slotDesc = target ? `${slotLabel(target)} (รอบ ${target.startTime || "-"} น.)` : `แถวที่ ${o.rowNumber}`;
         return { ...o, slotDesc };
       });
       setReduceResults(outcomes);
@@ -202,7 +208,7 @@ export default function EditBooking() {
 
       setChangeMessage({
         type: "success",
-        text: `✓ เปลี่ยนช่องจอดสำเร็จเรียบร้อย! ปิดสิทธิ์ช่องเดิม (${selectedChangeRow.slot}) ถึงวันที่ ${changeOldEndDate} และเปิดจองช่องใหม่ (${newSlot}) ตั้งแต่วันที่ ${changeNewStartDate} เรียบร้อยแล้ว`,
+      text: `✓ ย้ายช่องสำเร็จ มีผลวันที่ ${changeNewStartDate} เวลา 07:00 โดยคงรอบและวันสิ้นสุดเดิมไว้แล้ว`,
       });
       loadCustomerBookings(customer);
     } catch (err) {
@@ -248,7 +254,7 @@ export default function EditBooking() {
 
       setExtendMessage({
         type: "success",
-        text: `✓ ปรับวัน-เวลาจองช่อง ${selectedExtendRow.slot} สำเร็จเรียบร้อยแล้ว`,
+        text: `✓ ปรับวันสิ้นสุดของ ${slotLabel(selectedExtendRow)} สำเร็จเรียบร้อยแล้ว`,
       });
       loadCustomerBookings(customer);
     } catch (err) {
@@ -292,8 +298,8 @@ export default function EditBooking() {
                 style={{ cursor: "pointer", borderLeft: changeType === "reduce" ? "5px solid var(--navy)" : "1px solid var(--border)" }}
                 onClick={() => setChangeType("reduce")}
               >
-                <div className="title" style={{ fontSize: 15 }}>1. ลดช่อง / ยกเลิก</div>
-                <div className="desc">ปิดบางช่องหรือบางช่วงเวลา</div>
+                <div className="title" style={{ fontSize: 15 }}>1. ลด / ยกเลิกสิทธิ์</div>
+                <div className="desc">เลือกทั้งช่องหรือเลือกลดเฉพาะบางรอบ มีผลวันถัดไป 07:00</div>
               </div>
               <div
                 className={`nav-card ${changeType === "change" ? "selected-nav" : ""}`}
@@ -301,15 +307,15 @@ export default function EditBooking() {
                 onClick={() => setChangeType("change")}
               >
                 <div className="title" style={{ fontSize: 15 }}>2. ย้ายช่องจอด</div>
-                <div className="desc">ตรวจช่องใหม่ก่อนปิดช่องเดิม</div>
+                <div className="desc">มีผลวันถัดไป 07:00 โดยคงรอบและวันสิ้นสุดเดิม</div>
               </div>
               <div
                 className={`nav-card ${changeType === "extend" ? "selected-nav" : ""}`}
                 style={{ cursor: "pointer", borderLeft: changeType === "extend" ? "5px solid var(--navy)" : "1px solid var(--border)" }}
                 onClick={() => setChangeType("extend")}
               >
-                <div className="title" style={{ fontSize: 15 }}>3. ปรับวัน-เวลา (ขยายเวลา)</div>
-                <div className="desc">แก้ช่วงวันที่หรือรอบเวลาในช่องเดิม</div>
+                <div className="title" style={{ fontSize: 15 }}>3. ปรับวันสิ้นสุด</div>
+                <div className="desc">ขยายหรือลดวันสิ้นสุด โดยคงช่องและรอบเดิม</div>
               </div>
             </div>
           </div>
@@ -325,7 +331,8 @@ export default function EditBooking() {
         {customer && !loadingBookings && bookings.length > 0 && changeType === "reduce" && (
           <form onSubmit={handleSubmitReduce}>
             <div className="card">
-              <h2 style={{ fontSize: 16 }}>เลือกช่อง / ช่วงเวลาที่ต้องการยกเลิก</h2>
+              <h2 style={{ fontSize: 16 }}>เลือกสิทธิ์ที่ต้องการลดหรือยกเลิก</h2>
+              <p className="subtitle">เลือกทุกรอบของช่องเดียวกันเพื่อลดทั้งช่อง หรือเลือกเพียงบางรอบเพื่อลดรอบเวลา มีผลวันถัดไป 07:00</p>
               <div style={{ margin: "14px 0" }}>
                 {bookings.map((b) => (
                   <div
@@ -334,7 +341,7 @@ export default function EditBooking() {
                     onClick={() => toggleRowSelection(b.rowNumber)}
                   >
                     <div>
-                      <div className="slot-code">ลาน {b.lot} / ช่อง {b.slot}</div>
+                      <div className="slot-code">{slotLabel(b)}</div>
                       <div className="meta">
                         รอบ {b.startTime || "-"} น. | สิทธิ์เดิม: {b.startDate} ถึง {b.endDate || "ไม่มีกำหนด"}
                       </div>
@@ -349,13 +356,8 @@ export default function EditBooking() {
                 ))}
               </div>
 
-              <label>วันที่มีผลสิ้นสุดสิทธิ์ (วันสุดท้ายที่ยังมีสิทธิ์ใช้งาน)</label>
-              <input
-                type="date"
-                value={reduceEndDate}
-                onChange={(e) => setReduceEndDate(e.target.value)}
-                required
-              />
+              <label>วันสุดท้ายที่ยังใช้สิทธิ์ได้</label>
+              <input type="date" value={reduceEndDate} readOnly />
 
               <div className="btn-row">
                 <button
@@ -384,7 +386,7 @@ export default function EditBooking() {
         {customer && !loadingBookings && bookings.length > 0 && changeType === "change" && (
           <form onSubmit={handleSubmitChange}>
             <div className="card">
-              <h2 style={{ fontSize: 16 }}>1. เลือกรายการเดิมที่จะย้ายออก</h2>
+              <h2 style={{ fontSize: 16 }}>1. เลือกรายการเดิมที่จะย้าย</h2>
               <div style={{ margin: "14px 0" }}>
                 {bookings.map((b) => (
                   <div
@@ -393,7 +395,7 @@ export default function EditBooking() {
                     onClick={() => handleSelectOldChangeRow(b)}
                   >
                     <div>
-                      <div className="slot-code">ลาน {b.lot} / ช่อง {b.slot}</div>
+                      <div className="slot-code">{slotLabel(b)}</div>
                       <div className="meta">
                         รอบ {b.startTime || "-"} น. | สิทธิ์เดิม: {b.startDate} ถึง {b.endDate || "ไม่มีกำหนด"}
                       </div>
@@ -411,7 +413,8 @@ export default function EditBooking() {
 
             {selectedChangeRow && (
               <div className="card">
-                <h2 style={{ fontSize: 16 }}>2. เลือกช่องใหม่และช่วงเวลาที่จะย้ายไป</h2>
+                <h2 style={{ fontSize: 16 }}>2. เลือกช่องใหม่</h2>
+                <p className="subtitle">มีผลวันที่ {changeNewStartDate} เวลา 07:00 และคงรอบ {selectedChangeRow.startTime} กับวันสิ้นสุด {selectedChangeRow.endDate} เดิม</p>
                 <label>ลานใหม่</label>
                 <select value={newLot} onChange={(e) => { setNewLot(e.target.value); setNewSlot(""); }}>
                   {lots.map((l) => (
@@ -439,31 +442,11 @@ export default function EditBooking() {
                   })}
                 </div>
 
-                <label>วันที่สิ้นสุดของช่องเดิม</label>
-                <input
-                  type="date"
-                  value={changeOldEndDate}
-                  onChange={(e) => handleOldEndDateChange(e.target.value)}
-                  required
-                />
-
-                <label>วันที่เริ่มของช่องใหม่</label>
-                <input
-                  type="date"
-                  value={changeNewStartDate}
-                  onChange={(e) => setChangeNewStartDate(e.target.value)}
-                  required
-                />
-
-                <EndDateField startDate={changeNewStartDate} value={changeNewEndDate} onChange={setChangeNewEndDate} label="วันที่สิ้นสุดของช่องใหม่" />
-
-                <OperationalTimePicker value={changeNewStartTime} onChange={setChangeNewStartTime} label="เลือกรอบเวลาของช่องใหม่ (รอบละ 4 ชั่วโมง)" required />
-
                 <div className="btn-row">
                   <button
                     type="submit"
                     className="btn btn-primary"
-                    disabled={submittingChange || !newSlot || !changeNewEndDate}
+                    disabled={submittingChange || !newSlot}
                   >
                     {submittingChange ? "กำลังตรวจสอบและย้ายช่อง..." : `ยืนยันย้ายไปช่อง ${newSlot || "(กรุณาเลือกช่อง)"}`}
                   </button>
@@ -483,7 +466,7 @@ export default function EditBooking() {
         {customer && !loadingBookings && bookings.length > 0 && changeType === "extend" && (
           <form onSubmit={handleSubmitExtend}>
             <div className="card">
-              <h2 style={{ fontSize: 16 }}>1. เลือกรายการที่ต้องการปรับวัน-เวลา (ขยายเวลา)</h2>
+              <h2 style={{ fontSize: 16 }}>1. เลือกรายการที่ต้องการปรับวันสิ้นสุด</h2>
               <div style={{ margin: "14px 0" }}>
                 {bookings.map((b) => (
                   <div
@@ -492,7 +475,7 @@ export default function EditBooking() {
                     onClick={() => handleSelectExtendRow(b)}
                   >
                     <div>
-                      <div className="slot-code">ลาน {b.lot} / ช่อง {b.slot}</div>
+                      <div className="slot-code">{slotLabel(b)}</div>
                       <div className="meta">
                         รอบ {b.startTime || "-"} น. | สิทธิ์เดิม: {b.startDate} ถึง {b.endDate || "ไม่มีกำหนด"}
                       </div>
@@ -511,25 +494,11 @@ export default function EditBooking() {
             {selectedExtendRow && (
               <div className="card">
                 <h2 style={{ fontSize: 16 }}>
-                  2. ปรับช่วงวันที่และเวลาสำหรับช่อง {selectedExtendRow.slot} (ลาน {selectedExtendRow.lot})
+                  2. ปรับวันสิ้นสุดสำหรับ {slotLabel(selectedExtendRow)}
                 </h2>
 
-                <label>วันที่เริ่ม</label>
-                <input
-                  type="date"
-                  value={extendStartDate}
-                  onChange={(e) => setExtendStartDate(e.target.value)}
-                  required
-                />
-
-                <label>วันที่สิ้นสุด (เว้นว่าง = ยังไม่มีกำหนด / ขยายไม่มีกำหนด)</label>
-                <input
-                  type="date"
-                  value={extendEndDate}
-                  onChange={(e) => setExtendEndDate(e.target.value)}
-                />
-
-                <OperationalTimePicker value={extendStartTime} onChange={setExtendStartTime} label="เลือกรอบเวลา (รอบละ 4 ชั่วโมง)" required />
+                <p className="subtitle">วันเริ่ม {selectedExtendRow.startDate} · รอบ {selectedExtendRow.startTime} · ข้อมูลอื่นคงเดิม</p>
+                <EndDateField startDate={selectedExtendRow.startDate} value={extendEndDate} onChange={setExtendEndDate} label="วันสิ้นสุดใหม่" />
 
                 <div className="btn-row">
                   <button
@@ -537,7 +506,7 @@ export default function EditBooking() {
                     className="btn btn-primary"
                     disabled={submittingExtend}
                   >
-                    {submittingExtend ? "กำลังตรวจสอบและบันทึก..." : "ยืนยันปรับวัน-เวลา"}
+                    {submittingExtend ? "กำลังตรวจสอบและบันทึก..." : "ยืนยันปรับวันสิ้นสุด"}
                   </button>
                 </div>
               </div>

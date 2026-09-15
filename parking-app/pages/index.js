@@ -17,11 +17,11 @@ export default function Home() {
         {tab === "booking" && <div className="nav-grid">
           <Link href="/booking/new" className="nav-card">
             <div className="title">📝 จองใหม่ / เพิ่มช่องจอด</div>
-            <div className="desc">บันทึกการจองใหม่ให้ลูกค้า เลือกลานและหลายช่องพร้อมกันในรอบเดียว</div>
+            <div className="desc">บันทึกการจองใหม่ เลือกหลายช่องและหลายรอบพร้อมกันได้</div>
           </Link>
           <Link href="/booking/edit" className="nav-card">
             <div className="title">✏️ ปรับ / ยกเลิกการจอง</div>
-            <div className="desc">ลดจำนวนช่อง, ปรับวัน-เวลาจอง (ขยายเวลา) หรือย้ายช่องจอดอย่างปลอดภัย</div>
+            <div className="desc">ลด/ยกเลิกสิทธิ์, ย้ายช่อง หรือปรับวันสิ้นสุด</div>
           </Link>
           <Link href="/slot-status" className="nav-card">
             <div className="title">⛔ ปิด / เปิดช่องจอด</div>
@@ -35,12 +35,12 @@ export default function Home() {
             <div className="title">📋 ภาพรวมการจัดสรรพื้นที่ (CS Overview)</div>
             <div className="desc">ดูชื่อลูกค้าที่ได้รับสิทธิ์ในแต่ละช่องและรอบเวลา</div>
           </Link>
-          <Link href="/booking/urgent" className="nav-card"><div className="title">⚡ เปิดสิทธิ์ด่วนวันนี้</div><div className="desc">ตรวจสิทธิ์ปกติ, เปิดสิทธิ์ booking เดิม หรือจองเพิ่มด่วน</div></Link>
+          <Link href="/booking/urgent" className="nav-card"><div className="title">⚡ จัดการสิทธิ์ระหว่างวัน</div><div className="desc">เปิดสิทธิ์การจองเดิม หรือเพิ่มการจองระหว่างวัน</div></Link>
         </div>}
         {tab === "field" && <div className="nav-grid">
           <Link href="/dashboard" className="nav-card">
-            <div className="title">📊 ตารางสถานะลานจอด (Dashboard)</div>
-            <div className="desc">ตรวจสอบสถานะช่องจอดประจำวัน พร้อมสถานะการชำระเงินตามประวัติ Transection</div>
+            <div className="title">📊 ติดตามสถานะลานจอด</div>
+            <div className="desc">ตรวจสถานะช่อง, รอตรวจตั๋ว และหมดเวลาจอดตามประวัติ Transection</div>
           </Link>
           <Link href="/mobile" className="nav-card">
             <div className="title">📱 ตรวจสอบพื้นที่หน้างาน (Mobile View)</div>

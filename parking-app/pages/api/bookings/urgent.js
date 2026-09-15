@@ -20,11 +20,11 @@ export default async function handler(req, res) {
   try {
     let logEntries = entries || [];
     if (newBooking) {
-      await createBookingBatch({ ...newBooking, customer, startDate: date, endDate: date, reason: "จองด่วนเพิ่ม" });
+      await createBookingBatch({ ...newBooking, customer, startDate: date, endDate: date, reason: "จองระหว่างวัน" });
       const slots = await getSlotsWithStatus();
       logEntries = (newBooking.slots || []).map((slot) => { const info = slots.find((s) => s.slotCode === slot) || {}; return { lot: newBooking.lot, slot, number: info.number || "", startTime: newBooking.startTime }; });
     }
-    const result = await appendUrgentAccessLogs({ customer, accessDate: date, entries: logEntries, reason, note, actionType: newBooking ? "จองด่วนเพิ่ม" : "เปิดสิทธิ์จาก booking เดิม" });
+    const result = await appendUrgentAccessLogs({ customer, accessDate: date, entries: logEntries, reason, note, actionType: newBooking ? "เพิ่มการจองระหว่างวัน" : "เปิดสิทธิ์การจองเดิม" });
     return res.status(200).json(result);
   } catch (err) { return res.status(409).json({ error: err.message }); }
 }

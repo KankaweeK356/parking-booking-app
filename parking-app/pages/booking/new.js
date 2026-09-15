@@ -16,7 +16,7 @@ export default function NewBooking() {
   const [selectedSlots, setSelectedSlots] = useState([]);
   const [startDate, setStartDate] = useState(today());
   const [endDate, setEndDate] = useState("");
-  const [startTime, setStartTime] = useState("07:00");
+  const [startTimes, setStartTimes] = useState(["07:00"]);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null); // { ok, error, message }
   const [loadError, setLoadError] = useState("");
@@ -54,7 +54,7 @@ export default function NewBooking() {
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!customer || selectedSlots.length === 0 || !startDate || !startTime) return;
+    if (!customer || selectedSlots.length === 0 || !startDate || startTimes.length === 0) return;
     setSubmitting(true);
     setResult(null);
 
@@ -68,7 +68,7 @@ export default function NewBooking() {
           slots: selectedSlots,
           startDate,
           endDate,
-          startTime,
+          startTimes,
         }),
       });
       const data = await res.json();
@@ -80,7 +80,7 @@ export default function NewBooking() {
       } else {
         setResult({
           ok: true,
-          message: `✓ บันทึกการจองสำเร็จเรียบร้อยแล้ว ทั้งหมด ${selectedSlots.length} ช่อง (${selectedSlots.join(", ")})`,
+          message: `✓ บันทึกการจองสำเร็จ ${data.count} สิทธิ์ (${selectedSlots.length} ช่อง × ${startTimes.length} รอบ)`,
         });
         setSelectedSlots([]);
         loadFormData();
@@ -149,7 +149,8 @@ export default function NewBooking() {
 
             <EndDateField startDate={startDate} value={endDate} onChange={setEndDate} />
 
-            <OperationalTimePicker value={startTime} onChange={setStartTime} label="เลือกรอบเวลา (รอบละ 4 ชั่วโมง)" required />
+            <OperationalTimePicker values={startTimes} onChange={setStartTimes} label="เลือกรอบเวลา (เลือกได้หลายรอบ, รอบละ 4 ชั่วโมง)" required multiple />
+            <p className="subtitle">จะสร้าง {selectedSlots.length * startTimes.length} สิทธิ์ / ต้องใช้ตั๋ว {selectedSlots.length * startTimes.length} ใบต่อ operational day</p>
           </div>
 
           {result && (
@@ -159,8 +160,8 @@ export default function NewBooking() {
           )}
 
           <div className="btn-row">
-            <button type="submit" className="btn btn-primary" disabled={submitting || selectedSlots.length === 0}>
-              {submitting ? "กำลังตรวจสอบและบันทึก..." : `บันทึกการจอง (${selectedSlots.length} ช่อง)`}
+            <button type="submit" className="btn btn-primary" disabled={submitting || selectedSlots.length === 0 || startTimes.length === 0}>
+              {submitting ? "กำลังตรวจสอบและบันทึก..." : `บันทึกการจอง (${selectedSlots.length * startTimes.length} สิทธิ์)`}
             </button>
           </div>
         </form>

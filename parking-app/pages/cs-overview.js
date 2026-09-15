@@ -36,6 +36,7 @@ export default function CSOverview() {
   const slotsInLot = useMemo(() => (data.slots || []).filter((slot) => slot.lot === selectedLot), [data.slots, selectedLot]);
   const assignmentsInLot = useMemo(() => (data.assignments || []).filter((assignment) => assignment.lot === selectedLot), [data.assignments, selectedLot]);
   const futureAssignmentsInLot = useMemo(() => (data.futureAssignments || []).filter((assignment) => assignment.lot === selectedLot), [data.futureAssignments, selectedLot]);
+  const slotNumber = (slotCode) => (data.slots || []).find((slot) => slot.code === slotCode)?.number || "-";
 
   return (
     <div>
@@ -49,7 +50,7 @@ export default function CSOverview() {
           <div><label>เลือกลาน</label><div className="lot-buttons">{lots.map((lot) => <button key={lot} type="button" className={`btn ${selectedLot === lot ? "btn-primary" : "btn-secondary"}`} onClick={() => setSelectedLot(lot)}>ลาน {lot}</button>)}</div></div>
           <button type="button" className="btn btn-secondary refresh-button" onClick={() => loadOverview(selectedDate)}>↻ Refresh</button>
         </div>
-        {loading ? <div className="card"><p className="subtitle">กำลังโหลดข้อมูลการจัดสรรช่องจอด...</p></div> : <><div className="card"><ParkingTimelineGrid slots={slotsInLot} bookings={assignmentsInLot} mode="cs" /></div>{futureAssignmentsInLot.length > 0 && <div className="card"><h2 style={{ fontSize: 16 }}>รายการจองล่วงหน้าที่ยังมีผล</h2><div className="future-booking-list">{futureAssignmentsInLot.map((booking, index) => <div key={`${booking.slot}-${booking.startDate}-${index}`}><strong>ช่อง {booking.slot}</strong> — คุณ{booking.customer}, รอบ {booking.startTime}, เริ่ม {booking.startDate}{booking.endDate ? ` ถึง ${booking.endDate}` : ""}</div>)}</div></div>}</>}
+        {loading ? <div className="card"><p className="subtitle">กำลังโหลดข้อมูลการจัดสรรช่องจอด...</p></div> : <><div className="card"><ParkingTimelineGrid slots={slotsInLot} bookings={assignmentsInLot} mode="cs" /></div>{futureAssignmentsInLot.length > 0 && <div className="card"><h2 style={{ fontSize: 16 }}>รายการจองล่วงหน้าที่ยังมีผล</h2><div className="future-booking-list">{futureAssignmentsInLot.map((booking, index) => <div key={`${booking.slot}-${booking.startDate}-${index}`}><strong>ช่อง {slotNumber(booking.slot)}</strong> — คุณ{booking.customer}, รอบ {booking.startTime}, เริ่ม {booking.startDate}{booking.endDate ? ` ถึง ${booking.endDate}` : ""}</div>)}</div></div>}</>}
       </div>
     </div>
   );

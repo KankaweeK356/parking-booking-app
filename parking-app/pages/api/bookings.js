@@ -16,9 +16,10 @@ export default async function handler(req, res) {
   }
 
   if (req.method === "POST") {
-    const { customer, lot, slot, slots, startDate, endDate, startTime, reason } = req.body || {};
+    const { customer, lot, slot, slots, startDate, endDate, startTime, startTimes, reason } = req.body || {};
     const slotList = Array.isArray(slots) ? slots : (slot ? [slot] : []);
-    if (!customer || !lot || slotList.length === 0 || !startDate || !endDate || !startTime) {
+    const timeList = Array.isArray(startTimes) && startTimes.length > 0 ? startTimes : (startTime ? [startTime] : []);
+    if (!customer || !lot || slotList.length === 0 || !startDate || !endDate || timeList.length === 0) {
       return res.status(400).json({ error: "กรอกข้อมูลไม่ครบถ้วน (ลูกค้า/ลาน/ช่อง/วันเริ่ม/วันสิ้นสุด/รอบเวลา)" });
     }
     try {
@@ -28,7 +29,8 @@ export default async function handler(req, res) {
         slots: slotList,
         startDate,
         endDate,
-        startTime,
+        startTime: timeList[0],
+        startTimes: timeList,
         reason: reason || "จองใหม่",
       });
       return res.status(200).json({ ok: true, ...result });

@@ -469,7 +469,13 @@ table.data-table tr:hover td {
 
 .timeline-vacant { background: #e9f5ee; color: var(--green); }
 .timeline-booked { background: #fee2e2; color: #991b1b; }
+.timeline-ticket-check { background: #ffedd5; color: #c2410c; }
+.timeline-expired { background: #fef3c7; color: #92400e; }
 .timeline-closed { background: #e5e7eb; color: #4b5563; }
+
+.stat-ticket-check { background: #ffedd5; border-color: #fdba74; }
+.stat-expired { background: #fef3c7; border-color: #fcd34d; }
+.dashboard-current-block { font-size: 14px; font-weight: 700; color: var(--navy-dark); margin: 0 0 10px; }
 
 .future-booking-list {
   display: grid;

@@ -12,7 +12,7 @@
 //   Transection       : Header แถว 1, ข้อมูลแถว 2+   [BoothCode, DocDate]
 
 import { google } from "googleapis";
-import { getCurrentOperationalDateIso, isOperationalTimeBlock } from "./operational-day";
+import { getCurrentOperationalBlock, getCurrentOperationalDateIso, isOperationalTimeBlock } from "./operational-day";
 
 const SHEET_ID = process.env.GOOGLE_SHEET_ID;
 
@@ -487,15 +487,16 @@ export async function findConflict({ slot, startDate, endDate, startTime, exclud
 // ตรวจสอบสถานะและ Time Conflict ทุกช่องล่วงหน้าก่อนบันทึก
 // ช่องที่ baseStatus เป็นปิด หรือ status เป็นปิด ต้องห้ามจอง แม้ยังไม่มี Slot_Status_Log
 // ใช้ append ต่อท้ายตาม Apps Script production
-export async function createBookingBatch({ customer, lot, slots, startDate, endDate, startTime, reason = "จองใหม่" }) {
+export async function createBookingBatch({ customer, lot, slots, startDate, endDate, startTime, startTimes, reason = "จองใหม่" }) {
   const slotList = Array.isArray(slots) ? slots : [slots];
-  if (!customer || !lot || slotList.length === 0 || !startDate || !endDate || !startTime) {
+  const timeList = Array.isArray(startTimes) && startTimes.length > 0 ? startTimes : [startTime];
+  if (!customer || !lot || slotList.length === 0 || !startDate || !endDate || timeList.some((time) => !time)) {
     throw new Error("กรอกข้อมูลไม่ครบถ้วน (ลูกค้า, ลาน, ช่อง, วันเริ่ม, วันสิ้นสุด, รอบเวลา)");
   }
   if (isoDateToSerial(endDate) < isoDateToSerial(startDate)) {
     throw new Error("วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่ม");
   }
-  if (!isOperationalTimeBlock(startTime)) {
+  if (timeList.some((time) => !isOperationalTimeBlock(time))) {
     throw new Error("รอบเวลาต้องเป็นหนึ่งใน 6 รอบของ operational day (เริ่ม 07:00)");
   }
 
@@ -504,6 +505,8 @@ export async function createBookingBatch({ customer, lot, slots, startDate, endD
   if (uniqueSlots.length !== slotList.length) {
     throw new Error("มีช่องจอดซ้ำกันในรายการที่เลือก");
   }
+  const uniqueTimes = Array.from(new Set(timeList));
+  if (uniqueTimes.length !== timeList.length) throw new Error("มีรอบเวลาซ้ำกันในรายการที่เลือก");
 
   // 2. ดึงสถานะรวม (baseStatus + Slot_Status_Log) และตรวจสอบล่วงหน้าทุกช่อง
   const slotsWithStatus = await getSlotsWithStatus();
@@ -514,37 +517,28 @@ export async function createBookingBatch({ customer, lot, slots, startDate, endD
 
   // ช่องใน booking เดียวกันต้องมีลำดับคงที่ตามหมายเลขช่อง ไม่ขึ้นกับลำดับที่ CS คลิก
   const orderedSlotList = [...slotList].sort((left, right) => String(statusMap[left]?.number || left).localeCompare(String(statusMap[right]?.number || right), "th", { numeric: true }));
+  const orderedTimeList = [...timeList].sort((left, right) => toOperationalMinutes(serialToMinutes(left)) - toOperationalMinutes(serialToMinutes(right)));
 
   for (const slot of orderedSlotList) {
     const slotInfo = statusMap[slot];
     if (!slotInfo || slotInfo.status === "ปิด" || slotInfo.isRoad) {
       throw new Error(`ช่อง ${slot} ถูกปิดใช้งานอยู่ (${slotInfo?.reason || "สถานะพื้นฐานปิดใช้งาน"}) ไม่สามารถจองได้`);
     }
-    const conflict = await findConflict({ slot, startDate, endDate, startTime });
-    if (conflict.conflict) {
-      throw new Error(`ช่อง ${slot} ช่วงเวลานี้ชนกับการจองของ "${conflict.withCustomer}" แล้ว`);
+    for (const time of orderedTimeList) {
+      const conflict = await findConflict({ slot, startDate, endDate, startTime: time });
+      if (conflict.conflict) {
+        throw new Error(`ช่อง ${slot} ช่วงเวลา ${time} ชนกับการจองของ "${conflict.withCustomer}" แล้ว`);
+      }
     }
   }
 
   // 3. เตรียมข้อมูลและบันทึกแบบ Batch Append ต่อท้ายชีตตาม Production
   const docId = await lookupDocId(customer);
   const endEff = endDate;
-  const startMin = toOperationalMinutes(serialToMinutes(startTime));
-  const endMin = startMin + 240;
-  const endTimeStr = minutesToTimeStr(endMin);
-
-  const rowsToAppend = orderedSlotList.map((slot) => [
-    customer,
-    docId,
-    lot,
-    slot,
-    startDate,
-    endDate,
-    endEff,
-    startTime,
-    endTimeStr,
-    reason,
-  ]);
+  const rowsToAppend = orderedSlotList.flatMap((slot) => orderedTimeList.map((time) => {
+    const startMin = toOperationalMinutes(serialToMinutes(time));
+    return [customer, docId, lot, slot, startDate, endDate, endEff, time, minutesToTimeStr(startMin + 240), reason];
+  }));
 
   const sheets = getSheetsClient();
   const res = await sheets.spreadsheets.values.append({
@@ -616,6 +610,11 @@ export async function closeMultipleBookingRows(rowNumbers, endDate, reason) {
 export async function extendBooking({ rowNumber, lot, slot, startDate, endDate, startTime }) {
   const oldRow = await getBookingRow(rowNumber);
   if (!oldRow) throw new Error(`ไม่พบรายการจองแถวที่ ${rowNumber}`);
+  startDate = oldRow.startDate;
+  startTime = oldRow.startTime;
+  slot = oldRow.slot;
+  lot = oldRow.lot;
+  if (!endDate) throw new Error("ต้องระบุวันสิ้นสุด");
   if (!isOperationalTimeBlock(startTime)) {
     throw new Error("รอบเวลาต้องเป็นหนึ่งใน 6 รอบของ operational day (เริ่ม 07:00)");
   }
@@ -644,7 +643,7 @@ export async function extendBooking({ rowNumber, lot, slot, startDate, endDate, 
 
   // 3. บันทึก log ก่อนเขียนทับ
   await appendBookingChangeLog({
-    action: "ปรับวัน-เวลาจอง",
+    action: "ปรับวันสิ้นสุด",
     customer: oldRow.customer,
     lot: lot || oldRow.lot,
     slot: slot || oldRow.slot,
@@ -669,7 +668,7 @@ export async function extendBooking({ rowNumber, lot, slot, startDate, endDate, 
     range: `Booking_Input!E${rowNumber}:J${rowNumber}`,
     valueInputOption: "USER_ENTERED",
     requestBody: {
-      values: [[startDate, endDate || "", endEff, startTime, endTimeStr, "ปรับวัน-เวลาจอด"]],
+      values: [[startDate, endDate, endEff, startTime, endTimeStr, "ปรับวันสิ้นสุด"]],
     },
   });
 
@@ -689,6 +688,11 @@ export async function changeSlot({
 }) {
   const oldRow = await getBookingRow(oldRowNumber);
   if (!oldRow) throw new Error(`ไม่พบรายการจองเดิมแถวที่ ${oldRowNumber}`);
+  const effectiveOldEndDate = getCurrentOperationalDateIso();
+  const effectiveNewStartDate = addDaysIso(effectiveOldEndDate, 1);
+  const effectiveNewEndDate = oldRow.endDate;
+  const effectiveNewStartTime = oldRow.startTime;
+  if (!effectiveNewEndDate) throw new Error("รายการเดิมไม่มีวันสิ้นสุด จึงยังย้ายช่องตามกติกาใหม่ไม่ได้");
 
   // 1. เช็คสถานะช่องใหม่จาก getSlotsWithStatus
   const slotsWithStatus = await getSlotsWithStatus();
@@ -700,9 +704,9 @@ export async function changeSlot({
   // 2. เช็คเวลาชนกันของช่องใหม่ก่อนเสมอ
   const conflict = await findConflict({
     slot: newSlot,
-    startDate: newStartDate,
-    endDate: newEndDate,
-    startTime: newStartTime,
+    startDate: effectiveNewStartDate,
+    endDate: effectiveNewEndDate,
+    startTime: effectiveNewStartTime,
   });
   if (conflict.conflict) {
     throw new Error(`ช่อง ${newSlot} ช่วงเวลานี้ชนกับการจองของ "${conflict.withCustomer}" แล้ว กรุณาเลือกช่องอื่น`);
@@ -711,7 +715,7 @@ export async function changeSlot({
   // 3. ปิดแถวเดิม
   await closeBookingRow({
     rowNumber: oldRowNumber,
-    endDate: oldEndDate,
+    endDate: effectiveOldEndDate,
     reason: "ย้ายออก (เปลี่ยนช่องจอด)",
   });
 
@@ -720,9 +724,9 @@ export async function changeSlot({
     customer,
     lot: newLot,
     slots: [newSlot],
-    startDate: newStartDate,
-    endDate: newEndDate,
-    startTime: newStartTime,
+    startDate: effectiveNewStartDate,
+    endDate: effectiveNewEndDate,
+    startTime: effectiveNewStartTime,
     reason: "ย้ายเข้า (เปลี่ยนช่องจอด)",
   });
 
@@ -880,6 +884,7 @@ export async function getCsOverviewData(dateStr) {
 // 3. ห้ามแสดง unpaid booking เป็น occupied: ช่องที่ unpaid ต้องเป็นสถานะว่าง (green) เพื่อให้ทีมสนามตรวจแอบจอด
 export async function getDashboardData(dateStr) {
   const targetDateStr = dateStr || getCurrentOperationalDateIso();
+  const currentOperationalDate = getCurrentOperationalDateIso();
   const targetSerial = isoDateToSerial(targetDateStr);
   const dayBeforeSerial = targetSerial - 1;
   const dayBeforeStr = isoFromSerial(dayBeforeSerial);
@@ -912,10 +917,15 @@ export async function getDashboardData(dateStr) {
   const paidBookings = [];
   const unpaidBookings = [];
   const activeByDoc = new Map();
+  const slotNumberByCode = new Map(slotsWithStatus.map((slot) => [slot.slotCode, slot.number]));
   activeBookings.forEach((booking) => { const key = booking.docId || booking.customer; if (!activeByDoc.has(key)) activeByDoc.set(key, []); activeByDoc.get(key).push(booking); });
   activeByDoc.forEach((bookings, key) => {
     let availableTickets = ticketCountByDocId.get(key) || 0;
-    bookings.sort((a, b) => a.rowNumber - b.rowNumber);
+    bookings.sort((a, b) => {
+      const bySlot = String(slotNumberByCode.get(a.slot) || a.slot).localeCompare(String(slotNumberByCode.get(b.slot) || b.slot), "th", { numeric: true });
+      if (bySlot !== 0) return bySlot;
+      return toOperationalMinutes(a.startMinutes ?? serialToMinutes(a.startTime)) - toOperationalMinutes(b.startMinutes ?? serialToMinutes(b.startTime));
+    });
     bookings.forEach((b) => {
       const isPaid = availableTickets > 0;
       if (isPaid) availableTickets -= 1;
@@ -964,6 +974,8 @@ export async function getDashboardData(dateStr) {
   return {
     date: targetDateStr,
     dayBefore: dayBeforeStr,
+    isLiveOperationalDate: targetDateStr === currentOperationalDate,
+    currentBlock: getCurrentOperationalBlock(),
     slots,
     bookings: paidBookings, // เฉพาะที่ชำระเงินแล้วเท่านั้นที่เป็น occupied
     unpaidBookings,        // ส่งไปเพื่อข้อมูลอ้างอิง แต่ไม่นับเป็น occupied

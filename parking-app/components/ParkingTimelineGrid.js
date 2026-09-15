@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { OPERATIONAL_TIME_BLOCKS } from "../lib/operational-day";
+import { getDashboardCellStatus } from "../lib/timeline-status";
 
 function operationalMinute(time) {
   const [hour, minute] = String(time || "00:00").split(":").map(Number);
@@ -14,7 +15,7 @@ function overlapsBlock(booking, slotCode, blockStartTime) {
   return bookingStart < blockStart + 240 && blockStart < bookingStart + 240;
 }
 
-export default function ParkingTimelineGrid({ slots, bookings, mode }) {
+export default function ParkingTimelineGrid({ slots, bookings, mode, currentBlockStartTime, isLiveOperationalDate = false }) {
   const bookingMap = useMemo(() => {
     const map = new Map();
     (bookings || []).forEach((booking) => {
@@ -36,7 +37,7 @@ export default function ParkingTimelineGrid({ slots, bookings, mode }) {
         <tbody>
           {slots.map((slot) => (
             <tr key={slot.code}>
-              <th scope="row" className="timeline-slot-heading">ลาน {slot.lot}<br />ช่อง {slot.number || "-"}</th>
+              <th scope="row" className="timeline-slot-heading">ช่อง {slot.number || "-"}</th>
               {OPERATIONAL_TIME_BLOCKS.map((block) => {
                 const closed = slot.isClosed || slot.isRoad;
                 const booking = (bookingMap.get(slot.code) || []).find((item) => overlapsBlock(item, slot.code, block.startTime));
@@ -44,8 +45,12 @@ export default function ParkingTimelineGrid({ slots, bookings, mode }) {
                   return <td key={block.startTime} className="timeline-cell timeline-closed" title={slot.closedReason || "ปิดใช้งาน"}>ปิดใช้งาน</td>;
                 }
                 if (booking) {
-                  const label = mode === "cs" ? `คุณ${booking.customer}` : "มีการจอง";
-                  return <td key={block.startTime} className="timeline-cell timeline-booked" title={mode === "cs" ? label : `คุณ${booking.customer}`}>{label}</td>;
+                  const label = mode === "cs" ? `คุณ${booking.customer}` : booking.isUrgent ? "รอตรวจตั๋ว" : "มีการจอง";
+                  const className = mode === "cs" ? "timeline-booked" : booking.isUrgent ? "timeline-ticket-check" : "timeline-booked";
+                  return <td key={block.startTime} className={`timeline-cell ${className}`} title={mode === "cs" ? label : `คุณ${booking.customer}`}>{label}</td>;
+                }
+                if (mode === "dashboard" && getDashboardCellStatus({ slot, bookings, blockStartTime: block.startTime, currentBlockStartTime, isLiveOperationalDate }) === "expired") {
+                  return <td key={block.startTime} className="timeline-cell timeline-expired" title="สิทธิ์รอบก่อนหน้าสิ้นสุดแล้ว ต้องตรวจพื้นที่">หมดเวลาจอด</td>;
                 }
                 return <td key={block.startTime} className="timeline-cell timeline-vacant">ว่าง</td>;
               })}
