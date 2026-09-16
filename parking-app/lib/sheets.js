@@ -465,7 +465,7 @@ export async function getAllBookingRows() {
   const sheets = getSheetsClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: `Booking_Input!A${BOOKING_FIRST_ROW}:J`,
+    range: `Booking_Input!A${BOOKING_FIRST_ROW}:M`,
     valueRenderOption: "UNFORMATTED_VALUE",
   });
   const rows = res.data.values || [];
@@ -519,6 +519,7 @@ export async function getAllBookingRows() {
       startTime: startTimeStr,
       endTime: endTimeStr,
       reason: r[9] ? String(r[9]).trim() : "",
+      bookingType: r[12] ? String(r[12]).trim() : "Normal",
       startSerial,
       endSerial,
       endEffectiveSerial,
@@ -597,7 +598,7 @@ export async function findConflict({ slot, startDate, endDate, startTime, exclud
 // ตรวจสอบสถานะและ Time Conflict ทุกช่องล่วงหน้าก่อนบันทึก
 // ช่องที่ baseStatus เป็นปิด หรือ status เป็นปิด ต้องห้ามจอง แม้ยังไม่มี Slot_Status_Log
 // ใช้ append ต่อท้ายตาม Apps Script production
-export async function createBookingBatch({ customer, lot, slots, startDate, endDate, startTime, startTimes, reason = "จองใหม่", actor }) {
+export async function createBookingBatch({ customer, lot, slots, startDate, endDate, startTime, startTimes, reason = "จองใหม่", actor, bookingType = "Normal" }) {
   const slotList = Array.isArray(slots) ? slots : [slots];
   const timeList = Array.isArray(startTimes) && startTimes.length > 0 ? startTimes : [startTime];
   if (!customer || !lot || slotList.length === 0 || !startDate || !endDate || timeList.some((time) => !time)) {
@@ -647,14 +648,14 @@ export async function createBookingBatch({ customer, lot, slots, startDate, endD
   const endEff = endDate;
   const rowsToAppend = orderedSlotList.flatMap((slot) => orderedTimeList.map((time) => {
     const startMin = toOperationalMinutes(serialToMinutes(time));
-    return [customer, docId, lot, slot, startDate, endDate, endEff, time, minutesToTimeStr(startMin + 240), reason, actor?.employeeId || "", actor?.name || ""];
+    return [customer, docId, lot, slot, startDate, endDate, endEff, time, minutesToTimeStr(startMin + 240), reason, actor?.employeeId || "", actor?.name || "", bookingType];
   }));
 
   const sheets = getSheetsClient();
-  await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: "Booking_Input!K1:L1", valueInputOption: "USER_ENTERED", requestBody: { values: [["Created_By_Employee_Id", "Created_By_Name"]] } });
+  await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: "Booking_Input!K1:M1", valueInputOption: "USER_ENTERED", requestBody: { values: [["Created_By_Employee_Id", "Created_By_Name", "Booking_Type"]] } });
   const res = await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
-    range: "Booking_Input!A:L",
+    range: "Booking_Input!A:M",
     valueInputOption: "USER_ENTERED",
     insertDataOption: "INSERT_ROWS",
     requestBody: {
@@ -994,6 +995,75 @@ export async function getCsOverviewData(dateStr) {
 }
 
 // ---------- Dashboard & Mobile View Data ----------
+const PAYMENT_SNAPSHOT_HEADERS = ["Operational_Date", "Payment_Source_Date", "Booking_Row_Number", "Doc_Id", "Slot_Code", "Start_Time", "Is_Paid", "Snapshot_Updated_At"];
+const PAYMENT_SNAPSHOT_RUN_HEADERS = ["Operational_Date", "Payment_Source_Date", "Snapshot_Updated_At", "Status"];
+
+async function ensurePaymentSnapshotSheets() {
+  await ensureSheet("Payment_Snapshot", PAYMENT_SNAPSHOT_HEADERS, 2);
+  await ensureSheet("Payment_Snapshot_Run", PAYMENT_SNAPSHOT_RUN_HEADERS, 2);
+}
+
+function snapshotKey(rowNumber) { return String(rowNumber || ""); }
+
+export async function getPaymentSnapshot(operationalDate) {
+  await ensurePaymentSnapshotSheets();
+  const sheets = getSheetsClient();
+  const [runsRes, rowsRes] = await Promise.all([
+    sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "Payment_Snapshot_Run!A2:D", valueRenderOption: "UNFORMATTED_VALUE" }),
+    sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "Payment_Snapshot!A2:H", valueRenderOption: "UNFORMATTED_VALUE" }),
+  ]);
+  const matchingRuns = (runsRes.data.values || []).filter((row) => String(row[0] || "") === operationalDate && String(row[3] || "") === "READY");
+  const run = matchingRuns.sort((a, b) => String(b[2] || "").localeCompare(String(a[2] || "")))[0];
+  if (!run) return null;
+  const updatedAt = String(run[2] || "");
+  const byBookingRow = new Map();
+  (rowsRes.data.values || []).filter((row) => String(row[0] || "") === operationalDate && String(row[7] || "") === updatedAt).forEach((row) => {
+    byBookingRow.set(snapshotKey(row[2]), String(row[6] || "").toLowerCase() === "true");
+  });
+  return { operationalDate, sourceDate: String(run[1] || ""), updatedAt, byBookingRow };
+}
+
+export async function createPaymentSnapshot(operationalDate) {
+  if (!operationalDate || !isoDateToSerial(operationalDate)) throw new Error("วันที่สร้างสิทธิ์ไม่ถูกต้อง");
+  await ensurePaymentSnapshotSheets();
+  const targetSerial = isoDateToSerial(operationalDate);
+  const sourceSerial = targetSerial - 1;
+  const sourceDate = isoFromSerial(sourceSerial);
+  const [allBookings, slotsWithStatus, transectionRows, urgentLogs, adjustedRows] = await Promise.all([
+    getAllBookingRows(), getSlotsWithStatus(), getTransectionRows(), getUrgentAccessLogs(), getAdjustedBookingRows(operationalDate),
+  ]);
+  const activeBookings = allBookings.filter((booking) => {
+    const endEff = booking.endEffectiveSerial ?? FAR_FUTURE_SERIAL;
+    return booking.bookingType !== "Urgent" && booking.startSerial && !adjustedRows.has(booking.rowNumber) && booking.startSerial <= targetSerial && targetSerial <= endEff;
+  });
+  const ticketCountByDocId = new Map();
+  transectionRows.filter((ticket) => ticket.dateSerial === sourceSerial && ticket.boothCode).forEach((ticket) => {
+    ticketCountByDocId.set(ticket.boothCode, (ticketCountByDocId.get(ticket.boothCode) || 0) + 1);
+  });
+  urgentLogs.filter((log) => log.ticketIssuedDate === sourceDate && log.docId).forEach((log) => {
+    ticketCountByDocId.set(log.docId, Math.max(0, (ticketCountByDocId.get(log.docId) || 0) - log.ticketCount));
+  });
+  const slotNumberByCode = new Map(slotsWithStatus.map((slot) => [slot.slotCode, slot.number]));
+  const activeByDoc = new Map();
+  activeBookings.forEach((booking) => { const key = booking.docId || booking.customer; if (!activeByDoc.has(key)) activeByDoc.set(key, []); activeByDoc.get(key).push(booking); });
+  const isPaidByBookingRow = new Map();
+  activeByDoc.forEach((bookings, key) => {
+    let remaining = ticketCountByDocId.get(key) || 0;
+    bookings.sort((left, right) => {
+      const byTime = toOperationalMinutes(left.startMinutes ?? serialToMinutes(left.startTime)) - toOperationalMinutes(right.startMinutes ?? serialToMinutes(right.startTime));
+      if (byTime !== 0) return byTime;
+      return String(slotNumberByCode.get(left.slot) || left.slot).localeCompare(String(slotNumberByCode.get(right.slot) || right.slot), "th", { numeric: true });
+    });
+    bookings.forEach((booking) => { const isPaid = remaining > 0; if (isPaid) remaining -= 1; isPaidByBookingRow.set(booking.rowNumber, isPaid); });
+  });
+  const updatedAt = new Date().toISOString();
+  const snapshotRows = activeBookings.map((booking) => [operationalDate, sourceDate, booking.rowNumber, booking.docId, booking.slot, booking.startTime, isPaidByBookingRow.get(booking.rowNumber) ? "true" : "false", updatedAt]);
+  const sheets = getSheetsClient();
+  if (snapshotRows.length > 0) await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: "Payment_Snapshot!A2:H", valueInputOption: "RAW", insertDataOption: "INSERT_ROWS", requestBody: { values: snapshotRows } });
+  await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: "Payment_Snapshot_Run!A2:D", valueInputOption: "RAW", insertDataOption: "INSERT_ROWS", requestBody: { values: [[operationalDate, sourceDate, updatedAt, "READY"]] } });
+  return { operationalDate, sourceDate, updatedAt, count: snapshotRows.length };
+}
+
 // Logic Production เดิม:
 // 1. หา booking ที่ active ในวัน targetDate (startDate <= targetDate && targetDate <= endDateEffective)
 // 2. ตรวจสอบการชำระเงินจาก Transection: นับว่าจ่ายเมื่อมีรายการของ Doc_Id ในวันก่อนหน้า target date 1 วัน (dayBefore)
@@ -1005,12 +1075,12 @@ export async function getDashboardData(dateStr) {
   const dayBeforeSerial = targetSerial - 1;
   const dayBeforeStr = isoFromSerial(dayBeforeSerial);
 
-  const [allBookings, slotsWithStatus, transectionRows, urgentLogs, adjustedRows] = await Promise.all([
+  const [allBookings, slotsWithStatus, urgentLogs, adjustedRows, paymentSnapshot] = await Promise.all([
     getAllBookingRows(),
     getSlotsWithStatus(),
-    getTransectionRows(),
     getUrgentAccessLogs(),
     getAdjustedBookingRows(targetDateStr),
+    getPaymentSnapshot(targetDateStr),
   ]);
 
   // หา bookings ที่ active ในวันเป้าหมาย
@@ -1020,34 +1090,10 @@ export async function getDashboardData(dateStr) {
     return !adjustedRows.has(b.rowNumber) && b.startSerial <= targetSerial && targetSerial <= endEff;
   });
 
-  // ตั๋ว 1 ใบ = 1 Transection row. ตั๋วด่วนของวันก่อนถูกหักออกก่อนให้สิทธิ์วันนี้
-  const ticketCountByDocId = new Map();
-  transectionRows.forEach((t) => {
-    if (t.dateSerial === dayBeforeSerial && t.boothCode) {
-      ticketCountByDocId.set(t.boothCode, (ticketCountByDocId.get(t.boothCode) || 0) + 1);
-    }
-  });
-  urgentLogs.filter((log) => log.ticketIssuedDate === dayBeforeStr && log.docId).forEach((log) => {
-    ticketCountByDocId.set(log.docId, Math.max(0, (ticketCountByDocId.get(log.docId) || 0) - log.ticketCount));
-  });
-
   const paidBookings = [];
   const unpaidBookings = [];
-  const activeByDoc = new Map();
-  const slotNumberByCode = new Map(slotsWithStatus.map((slot) => [slot.slotCode, slot.number]));
-  activeBookings.forEach((booking) => { const key = booking.docId || booking.customer; if (!activeByDoc.has(key)) activeByDoc.set(key, []); activeByDoc.get(key).push(booking); });
-  activeByDoc.forEach((bookings, key) => {
-    let availableTickets = ticketCountByDocId.get(key) || 0;
-    bookings.sort((a, b) => {
-      // จัดสิทธิ์ตามรอบก่อน เพื่อรองรับลูกค้าที่มากระจุกในรอบเดียวกัน
-      // แล้วจึงเรียงช่องเลขน้อยก่อนภายในรอบนั้น
-      const byTime = toOperationalMinutes(a.startMinutes ?? serialToMinutes(a.startTime)) - toOperationalMinutes(b.startMinutes ?? serialToMinutes(b.startTime));
-      if (byTime !== 0) return byTime;
-      return String(slotNumberByCode.get(a.slot) || a.slot).localeCompare(String(slotNumberByCode.get(b.slot) || b.slot), "th", { numeric: true });
-    });
-    bookings.forEach((b) => {
-      const isPaid = availableTickets > 0;
-      if (isPaid) availableTickets -= 1;
+  activeBookings.filter((booking) => booking.bookingType !== "Urgent").forEach((b) => {
+    const isPaid = paymentSnapshot?.byBookingRow.get(snapshotKey(b.rowNumber)) === true;
     const bookingInfo = {
       slot: b.slot,
       lot: b.lot,
@@ -1066,16 +1112,18 @@ export async function getDashboardData(dateStr) {
     } else {
       unpaidBookings.push(bookingInfo);
     }
-    });
   });
 
   // สิทธิ์ด่วนมีผลทันทีใน operational day ที่ CS ระบุ
-  const existingKeys = new Set(paidBookings.map((b) => `${b.slot}::${b.startTime}`));
   urgentLogs.filter((log) => log.accessDate === targetDateStr).forEach((log) => {
     const booking = activeBookings.find((b) => b.slot === log.slot && b.startTime === log.startTime && (log.bookingRowNumber ? b.rowNumber === log.bookingRowNumber : true));
     if (!booking) return;
     const key = `${booking.slot}::${booking.startTime}`;
-    if (!existingKeys.has(key)) { paidBookings.push({ slot: booking.slot, lot: booking.lot, customer: booking.customer, docId: booking.docId, startDate: booking.startDate, endDate: booking.endDate, startTime: booking.startTime, endTime: booking.endTime, startMin: booking.startMinutes, endMin: booking.endMinutes, isPaid: true, isUrgent: true, createdAt: log.createdAt, actionType: log.actionType, note: log.note }); existingKeys.add(key); }
+    const paidIndex = paidBookings.findIndex((item) => `${item.slot}::${item.startTime}` === key);
+    if (paidIndex >= 0) paidBookings.splice(paidIndex, 1);
+    const unpaidIndex = unpaidBookings.findIndex((item) => `${item.slot}::${item.startTime}` === key);
+    if (unpaidIndex >= 0) unpaidBookings.splice(unpaidIndex, 1);
+    if (!paidBookings.some((item) => `${item.slot}::${item.startTime}` === key)) paidBookings.push({ slot: booking.slot, lot: booking.lot, customer: booking.customer, docId: booking.docId, startDate: booking.startDate, endDate: booking.endDate, startTime: booking.startTime, endTime: booking.endTime, startMin: booking.startMinutes, endMin: booking.endMinutes, isPaid: true, isUrgent: true, createdAt: log.createdAt, actionType: log.actionType, note: log.note });
   });
 
   const slots = slotsWithStatus.map((s) => ({
@@ -1093,6 +1141,9 @@ export async function getDashboardData(dateStr) {
   return {
     date: targetDateStr,
     dayBefore: dayBeforeStr,
+    paymentStatus: paymentSnapshot ? "READY" : "UPDATING",
+    paymentSnapshotUpdatedAt: paymentSnapshot?.updatedAt || "",
+    paymentSourceDate: paymentSnapshot?.sourceDate || dayBeforeStr,
     isLiveOperationalDate: targetDateStr === currentOperationalDate,
     currentBlock: getCurrentOperationalBlock(),
     slots,

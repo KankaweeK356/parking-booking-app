@@ -24,9 +24,9 @@ export default async function handler(req, res) {
   try {
     let logEntries = entries || [];
     if (newBooking) {
-      const timeList = newBooking.startTimes || (newBooking.startTime ? [newBooking.startTime] : []);
-      if (timeList.length === 0 || timeList.some((time) => !isBeforeOperationalBlockStart(date, time))) throw new Error("เลือกรอบที่ยังไม่เริ่มเท่านั้น");
-      await createBookingBatch({ ...newBooking, customer, startDate: date, endDate: date, startTimes: timeList, startTime: timeList[0], reason: "เพิ่มช่องด่วนระหว่างวัน", actor: session });
+      const timeList = newBooking.startTime ? [newBooking.startTime] : [];
+      if (timeList.length !== 1 || !isBeforeOperationalBlockStart(date, timeList[0])) throw new Error("สิทธิ์ระหว่างวันเลือกได้ 1 รอบที่ยังไม่เริ่มเท่านั้น");
+      await createBookingBatch({ ...newBooking, customer, startDate: date, endDate: date, startTimes: timeList, startTime: timeList[0], reason: "เพิ่มช่องด่วนระหว่างวัน", actor: session, bookingType: "Urgent" });
       const slots = await getSlotsWithStatus();
       logEntries = (newBooking.slots || []).flatMap((slot) => { const info = slots.find((s) => s.slotCode === slot) || {}; return timeList.map((startTime) => ({ lot: newBooking.lot, slot, number: info.number || "", startTime })); });
     }

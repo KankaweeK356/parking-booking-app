@@ -48,6 +48,12 @@ export function getBangkokCalendarDateIso(now = new Date()) {
   return `${value("year")}-${value("month")}-${value("day")}`;
 }
 
+export function getBangkokMinutesAfterMidnight(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(now);
+  const value = (type) => Number(parts.find((part) => part.type === type)?.value || 0);
+  return (value("hour") * 60) + value("minute");
+}
+
 export function isBeforeOperationalBlockStart(accessDate, startTime, now = new Date()) {
   if (!accessDate || !isOperationalTimeBlock(startTime)) return false;
   const [hour, minute] = String(startTime).split(":").map(Number);
