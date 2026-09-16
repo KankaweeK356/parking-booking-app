@@ -2,7 +2,8 @@ import { appendDailyAdjustments, closeBookingRow, closeMultipleBookingRows } fro
 import { requireRole, ROLE } from "../../../lib/auth";
 
 export default async function handler(req, res) {
-  if (!(await requireRole(req, res, [ROLE.ADMIN, ROLE.CS]))) return;
+  const session = await requireRole(req, res, [ROLE.ADMIN, ROLE.CS]);
+  if (!session) return;
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
   const { rowNumber, rowNumbers, endDate, reason, adjustmentDate } = req.body || {};
 
@@ -12,14 +13,14 @@ export default async function handler(req, res) {
 
   try {
     if (adjustmentDate && Array.isArray(rowNumbers) && rowNumbers.length > 0) {
-      await appendDailyAdjustments({ rowNumbers, effectiveDate: adjustmentDate, reason });
+      await appendDailyAdjustments({ rowNumbers, effectiveDate: adjustmentDate, reason, actor: session });
       return res.status(200).json({ ok: true, outcomes: rowNumbers.map((item) => ({ rowNumber: item, ok: true })) });
     }
     if (Array.isArray(rowNumbers) && rowNumbers.length > 0) {
-      const outcomes = await closeMultipleBookingRows(rowNumbers, endDate, reason);
+      const outcomes = await closeMultipleBookingRows(rowNumbers, endDate, reason, session);
       return res.status(200).json({ ok: true, outcomes });
     }
-    await closeBookingRow({ rowNumber, endDate, reason });
+    await closeBookingRow({ rowNumber, endDate, reason, actor: session });
     return res.status(200).json({ ok: true });
   } catch (err) {
     return res.status(500).json({ error: err.message });

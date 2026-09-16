@@ -60,7 +60,7 @@ export default function EditBooking() {
 
   function slotLabel(booking) {
     const number = allSlots.find((slot) => slot.slotCode === booking.slot)?.number || "-";
-    return `ลาน ${booking.lot} / ช่อง ${number}`;
+    return `${booking.lot} / ช่อง ${number}`;
   }
 
   // โหลดรายชื่อลูกค้าและข้อมูลช่องจอด
@@ -311,14 +311,6 @@ export default function EditBooking() {
                 <div className="title" style={{ fontSize: 15 }}>2. ย้ายช่องจอด</div>
                 <div className="desc">มีผลวันถัดไป 07:00 โดยคงรอบและวันสิ้นสุดเดิม</div>
               </div>
-              <div
-                className={`nav-card ${changeType === "extend" ? "selected-nav" : ""}`}
-                style={{ cursor: "pointer", borderLeft: changeType === "extend" ? "5px solid var(--navy)" : "1px solid var(--border)" }}
-                onClick={() => setChangeType("extend")}
-              >
-                <div className="title" style={{ fontSize: 15 }}>3. ปรับวันสิ้นสุด</div>
-                <div className="desc">ขยายหรือลดวันสิ้นสุด โดยคงช่องและรอบเดิม</div>
-              </div>
             </div>
           </div>
         )}
@@ -421,7 +413,7 @@ export default function EditBooking() {
                 <label>ลานใหม่</label>
                 <select value={newLot} onChange={(e) => { setNewLot(e.target.value); setNewSlot(""); }}>
                   {lots.map((l) => (
-                    <option key={l} value={l}>ลาน {l}</option>
+                    <option key={l} value={l}>{l}</option>
                   ))}
                 </select>
 

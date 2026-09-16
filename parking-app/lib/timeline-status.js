@@ -11,7 +11,10 @@ export function getDashboardCellStatus({ slot, bookings, blockStartTime, current
 
   if (isLiveOperationalDate && blockStartTime === currentBlockStartTime) {
     const previous = getPreviousOperationalBlock(blockStartTime);
-    if (bookingForBlock(bookings, slot.code, previous.startTime)) return "expired";
+    const previousBooking = bookingForBlock(bookings, slot.code, previous.startTime);
+    // สิทธิ์ด่วนมีไว้รอทีมตรวจตั๋วเฉพาะรอบที่ระบุเท่านั้น เมื่อหมดรอบต้องหายไป
+    // ไม่ใช่การจอดที่ต้องตามตรวจออกในรอบถัดไป
+    if (previousBooking && !previousBooking.isUrgent) return "expired";
   }
   return "vacant";
 }

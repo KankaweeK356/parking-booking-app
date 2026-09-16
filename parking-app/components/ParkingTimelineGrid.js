@@ -15,6 +15,12 @@ function overlapsBlock(booking, slotCode, blockStartTime) {
   return bookingStart < blockStart + 240 && blockStart < bookingStart + 240;
 }
 
+function savedAtLabel(createdAt) {
+  const value = String(createdAt || "");
+  const match = value.match(/T(\d{2}):(\d{2})/) || value.match(/\s(\d{2}):(\d{2})/);
+  return match ? `${match[1]}:${match[2]}` : "";
+}
+
 export default function ParkingTimelineGrid({ slots, bookings, mode, currentBlockStartTime, isLiveOperationalDate = false }) {
   const bookingMap = useMemo(() => {
     const map = new Map();
@@ -47,7 +53,9 @@ export default function ParkingTimelineGrid({ slots, bookings, mode, currentBloc
                 if (booking) {
                   const label = mode === "cs" ? `คุณ${booking.customer}` : booking.isUrgent ? "รอตรวจตั๋ว" : "มีการจอง";
                   const className = mode === "cs" ? "timeline-booked" : booking.isUrgent ? "timeline-ticket-check" : "timeline-booked";
-                  return <td key={block.startTime} className={`timeline-cell ${className}`} title={mode === "cs" ? label : `คุณ${booking.customer}`}>{label}</td>;
+                  const savedAt = booking.isUrgent ? savedAtLabel(booking.createdAt) : "";
+                  const title = mode === "cs" ? label : booking.isUrgent ? `รอตรวจตั๋ว${savedAt ? ` — บันทึก ${savedAt}` : ""}` : "มีการจอง";
+                  return <td key={block.startTime} className={`timeline-cell ${className}`} title={title}><span>{label}</span>{savedAt && <small>บันทึก {savedAt}</small>}</td>;
                 }
                 if (mode === "dashboard" && getDashboardCellStatus({ slot, bookings, blockStartTime: block.startTime, currentBlockStartTime, isLiveOperationalDate }) === "expired") {
                   return <td key={block.startTime} className="timeline-cell timeline-expired" title="สิทธิ์รอบก่อนหน้าสิ้นสุดแล้ว ต้องตรวจพื้นที่">หมดเวลาจอด</td>;

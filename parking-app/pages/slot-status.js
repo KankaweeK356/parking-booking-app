@@ -123,7 +123,7 @@ export default function SlotStatus() {
           <label>1. เลือกลานที่ต้องการจัดการ</label>
           <select value={lot} onChange={(e) => { setLot(e.target.value); setSelected(null); }}>
             {lots.map((l) => (
-              <option key={l} value={l}>ลาน {l}</option>
+              <option key={l} value={l}>{l}</option>
             ))}
           </select>
 

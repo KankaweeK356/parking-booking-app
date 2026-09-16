@@ -12,7 +12,7 @@
 //   Transection       : Header แถว 1, ข้อมูลแถว 2+   [BoothCode, DocDate]
 
 import { google } from "googleapis";
-import { getCurrentOperationalBlock, getCurrentOperationalDateIso, isOperationalTimeBlock } from "./operational-day";
+import { getBangkokCalendarDateIso, getCurrentOperationalBlock, getCurrentOperationalDateIso, getUrgentAccessDefaultDateIso, isBeforeOperationalBlockStart, isOperationalTimeBlock } from "./operational-day";
 
 const SHEET_ID = process.env.GOOGLE_SHEET_ID;
 
@@ -323,15 +323,16 @@ export async function getSlotsWithStatus() {
   });
 }
 
-export async function appendSlotStatusLog({ slotCode, action, reason }) {
+export async function appendSlotStatusLog({ slotCode, action, reason, actor }) {
   const sheets = getSheetsClient();
   const timestamp = new Date().toISOString();
+  await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: "Slot_Status_Log!E1:F1", valueInputOption: "USER_ENTERED", requestBody: { values: [["Created_By_Employee_Id", "Created_By_Name"]] } });
   await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
-    range: `Slot_Status_Log!A${SLOT_LOG_FIRST_ROW}:D`,
+    range: `Slot_Status_Log!A${SLOT_LOG_FIRST_ROW}:F`,
     valueInputOption: "USER_ENTERED",
     insertDataOption: "INSERT_ROWS",
-    requestBody: { values: [[slotCode, action, reason || "", timestamp]] },
+    requestBody: { values: [[slotCode, action, reason || "", timestamp, actor?.employeeId || "", actor?.name || ""]] },
   });
 }
 
@@ -369,6 +370,7 @@ export async function ensureChangeLogSheet() {
       },
     });
   }
+  await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: "Booking_Change_Log!M1:N1", valueInputOption: "USER_ENTERED", requestBody: { values: [["Created_By_Employee_Id", "Created_By_Name"]] } });
 }
 
 export async function appendBookingChangeLog({
@@ -383,20 +385,21 @@ export async function appendBookingChangeLog({
   newStartDate = "",
   newEndDate = "",
   newStartTime = "",
+  actor,
 }) {
   await ensureChangeLogSheet();
   const sheets = getSheetsClient();
   const timestamp = new Date().toISOString();
   await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
-    range: "Booking_Change_Log!A:L",
+    range: "Booking_Change_Log!A:N",
     valueInputOption: "USER_ENTERED",
     insertDataOption: "INSERT_ROWS",
     requestBody: {
       values: [[
         timestamp, action, customer, lot, slot, rowNumber,
         oldStartDate, oldEndDate, oldStartTime,
-        newStartDate, newEndDate, newStartTime,
+        newStartDate, newEndDate, newStartTime, actor?.employeeId || "", actor?.name || "",
       ]],
     },
   });
@@ -405,13 +408,15 @@ export async function appendBookingChangeLog({
 // ---------- Booking_Adjustment_Log (ลดเฉพาะวัน) ----------
 export async function ensureAdjustmentLogSheet() {
   await ensureSheet("Booking_Adjustment_Log", ["Created_At", "Effective_Date", "Action", "Booking_Row_Number", "Reason"], 2);
+  const sheets = getSheetsClient();
+  await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: "Booking_Adjustment_Log!F1:G1", valueInputOption: "USER_ENTERED", requestBody: { values: [["Created_By_Employee_Id", "Created_By_Name"]] } });
 }
 
-export async function appendDailyAdjustments({ rowNumbers, effectiveDate, reason = "ลดสิทธิ์เฉพาะวัน" }) {
+export async function appendDailyAdjustments({ rowNumbers, effectiveDate, reason = "ลดสิทธิ์เฉพาะวัน", actor }) {
   await ensureAdjustmentLogSheet();
   const sheets = getSheetsClient();
-  const rows = rowNumbers.map((rowNumber) => [new Date().toISOString(), effectiveDate, "ลดเฉพาะวัน", rowNumber, reason]);
-  await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: "Booking_Adjustment_Log!A2:E", valueInputOption: "USER_ENTERED", insertDataOption: "INSERT_ROWS", requestBody: { values: rows } });
+  const rows = rowNumbers.map((rowNumber) => [new Date().toISOString(), effectiveDate, "ลดเฉพาะวัน", rowNumber, reason, actor?.employeeId || "", actor?.name || ""]);
+  await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: "Booking_Adjustment_Log!A2:G", valueInputOption: "USER_ENTERED", insertDataOption: "INSERT_ROWS", requestBody: { values: rows } });
 }
 
 export async function getAdjustedBookingRows(dateStr) {
@@ -426,25 +431,31 @@ export async function ensureUrgentAccessLogSheet() {
   const sheets = getSheetsClient();
   const meta = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID });
   const names = (meta.data.sheets || []).map((sheet) => sheet.properties?.title);
-  if (names.includes("Urgent_Access_Log")) return;
-  await sheets.spreadsheets.batchUpdate({ spreadsheetId: SHEET_ID, requestBody: { requests: [{ addSheet: { properties: { title: "Urgent_Access_Log" } } }] } });
-  await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: "Urgent_Access_Log!A1:N1", valueInputOption: "USER_ENTERED", requestBody: { values: [["Created_At", "Ticket_Issued_Date", "Access_Operational_Date", "Action_Type", "Customer", "Doc_Id", "Booking_Row_Number", "Lot", "Slot_Code", "Slot_Number", "Start_Time", "Ticket_Count", "Reason", "Note"]] } });
+  const exists = names.includes("Urgent_Access_Log");
+  if (!exists) await sheets.spreadsheets.batchUpdate({ spreadsheetId: SHEET_ID, requestBody: { requests: [{ addSheet: { properties: { title: "Urgent_Access_Log" } } }] } });
+  // ต่อท้ายคอลัมน์เดิมเท่านั้น เพื่อไม่ให้ MIS/formula ที่มีอยู่เสีย
+  const headerRange = exists ? "Urgent_Access_Log!O1:P1" : "Urgent_Access_Log!A1:P1";
+  const headerValues = exists ? [["Created_By_Employee_Id", "Created_By_Name"]] : [["Created_At", "Ticket_Issued_Date", "Access_Operational_Date", "Action_Type", "Customer", "Doc_Id", "Booking_Row_Number", "Lot", "Slot_Code", "Slot_Number", "Start_Time", "Ticket_Count", "Reason", "Note", "Created_By_Employee_Id", "Created_By_Name"]];
+  await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: headerRange, valueInputOption: "USER_ENTERED", requestBody: { values: headerValues } });
 }
 
 export async function getUrgentAccessLogs() {
   await ensureUrgentAccessLogSheet();
   const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "Urgent_Access_Log!A2:N", valueRenderOption: "UNFORMATTED_VALUE" });
-  return (res.data.values || []).map((r) => ({ createdAt: String(r[0] || ""), ticketIssuedDate: typeof r[1] === "number" ? isoFromSerial(r[1]) : String(r[1] || ""), accessDate: typeof r[2] === "number" ? isoFromSerial(r[2]) : String(r[2] || ""), actionType: String(r[3] || ""), customer: String(r[4] || ""), docId: String(r[5] || ""), bookingRowNumber: Number(r[6] || 0), lot: String(r[7] || ""), slot: String(r[8] || ""), number: String(r[9] || ""), startTime: typeof r[10] === "number" ? minutesToTimeStr(serialToMinutes(r[10])) : String(r[10] || ""), ticketCount: Number(r[11] || 1), reason: String(r[12] || ""), note: String(r[13] || "") }));
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "Urgent_Access_Log!A2:P", valueRenderOption: "UNFORMATTED_VALUE" });
+  return (res.data.values || []).map((r) => ({ createdAt: String(r[0] || ""), ticketIssuedDate: typeof r[1] === "number" ? isoFromSerial(r[1]) : String(r[1] || ""), accessDate: typeof r[2] === "number" ? isoFromSerial(r[2]) : String(r[2] || ""), actionType: String(r[3] || ""), customer: String(r[4] || ""), docId: String(r[5] || ""), bookingRowNumber: Number(r[6] || 0), lot: String(r[7] || ""), slot: String(r[8] || ""), number: String(r[9] || ""), startTime: typeof r[10] === "number" ? minutesToTimeStr(serialToMinutes(r[10])) : String(r[10] || ""), ticketCount: Number(r[11] || 1), reason: String(r[12] || ""), note: String(r[13] || ""), createdByEmployeeId: String(r[14] || ""), createdByName: String(r[15] || "") }));
 }
 
-export async function appendUrgentAccessLogs({ customer, accessDate, entries, reason, note = "", actionType = "เปิดสิทธิ์จาก booking เดิม" }) {
-  if (!customer || !accessDate || !Array.isArray(entries) || entries.length === 0 || !reason) throw new Error("กรอกข้อมูลเปิดสิทธิ์ด่วนไม่ครบถ้วน");
+export async function appendUrgentAccessLogs({ customer, accessDate, entries, reason = "", note = "", actionType = "ตีตั๋วเพิ่มตามการจองเดิม", actor }) {
+  if (!customer || !accessDate || !Array.isArray(entries) || entries.length === 0) throw new Error("กรอกข้อมูลสิทธิ์ระหว่างวันไม่ครบถ้วน");
+  if (entries.some((entry) => !isBeforeOperationalBlockStart(accessDate, entry.startTime))) {
+    throw new Error("บันทึกสิทธิ์ระหว่างวันได้เฉพาะก่อนเวลาเริ่มรอบที่เลือก");
+  }
   await ensureUrgentAccessLogSheet();
   const docId = await lookupDocId(customer);
-  const rows = entries.map((entry) => [new Date().toISOString(), getCurrentOperationalDateIso(), accessDate, actionType, customer, docId, entry.rowNumber || "", entry.lot || "", entry.slot, entry.number || "", entry.startTime, 1, reason, note]);
+  const rows = entries.map((entry) => [new Date().toISOString(), getBangkokCalendarDateIso(), accessDate, actionType, customer, docId, entry.rowNumber || "", entry.lot || "", entry.slot, entry.number || "", entry.startTime, 1, reason, note, actor?.employeeId || "", actor?.name || ""]);
   const sheets = getSheetsClient();
-  await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: "Urgent_Access_Log!A:N", valueInputOption: "USER_ENTERED", insertDataOption: "INSERT_ROWS", requestBody: { values: rows } });
+  await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: "Urgent_Access_Log!A:P", valueInputOption: "USER_ENTERED", insertDataOption: "INSERT_ROWS", requestBody: { values: rows } });
   return { ok: true, count: rows.length };
 }
 
@@ -586,7 +597,7 @@ export async function findConflict({ slot, startDate, endDate, startTime, exclud
 // ตรวจสอบสถานะและ Time Conflict ทุกช่องล่วงหน้าก่อนบันทึก
 // ช่องที่ baseStatus เป็นปิด หรือ status เป็นปิด ต้องห้ามจอง แม้ยังไม่มี Slot_Status_Log
 // ใช้ append ต่อท้ายตาม Apps Script production
-export async function createBookingBatch({ customer, lot, slots, startDate, endDate, startTime, startTimes, reason = "จองใหม่" }) {
+export async function createBookingBatch({ customer, lot, slots, startDate, endDate, startTime, startTimes, reason = "จองใหม่", actor }) {
   const slotList = Array.isArray(slots) ? slots : [slots];
   const timeList = Array.isArray(startTimes) && startTimes.length > 0 ? startTimes : [startTime];
   if (!customer || !lot || slotList.length === 0 || !startDate || !endDate || timeList.some((time) => !time)) {
@@ -636,13 +647,14 @@ export async function createBookingBatch({ customer, lot, slots, startDate, endD
   const endEff = endDate;
   const rowsToAppend = orderedSlotList.flatMap((slot) => orderedTimeList.map((time) => {
     const startMin = toOperationalMinutes(serialToMinutes(time));
-    return [customer, docId, lot, slot, startDate, endDate, endEff, time, minutesToTimeStr(startMin + 240), reason];
+    return [customer, docId, lot, slot, startDate, endDate, endEff, time, minutesToTimeStr(startMin + 240), reason, actor?.employeeId || "", actor?.name || ""];
   }));
 
   const sheets = getSheetsClient();
+  await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: "Booking_Input!K1:L1", valueInputOption: "USER_ENTERED", requestBody: { values: [["Created_By_Employee_Id", "Created_By_Name"]] } });
   const res = await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
-    range: "Booking_Input!A:J",
+    range: "Booking_Input!A:L",
     valueInputOption: "USER_ENTERED",
     insertDataOption: "INSERT_ROWS",
     requestBody: {
@@ -661,7 +673,7 @@ export async function createBooking(params) {
 }
 
 // ปิดแถวเดิม (ยกเลิก / ลดจำนวนช่อง) พร้อมบันทึก Booking_Change_Log
-export async function closeBookingRow({ rowNumber, endDate, reason }) {
+export async function closeBookingRow({ rowNumber, endDate, reason, actor }) {
   const sheets = getSheetsClient();
   const oldRow = await getBookingRow(rowNumber);
 
@@ -677,6 +689,7 @@ export async function closeBookingRow({ rowNumber, endDate, reason }) {
     newStartDate: oldRow?.startDate || "",
     newEndDate: endDate,
     newStartTime: oldRow?.startTime || "",
+    actor,
   });
 
   await sheets.spreadsheets.values.batchUpdate({
@@ -692,11 +705,11 @@ export async function closeBookingRow({ rowNumber, endDate, reason }) {
   return { ok: true };
 }
 
-export async function closeMultipleBookingRows(rowNumbers, endDate, reason) {
+export async function closeMultipleBookingRows(rowNumbers, endDate, reason, actor) {
   const outcomes = [];
   for (const rn of rowNumbers) {
     try {
-      await closeBookingRow({ rowNumber: rn, endDate, reason });
+      await closeBookingRow({ rowNumber: rn, endDate, reason, actor });
       outcomes.push({ rowNumber: rn, ok: true });
     } catch (err) {
       outcomes.push({ rowNumber: rn, ok: false, error: err.message });
@@ -784,6 +797,7 @@ export async function changeSlot({
   newStartDate,
   newEndDate,
   newStartTime,
+  actor,
 }) {
   const oldRow = await getBookingRow(oldRowNumber);
   if (!oldRow) throw new Error(`ไม่พบรายการจองเดิมแถวที่ ${oldRowNumber}`);
@@ -816,6 +830,7 @@ export async function changeSlot({
     rowNumber: oldRowNumber,
     endDate: effectiveOldEndDate,
     reason: "ย้ายออก (เปลี่ยนช่องจอด)",
+    actor,
   });
 
   // 4. สร้างการจองช่องใหม่
@@ -827,19 +842,20 @@ export async function changeSlot({
     endDate: effectiveNewEndDate,
     startTime: effectiveNewStartTime,
     reason: "ย้ายเข้า (เปลี่ยนช่องจอด)",
+    actor,
   });
 
   return { ok: true, createResult };
 }
 
 // ปิดช่องจอด + ปิดการจองที่ค้างอยู่ไปพร้อมกัน
-export async function closeSlotWithBookings({ slotCode, reason, bookingRowNumbersToClose }) {
-  await appendSlotStatusLog({ slotCode, action: "ปิด", reason });
+export async function closeSlotWithBookings({ slotCode, reason, bookingRowNumbersToClose, actor }) {
+  await appendSlotStatusLog({ slotCode, action: "ปิด", reason, actor });
   const today = isoFromSerial(getTodaySerial());
   const bookingResults = [];
   for (const rn of bookingRowNumbersToClose || []) {
     try {
-      await closeBookingRow({ rowNumber: rn, endDate: today, reason: `ปิดช่อง: ${reason}` });
+      await closeBookingRow({ rowNumber: rn, endDate: today, reason: `ปิดช่อง: ${reason}`, actor });
       bookingResults.push({ rowNumber: rn, ok: true });
     } catch (err) {
       bookingResults.push({ rowNumber: rn, ok: false, error: err.message });
@@ -849,8 +865,8 @@ export async function closeSlotWithBookings({ slotCode, reason, bookingRowNumber
 }
 
 // เปิดช่องจอดกลับมาใช้งาน
-export async function openSlot(slotCode) {
-  await appendSlotStatusLog({ slotCode, action: "เปิด", reason: "" });
+export async function openSlot(slotCode, actor) {
+  await appendSlotStatusLog({ slotCode, action: "เปิด", reason: "", actor });
   return { ok: true };
 }
 
@@ -1023,9 +1039,11 @@ export async function getDashboardData(dateStr) {
   activeByDoc.forEach((bookings, key) => {
     let availableTickets = ticketCountByDocId.get(key) || 0;
     bookings.sort((a, b) => {
-      const bySlot = String(slotNumberByCode.get(a.slot) || a.slot).localeCompare(String(slotNumberByCode.get(b.slot) || b.slot), "th", { numeric: true });
-      if (bySlot !== 0) return bySlot;
-      return toOperationalMinutes(a.startMinutes ?? serialToMinutes(a.startTime)) - toOperationalMinutes(b.startMinutes ?? serialToMinutes(b.startTime));
+      // จัดสิทธิ์ตามรอบก่อน เพื่อรองรับลูกค้าที่มากระจุกในรอบเดียวกัน
+      // แล้วจึงเรียงช่องเลขน้อยก่อนภายในรอบนั้น
+      const byTime = toOperationalMinutes(a.startMinutes ?? serialToMinutes(a.startTime)) - toOperationalMinutes(b.startMinutes ?? serialToMinutes(b.startTime));
+      if (byTime !== 0) return byTime;
+      return String(slotNumberByCode.get(a.slot) || a.slot).localeCompare(String(slotNumberByCode.get(b.slot) || b.slot), "th", { numeric: true });
     });
     bookings.forEach((b) => {
       const isPaid = availableTickets > 0;
@@ -1057,7 +1075,7 @@ export async function getDashboardData(dateStr) {
     const booking = activeBookings.find((b) => b.slot === log.slot && b.startTime === log.startTime && (log.bookingRowNumber ? b.rowNumber === log.bookingRowNumber : true));
     if (!booking) return;
     const key = `${booking.slot}::${booking.startTime}`;
-    if (!existingKeys.has(key)) { paidBookings.push({ slot: booking.slot, lot: booking.lot, customer: booking.customer, docId: booking.docId, startDate: booking.startDate, endDate: booking.endDate, startTime: booking.startTime, endTime: booking.endTime, startMin: booking.startMinutes, endMin: booking.endMinutes, isPaid: true, isUrgent: true }); existingKeys.add(key); }
+    if (!existingKeys.has(key)) { paidBookings.push({ slot: booking.slot, lot: booking.lot, customer: booking.customer, docId: booking.docId, startDate: booking.startDate, endDate: booking.endDate, startTime: booking.startTime, endTime: booking.endTime, startMin: booking.startMinutes, endMin: booking.endMinutes, isPaid: true, isUrgent: true, createdAt: log.createdAt, actionType: log.actionType, note: log.note }); existingKeys.add(key); }
   });
 
   const slots = slotsWithStatus.map((s) => ({

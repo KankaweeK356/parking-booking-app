@@ -9,7 +9,8 @@ function nextDay(dateStr) {
 }
 
 export default async function handler(req, res) {
-  if (!(await requireRole(req, res, [ROLE.ADMIN, ROLE.CS]))) return;
+  const session = await requireRole(req, res, [ROLE.ADMIN, ROLE.CS]);
+  if (!session) return;
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
   const {
     oldRowNumber,
@@ -36,6 +37,7 @@ export default async function handler(req, res) {
       newStartDate: nextDay(getCurrentOperationalDateIso()),
       newEndDate,
       newStartTime,
+      actor: session,
     });
     return res.status(200).json(result);
   } catch (err) {

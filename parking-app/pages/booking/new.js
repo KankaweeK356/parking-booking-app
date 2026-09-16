@@ -2,9 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import OperationalTimePicker from "../../components/OperationalTimePicker";
 import EndDateField from "../../components/EndDateField";
+import { getCurrentOperationalDateIso } from "../../lib/operational-day";
 
-function today() {
-  return new Date().toISOString().slice(0, 10);
+function defaultStartDate() {
+  const date = new Date(`${getCurrentOperationalDateIso()}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString().slice(0, 10);
 }
 
 export default function NewBooking() {
@@ -14,12 +17,14 @@ export default function NewBooking() {
   const [customer, setCustomer] = useState("");
   const [lot, setLot] = useState("");
   const [selectedSlots, setSelectedSlots] = useState([]);
-  const [startDate, setStartDate] = useState(today());
+  const [startDate, setStartDate] = useState(defaultStartDate());
   const [endDate, setEndDate] = useState("");
   const [startTimes, setStartTimes] = useState(["07:00"]);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null); // { ok, error, message }
   const [loadError, setLoadError] = useState("");
+  const [existingBookings, setExistingBookings] = useState([]);
+  const [referenceRow, setReferenceRow] = useState(null);
 
   function loadFormData() {
     setLoadError("");
@@ -42,6 +47,11 @@ export default function NewBooking() {
   }
 
   useEffect(() => { loadFormData(); }, []);
+  useEffect(() => {
+    setReferenceRow(null); setExistingBookings([]);
+    if (!customer) return;
+    fetch(`/api/bookings?customer=${encodeURIComponent(customer)}`).then((r) => r.ok ? r.json() : []).then((rows) => setExistingBookings(Array.isArray(rows) ? rows : []));
+  }, [customer]);
 
   const slotsInLot = useMemo(() => slots.filter((s) => s.lot === lot), [slots, lot]);
 
@@ -117,10 +127,13 @@ export default function NewBooking() {
               ))}
             </select>
 
+            {existingBookings.length > 0 && <div className="existing-rights"><label>สิทธิ์ที่ลูกค้ามีอยู่ (เลือกเป็นรายการอ้างอิงได้)</label>{existingBookings.map((booking) => <button key={booking.rowNumber} type="button" className={`booking-row ${referenceRow?.rowNumber === booking.rowNumber ? "selected" : ""}`} onClick={() => { setReferenceRow(booking); setEndDate(booking.endDate || ""); setLot(booking.lot || lot); }}><span>{booking.lot} / ช่อง {slots.find((slot) => slot.slotCode === booking.slot)?.number || "-"} / รอบ {booking.startTime} / ถึง {booking.endDate}</span></button>)}</div>}
+            {referenceRow && <p className="subtitle">กำลังเพิ่มช่องจากรายการอ้างอิง โดยวันเริ่มตั้งต้นเป็นวันถัดไป 07:00 และใช้วันสิ้นสุดเดิมเป็นค่าเริ่มต้น แก้ไขได้</p>}
+
             <label>ลาน</label>
             <select value={lot} onChange={(e) => { setLot(e.target.value); setSelectedSlots([]); }}>
               {lots.map((l) => (
-                <option key={l} value={l}>ลาน {l}</option>
+                <option key={l} value={l}>{l}</option>
               ))}
             </select>
 

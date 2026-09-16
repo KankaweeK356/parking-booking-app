@@ -483,6 +483,8 @@ input[type="password"] {
   font-weight: 700;
 }
 
+.timeline-cell small { display: block; margin-top: 3px; font-size: 11px; font-weight: 600; }
+
 .timeline-vacant { background: #e9f5ee; color: var(--green); }
 .timeline-booked { background: #fee2e2; color: #991b1b; }
 .timeline-ticket-check { background: #ffedd5; color: #c2410c; }
@@ -492,6 +494,15 @@ input[type="password"] {
 .stat-ticket-check { background: #ffedd5; border-color: #fdba74; }
 .stat-expired { background: #fef3c7; border-color: #fcd34d; }
 .dashboard-current-block { font-size: 14px; font-weight: 700; color: var(--navy-dark); margin: 0 0 10px; }
+.status-legend, .mobile-status-summary { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
+.status-legend span, .mobile-status-summary span { border-radius: 6px; padding: 6px 9px; font-size: 12px; font-weight: 700; }
+.dashboard-attention h2 { margin: 0 0 12px; font-size: 16px; }
+.attention-list { display: grid; gap: 8px; }
+.attention-item { display: grid; grid-template-columns: 82px 1fr; gap: 2px 10px; border-radius: 8px; padding: 10px 12px; }
+.attention-item small { grid-column: 2; font-size: 12px; }
+.attention-item.ticket-check { background: #ffedd5; color: #9a3412; }
+.attention-item.expired { background: #fef3c7; color: #854d0e; }
+.mobile-full-grid summary { cursor: pointer; font-weight: 700; color: var(--navy-dark); margin-bottom: 12px; }
 
 .future-booking-list {
   display: grid;
@@ -505,5 +516,7 @@ input[type="password"] {
   .timeline-controls > div { width: 100%; }
   .refresh-button { align-self: stretch; }
   .timeline-grid { min-width: 820px; }
+  .mobile-status-summary span { flex: 1 1 135px; text-align: center; }
+  .mobile-full-grid { padding: 12px; }
 }
 

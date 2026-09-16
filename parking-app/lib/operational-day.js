@@ -31,6 +31,32 @@ export function getCurrentOperationalDateIso(now = new Date()) {
   return date.toISOString().slice(0, 10);
 }
 
+// วันที่สำหรับสิทธิ์ระหว่างวันต้องอ้างอิง "รอบถัดไปที่ยังไม่เริ่ม":
+// 00:00–02:59 ยังเตรียมรอบ 03:00 ของ operational day เดิม,
+// 03:00–06:59 เตรียมรอบ 07:00 ของ operational day ใหม่
+export function getUrgentAccessDefaultDateIso(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23" }).formatToParts(now);
+  const value = (type) => parts.find((part) => part.type === type)?.value;
+  const date = new Date(Date.UTC(Number(value("year")), Number(value("month")) - 1, Number(value("day"))));
+  if (Number(value("hour")) < 3) date.setUTCDate(date.getUTCDate() - 1);
+  return date.toISOString().slice(0, 10);
+}
+
+export function getBangkokCalendarDateIso(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now);
+  const value = (type) => parts.find((part) => part.type === type)?.value;
+  return `${value("year")}-${value("month")}-${value("day")}`;
+}
+
+export function isBeforeOperationalBlockStart(accessDate, startTime, now = new Date()) {
+  if (!accessDate || !isOperationalTimeBlock(startTime)) return false;
+  const [hour, minute] = String(startTime).split(":").map(Number);
+  const [year, month, day] = String(accessDate).split("-").map(Number);
+  // Bangkok ไม่มี daylight-saving time และรอบ 03:00 อยู่วันปฏิทินถัดไป
+  const target = new Date(Date.UTC(year, month - 1, day + (hour < 7 ? 1 : 0), hour - 7, minute));
+  return now.getTime() < target.getTime();
+}
+
 export function getCurrentOperationalBlock(now = new Date()) {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(now);
   const value = (type) => Number(parts.find((part) => part.type === type)?.value || 0);

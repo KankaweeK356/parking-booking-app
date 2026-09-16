@@ -5,7 +5,8 @@ import {
 import { requireRole, ROLE } from "../../lib/auth";
 
 export default async function handler(req, res) {
-  if (!(await requireRole(req, res, [ROLE.ADMIN, ROLE.CS]))) return;
+  const session = await requireRole(req, res, [ROLE.ADMIN, ROLE.CS]);
+  if (!session) return;
   if (req.method === "GET") {
     const { customer } = req.query;
     if (!customer) return res.status(400).json({ error: "ต้องระบุ customer" });
@@ -34,6 +35,7 @@ export default async function handler(req, res) {
         startTime: timeList[0],
         startTimes: timeList,
         reason: reason || "จองใหม่",
+        actor: session,
       });
       return res.status(200).json({ ok: true, ...result });
     } catch (err) {

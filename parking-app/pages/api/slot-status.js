@@ -7,7 +7,8 @@ import {
 import { requireRole, ROLE } from "../../lib/auth";
 
 export default async function handler(req, res) {
-  if (!(await requireRole(req, res, [ROLE.ADMIN, ROLE.CS]))) return;
+  const session = await requireRole(req, res, [ROLE.ADMIN, ROLE.CS]);
+  if (!session) return;
   if (req.method === "GET") {
     const { slot } = req.query;
     if (!slot) return res.status(400).json({ error: "ต้องระบุ slot" });
@@ -38,7 +39,7 @@ export default async function handler(req, res) {
 
     try {
       if (action === "เปิด") {
-        await openSlot(slotCode);
+        await openSlot(slotCode, session);
         return res.status(200).json({ ok: true });
       }
 
@@ -48,11 +49,12 @@ export default async function handler(req, res) {
           slotCode,
           reason,
           bookingRowNumbersToClose,
+          actor: session,
         });
         return res.status(200).json(result);
       }
 
-      await appendSlotStatusLog({ slotCode, action, reason });
+      await appendSlotStatusLog({ slotCode, action, reason, actor: session });
       return res.status(200).json({ ok: true });
     } catch (err) {
       return res.status(500).json({ error: err.message });
