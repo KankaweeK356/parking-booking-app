@@ -1,7 +1,9 @@
 import { appendUrgentAccessLogs, createBookingBatch, getActiveBookingsForCustomer, getDashboardData, getSlotsWithStatus, getUrgentAccessLogs } from "../../../lib/sheets";
 import { getCurrentOperationalDateIso } from "../../../lib/operational-day";
+import { requireRole, ROLE } from "../../../lib/auth";
 
 export default async function handler(req, res) {
+  if (!(await requireRole(req, res, [ROLE.ADMIN, ROLE.CS]))) return;
   const accessDate = req.query.date || getCurrentOperationalDateIso();
   if (req.method === "GET") {
     const { customer } = req.query;

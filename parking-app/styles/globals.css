@@ -339,6 +339,22 @@ table.data-table tr:hover td {
   background: #fef3c7;
   border-color: #fcd34d;
 }
+input[type="password"] {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 15px;
+  background: white;
+  font-family: inherit;
+  color: var(--text);
+}
+.auth-page { min-height: 100vh; display: grid; place-items: center; padding: 20px; }
+.auth-card { width: min(100%, 420px); background: white; border: 1px solid var(--border); border-radius: 12px; padding: 28px; }
+.auth-card h1 { color: var(--navy); margin-top: 0; }
+.auth-link { margin: 20px 0 0; font-size: 14px; }
+.session-bar { background: #fff7ed; color: #9a3412; font-size: 13px; padding: 8px 16px; text-align: right; border-bottom: 1px solid #fed7aa; }
+.session-bar button { margin-left: 12px; border: 0; background: transparent; color: var(--navy); font: inherit; font-weight: 700; cursor: pointer; }
 
 .home-section-title {
   margin: 32px 0 14px;

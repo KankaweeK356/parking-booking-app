@@ -1,14 +1,20 @@
-import { closeBookingRow, closeMultipleBookingRows } from "../../../lib/sheets";
+import { appendDailyAdjustments, closeBookingRow, closeMultipleBookingRows } from "../../../lib/sheets";
+import { requireRole, ROLE } from "../../../lib/auth";
 
 export default async function handler(req, res) {
+  if (!(await requireRole(req, res, [ROLE.ADMIN, ROLE.CS]))) return;
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
-  const { rowNumber, rowNumbers, endDate, reason } = req.body || {};
+  const { rowNumber, rowNumbers, endDate, reason, adjustmentDate } = req.body || {};
 
   if ((!rowNumber && (!Array.isArray(rowNumbers) || rowNumbers.length === 0)) || !endDate || !reason) {
     return res.status(400).json({ error: "ต้องระบุ rowNumber (หรือ rowNumbers), วันสิ้นสุด และเหตุผล" });
   }
 
   try {
+    if (adjustmentDate && Array.isArray(rowNumbers) && rowNumbers.length > 0) {
+      await appendDailyAdjustments({ rowNumbers, effectiveDate: adjustmentDate, reason });
+      return res.status(200).json({ ok: true, outcomes: rowNumbers.map((item) => ({ rowNumber: item, ok: true })) });
+    }
     if (Array.isArray(rowNumbers) && rowNumbers.length > 0) {
       const outcomes = await closeMultipleBookingRows(rowNumbers, endDate, reason);
       return res.status(200).json({ ok: true, outcomes });

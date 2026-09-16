@@ -1,6 +1,8 @@
 import { getRequiredSummary } from "../../lib/sheets";
+import { requireRole, ROLE } from "../../lib/auth";
 
 export default async function handler(req, res) {
+  if (!(await requireRole(req, res, [ROLE.ADMIN, ROLE.CS]))) return;
   if (req.method === "GET") {
     const { date } = req.query;
     try {

@@ -125,26 +125,106 @@ export function isClosingReason(reason) {
   return r.includes("ยกเลิก") || r.includes("ย้ายออก") || r.includes("ปิดช่อง");
 }
 
-// ---------- Master (รายชื่อลูกค้า) ----------
+// ---------- Tbt_ServiceCharge (รายชื่อลูกค้าที่ MIS อนุญาตให้จอง) ----------
 
 export async function getMasterList() {
   const sheets = getSheetsClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: `Master!A${MASTER_FIRST_ROW}:C`,
+    range: "Tbt_ServiceCharge!A1:Z",
     valueRenderOption: "UNFORMATTED_VALUE",
   });
   const rows = res.data.values || [];
-  return rows
-    .filter((r) => r[0] && r[1])
-    .map((r) => ({ docId: String(r[0]).trim(), name: String(r[1]).trim(), status: r[2] ? String(r[2]).trim() : "" }))
-    .filter((c) => c.status === "Normal" || c.status === "");
+  if (rows.length < 2) throw new Error("ข้อมูลลูกค้าจาก MIS กำลังอัปเดต กรุณากด Refresh อีกครั้ง");
+  const headers = rows[0].map((value) => String(value || "").trim().toLowerCase());
+  const docIdIdx = headers.indexOf("docid");
+  const nameIdx = headers.indexOf("description");
+  if (docIdIdx === -1 || nameIdx === -1) throw new Error('ไม่พบคอลัมน์ "DocId" หรือ "Description" ใน Tbt_ServiceCharge');
+  const customers = rows.slice(1)
+    .filter((r) => r[docIdIdx] && r[nameIdx])
+    .map((r) => ({ docId: String(r[docIdIdx]).trim(), name: String(r[nameIdx]).trim(), status: "Normal" }));
+  if (customers.length === 0) throw new Error("ข้อมูลลูกค้าจาก MIS กำลังอัปเดต กรุณากด Refresh อีกครั้ง");
+  return customers;
 }
 
 export async function lookupDocId(customerName) {
   const master = await getMasterList();
   const found = master.find((m) => m.name === customerName);
   return found ? found.docId : "";
+}
+
+// ---------- Employee accounts ----------
+const EMPLOYEE_HEADERS = ["Employee_Id", "Name", "Department", "Role", "Active"];
+const USER_HEADERS = ["Employee_Id", "Password_Hash", "Registered_At", "Last_Login_At", "Active", "Session_Version", "Must_Change_Password", "Temporary_Password_Expires_At"];
+const RESET_HEADERS = ["Created_At", "Employee_Id", "Reset_By", "Expires_At", "Status"];
+
+async function ensureSheet(title, headers, firstRow) {
+  const sheets = getSheetsClient();
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID });
+  const names = (meta.data.sheets || []).map((sheet) => sheet.properties?.title);
+  if (!names.includes(title)) {
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId: SHEET_ID, requestBody: { requests: [{ addSheet: { properties: { title } } }] } });
+    await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: `${title}!A1`, valueInputOption: "USER_ENTERED", requestBody: { values: [headers] } });
+  }
+  if (title === "Employee_Directory") {
+    const existing = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${title}!A2:E`, valueRenderOption: "UNFORMATTED_VALUE" });
+    if (!(existing.data.values || []).some((row) => String(row[0]) === "2709")) {
+      await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: `${title}!A${firstRow}:E`, valueInputOption: "USER_ENTERED", insertDataOption: "INSERT_ROWS", requestBody: { values: [["2709", "กันต์กวี แก้วแกมคง", "พัฒนากระบวนการ", "Admin", "ใช้งาน"]] } });
+    }
+  }
+}
+
+export async function ensureAuthSheets() {
+  await ensureSheet("Employee_Directory", EMPLOYEE_HEADERS, 2);
+  await ensureSheet("User_Accounts", USER_HEADERS, 2);
+  await ensureSheet("Password_Reset_Log", RESET_HEADERS, 2);
+}
+
+export async function getEmployeeDirectory() {
+  await ensureAuthSheets();
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "Employee_Directory!A2:E", valueRenderOption: "UNFORMATTED_VALUE" });
+  return (res.data.values || []).filter((row) => row[0]).map((row, index) => ({ rowNumber: index + 2, employeeId: String(row[0]).trim(), name: String(row[1] || "").trim(), department: String(row[2] || "").trim(), role: String(row[3] || "Field").trim(), active: ["ใช้งาน", "active", "true", "1"].includes(String(row[4] || "").trim().toLowerCase()) }));
+}
+
+export async function getUserAccounts() {
+  await ensureAuthSheets();
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "User_Accounts!A2:H", valueRenderOption: "UNFORMATTED_VALUE" });
+  return (res.data.values || []).filter((row) => row[0]).map((row, index) => ({ rowNumber: index + 2, employeeId: String(row[0]).trim(), passwordHash: String(row[1] || ""), registeredAt: String(row[2] || ""), lastLoginAt: String(row[3] || ""), active: ["ใช้งาน", "active", "true", "1"].includes(String(row[4] || "").trim().toLowerCase()), sessionVersion: String(row[5] || "1"), mustChangePassword: ["ใช่", "true", "1"].includes(String(row[6] || "").trim().toLowerCase()), temporaryPasswordExpiresAt: String(row[7] || "") }));
+}
+
+export async function getEmployeeUser(employeeId) {
+  const [employees, users] = await Promise.all([getEmployeeDirectory(), getUserAccounts()]);
+  const employee = employees.find((item) => item.employeeId === String(employeeId));
+  const account = users.find((item) => item.employeeId === String(employeeId));
+  return employee ? { ...employee, account } : null;
+}
+
+export async function createUserAccount({ employeeId, passwordHash }) {
+  const existing = await getEmployeeUser(employeeId);
+  if (!existing || !existing.active) throw new Error("ไม่พบรหัสพนักงานที่เปิดใช้งาน กรุณาติดต่อ Admin");
+  if (existing.account) throw new Error("รหัสพนักงานนี้สมัครใช้งานแล้ว");
+  const sheets = getSheetsClient();
+  await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: "User_Accounts!A2:H", valueInputOption: "USER_ENTERED", insertDataOption: "INSERT_ROWS", requestBody: { values: [[employeeId, passwordHash, new Date().toISOString(), "", "ใช้งาน", "1", "ไม่", ""]] } });
+  return getEmployeeUser(employeeId);
+}
+
+export async function updateUserAccount(employeeId, values) {
+  const account = (await getUserAccounts()).find((item) => item.employeeId === String(employeeId));
+  if (!account) throw new Error("ไม่พบบัญชีผู้ใช้");
+  const sheets = getSheetsClient();
+  const current = [account.employeeId, account.passwordHash, account.registeredAt, account.lastLoginAt, account.active ? "ใช้งาน" : "ปิดใช้งาน", account.sessionVersion, account.mustChangePassword ? "ใช่" : "ไม่", account.temporaryPasswordExpiresAt];
+  const next = { passwordHash: current[1], lastLoginAt: current[3], active: current[4], sessionVersion: current[5], mustChangePassword: current[6], temporaryPasswordExpiresAt: current[7], ...values };
+  await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: `User_Accounts!A${account.rowNumber}:H${account.rowNumber}`, valueInputOption: "USER_ENTERED", requestBody: { values: [[employeeId, next.passwordHash, current[2], next.lastLoginAt, next.active, next.sessionVersion, next.mustChangePassword, next.temporaryPasswordExpiresAt]] } });
+}
+
+export async function appendPasswordResetLog({ employeeId, resetBy }) {
+  await ensureAuthSheets();
+  const sheets = getSheetsClient();
+  const now = new Date();
+  const expiry = new Date(now.getTime() + 15 * 60 * 1000);
+  await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: "Password_Reset_Log!A2:E", valueInputOption: "USER_ENTERED", insertDataOption: "INSERT_ROWS", requestBody: { values: [[now.toISOString(), employeeId, resetBy, expiry.toISOString(), "รหัสชั่วคราวออกแล้ว"]] } });
 }
 
 // ---------- Slot_Master (A:E) + Slot_Status_Log ----------
@@ -320,6 +400,25 @@ export async function appendBookingChangeLog({
       ]],
     },
   });
+}
+
+// ---------- Booking_Adjustment_Log (ลดเฉพาะวัน) ----------
+export async function ensureAdjustmentLogSheet() {
+  await ensureSheet("Booking_Adjustment_Log", ["Created_At", "Effective_Date", "Action", "Booking_Row_Number", "Reason"], 2);
+}
+
+export async function appendDailyAdjustments({ rowNumbers, effectiveDate, reason = "ลดสิทธิ์เฉพาะวัน" }) {
+  await ensureAdjustmentLogSheet();
+  const sheets = getSheetsClient();
+  const rows = rowNumbers.map((rowNumber) => [new Date().toISOString(), effectiveDate, "ลดเฉพาะวัน", rowNumber, reason]);
+  await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: "Booking_Adjustment_Log!A2:E", valueInputOption: "USER_ENTERED", insertDataOption: "INSERT_ROWS", requestBody: { values: rows } });
+}
+
+export async function getAdjustedBookingRows(dateStr) {
+  await ensureAdjustmentLogSheet();
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "Booking_Adjustment_Log!A2:E", valueRenderOption: "UNFORMATTED_VALUE" });
+  return new Set((res.data.values || []).filter((row) => isoFromSerial(row[1]) === dateStr || String(row[1] || "") === dateStr).filter((row) => String(row[2] || "").includes("ลด")).map((row) => Number(row[3])).filter(Boolean));
 }
 
 // ---------- Urgent_Access_Log ----------
@@ -765,13 +864,13 @@ export async function getRequiredSummary(dateStr) {
   const targetSerial = selectedSerial + 1; // วันที่ X + 1
   const targetDateStr = isoFromSerial(targetSerial);
 
-  const allBookings = await getAllBookingRows();
+  const [allBookings, adjustedRows] = await Promise.all([getAllBookingRows(), getAdjustedBookingRows(targetDateStr)]);
 
   const countMap = {}; // key: docId (หรือชื่อลูกค้าถ้าไม่มี docId)
   for (const b of allBookings) {
     if (!b.startSerial) continue;
     const endEff = b.endEffectiveSerial !== null && b.endEffectiveSerial !== undefined ? b.endEffectiveSerial : FAR_FUTURE_SERIAL;
-    if (b.startSerial <= targetSerial && targetSerial <= endEff) {
+    if (!adjustedRows.has(b.rowNumber) && b.startSerial <= targetSerial && targetSerial <= endEff) {
       const key = b.docId || b.customer;
       if (!countMap[key]) {
         countMap[key] = {
@@ -796,23 +895,23 @@ export async function getRequiredSummary(dateStr) {
   };
 }
 
-// ---------- Transection (รายการจ่ายเงิน) ----------
-// อ่านตามชื่อหัวคอลัมน์ BoothCode และ DocDate (ไม่ยึดตำแหน่งคอลัมน์ตายตัว)
+// ---------- tbt_DailyFee (รายการตั๋วจาก MIS) ----------
+// อ่านตามชื่อหัวคอลัมน์ BoothCode และ Docdate โดยไม่สนตัวพิมพ์เล็ก/ใหญ่
 // ต้อง throw error เมื่อ header หายหรือ API fail ห้ามคืน []
 export async function getTransectionRows() {
   const sheets = getSheetsClient();
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
-    range: "Transection!A1:Z",
+    range: "tbt_DailyFee!A1:Z",
     valueRenderOption: "UNFORMATTED_VALUE",
   });
   const rows = res.data.values || [];
   if (rows.length < 2) return [];
-  const headers = rows[0].map((h) => String(h || "").trim());
-  const boothCodeIdx = headers.indexOf("BoothCode");
-  const docDateIdx = headers.indexOf("DocDate");
+  const headers = rows[0].map((h) => String(h || "").trim().toLowerCase());
+  const boothCodeIdx = headers.indexOf("boothcode");
+  const docDateIdx = headers.indexOf("docdate");
   if (boothCodeIdx === -1 || docDateIdx === -1) {
-    throw new Error('ไม่พบคอลัมน์ "BoothCode" หรือ "DocDate" ในหัวตารางแท็บ Transection กรุณาตรวจสอบชื่อหัวตาราง');
+    throw new Error('ไม่พบคอลัมน์ "BoothCode" หรือ "Docdate" ในหัวตารางแท็บ tbt_DailyFee กรุณาตรวจสอบชื่อหัวตาราง');
   }
 
   return rows.slice(1).filter((r) => r[boothCodeIdx] && r[docDateIdx]).map((r) => {
@@ -831,16 +930,17 @@ export async function getTransectionRows() {
 export async function getCsOverviewData(dateStr) {
   const targetDateStr = dateStr || isoFromSerial(getTodaySerial());
   const targetSerial = isoDateToSerial(targetDateStr);
-  const [allBookings, slotsWithStatus] = await Promise.all([
+  const [allBookings, slotsWithStatus, adjustedRows] = await Promise.all([
     getAllBookingRows(),
     getSlotsWithStatus(),
+    getAdjustedBookingRows(targetDateStr),
   ]);
 
   const assignments = [];
   const futureAssignments = [];
   for (const b of allBookings) {
     const endEff = b.endEffectiveSerial !== null && b.endEffectiveSerial !== undefined ? b.endEffectiveSerial : FAR_FUTURE_SERIAL;
-    if (!b.startSerial || endEff < targetSerial) continue;
+    if (!b.startSerial || endEff < targetSerial || adjustedRows.has(b.rowNumber)) continue;
     const assignment = {
       slot: b.slot,
       customer: b.customer,
@@ -889,18 +989,19 @@ export async function getDashboardData(dateStr) {
   const dayBeforeSerial = targetSerial - 1;
   const dayBeforeStr = isoFromSerial(dayBeforeSerial);
 
-  const [allBookings, slotsWithStatus, transectionRows, urgentLogs] = await Promise.all([
+  const [allBookings, slotsWithStatus, transectionRows, urgentLogs, adjustedRows] = await Promise.all([
     getAllBookingRows(),
     getSlotsWithStatus(),
     getTransectionRows(),
     getUrgentAccessLogs(),
+    getAdjustedBookingRows(targetDateStr),
   ]);
 
   // หา bookings ที่ active ในวันเป้าหมาย
   const activeBookings = allBookings.filter((b) => {
     if (!b.startSerial) return false;
     const endEff = b.endEffectiveSerial !== null && b.endEffectiveSerial !== undefined ? b.endEffectiveSerial : FAR_FUTURE_SERIAL;
-    return b.startSerial <= targetSerial && targetSerial <= endEff;
+    return !adjustedRows.has(b.rowNumber) && b.startSerial <= targetSerial && targetSerial <= endEff;
   });
 
   // ตั๋ว 1 ใบ = 1 Transection row. ตั๋วด่วนของวันก่อนถูกหักออกก่อนให้สิทธิ์วันนี้

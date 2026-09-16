@@ -1,8 +1,12 @@
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export default function Home() {
   const [tab, setTab] = useState("booking");
+  const [user, setUser] = useState(null);
+  useEffect(() => { fetch("/api/auth/me").then((r) => r.ok ? r.json() : null).then((data) => setUser(data?.user || null)); }, []);
+  const canManage = user?.role === "Admin" || user?.role === "CS";
+  const canAdmin = user?.role === "Admin";
   return (
     <div>
       <div className="top-bar">
@@ -14,7 +18,7 @@ export default function Home() {
         <h2>เลือกงานที่ต้องการทำ</h2>
         <p className="subtitle">ข้อมูลทั้งหมดเชื่อมกับ Google Sheet โดยตรง บันทึกผลและอัปเดตแบบเรียลไทม์</p>
         <div className="home-tabs"><button className={`btn ${tab === "booking" ? "btn-primary" : "btn-secondary"}`} onClick={() => setTab("booking")}>การจัดการการจอง</button><button className={`btn ${tab === "field" ? "btn-primary" : "btn-secondary"}`} onClick={() => setTab("field")}>การตรวจสอบพื้นที่</button></div>
-        {tab === "booking" && <div className="nav-grid">
+        {tab === "booking" && canManage && <div className="nav-grid">
           <Link href="/booking/new" className="nav-card">
             <div className="title">📝 จองใหม่ / เพิ่มช่องจอด</div>
             <div className="desc">บันทึกการจองใหม่ เลือกหลายช่องและหลายรอบพร้อมกันได้</div>
@@ -36,7 +40,9 @@ export default function Home() {
             <div className="desc">ดูชื่อลูกค้าที่ได้รับสิทธิ์ในแต่ละช่องและรอบเวลา</div>
           </Link>
           <Link href="/booking/urgent" className="nav-card"><div className="title">⚡ จัดการสิทธิ์ระหว่างวัน</div><div className="desc">เปิดสิทธิ์การจองเดิม หรือเพิ่มการจองระหว่างวัน</div></Link>
+          {canAdmin && <Link href="/admin/users" className="nav-card"><div className="title">👤 จัดการผู้ใช้</div><div className="desc">ดูบัญชีพนักงานและ reset Password</div></Link>}
         </div>}
+        {tab === "booking" && user && !canManage && <div className="card"><p className="subtitle">บัญชีทีมตรวจพื้นที่มีสิทธิ์ดูเฉพาะการตรวจสอบพื้นที่</p></div>}
         {tab === "field" && <div className="nav-grid">
           <Link href="/dashboard" className="nav-card">
             <div className="title">📊 ติดตามสถานะลานจอด</div>

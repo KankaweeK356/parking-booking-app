@@ -2,8 +2,10 @@ import {
   getActiveBookingsForCustomer,
   createBookingBatch,
 } from "../../lib/sheets";
+import { requireRole, ROLE } from "../../lib/auth";
 
 export default async function handler(req, res) {
+  if (!(await requireRole(req, res, [ROLE.ADMIN, ROLE.CS]))) return;
   if (req.method === "GET") {
     const { customer } = req.query;
     if (!customer) return res.status(400).json({ error: "ต้องระบุ customer" });

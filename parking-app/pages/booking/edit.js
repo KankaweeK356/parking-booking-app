@@ -35,6 +35,7 @@ export default function EditBooking() {
   // === State สำหรับ "ลดจำนวนช่อง / ยกเลิกบางช่วงเวลา" ===
   const [selectedReduceRows, setSelectedReduceRows] = useState([]);
   const [reduceEndDate, setReduceEndDate] = useState(today());
+  const [reduceMode, setReduceMode] = useState("permanent");
   const [reduceResults, setReduceResults] = useState(null);
   const [submittingReduce, setSubmittingReduce] = useState(false);
 
@@ -135,7 +136,8 @@ export default function EditBooking() {
         body: JSON.stringify({
           rowNumbers: selectedReduceRows,
           endDate: reduceEndDate,
-      reason: "ยกเลิกสิทธิ์",
+          adjustmentDate: reduceMode === "day" ? getNextDay(today()) : "",
+          reason: reduceMode === "day" ? "ลดสิทธิ์เฉพาะวัน" : "ยกเลิกสิทธิ์",
         }),
       });
       const data = await res.json();
@@ -357,7 +359,8 @@ export default function EditBooking() {
               </div>
 
               <label>วันสุดท้ายที่ยังใช้สิทธิ์ได้</label>
-              <input type="date" value={reduceEndDate} readOnly />
+              <div className="type-grid"><button type="button" className={`type-btn ${reduceMode === "permanent" ? "active" : ""}`} onClick={() => setReduceMode("permanent")}>ลด/ยกเลิกถาวร</button><button type="button" className={`type-btn ${reduceMode === "day" ? "active" : ""}`} onClick={() => setReduceMode("day")}>ลดเฉพาะวันถัดไป</button></div>
+              {reduceMode === "permanent" ? <input type="date" value={reduceEndDate} readOnly /> : <p className="alert alert-warning">รายการที่เลือกจะไม่ใช้สิทธิ์เฉพาะวันที่ {getNextDay(today())} และกลับมาใช้ตามการจองเดิมในวันถัดไป</p>}
 
               <div className="btn-row">
                 <button

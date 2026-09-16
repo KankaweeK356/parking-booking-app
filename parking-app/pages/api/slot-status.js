@@ -4,8 +4,10 @@ import {
   closeSlotWithBookings,
   openSlot,
 } from "../../lib/sheets";
+import { requireRole, ROLE } from "../../lib/auth";
 
 export default async function handler(req, res) {
+  if (!(await requireRole(req, res, [ROLE.ADMIN, ROLE.CS]))) return;
   if (req.method === "GET") {
     const { slot } = req.query;
     if (!slot) return res.status(400).json({ error: "ต้องระบุ slot" });
