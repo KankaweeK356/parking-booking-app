@@ -1,4 +1,4 @@
-import { revalidateTag, unstable_cache } from "next/cache";
+import { unstable_cache } from "next/cache";
 import { getDashboardData, getPaymentRefreshState, getPaymentSnapshot } from "./sheets";
 
 // Dashboard เป็นข้อมูลเดียวกันสำหรับผู้ใช้ที่ผ่านการยืนยันสิทธิ์แล้ว
@@ -27,5 +27,8 @@ export function getPaymentUpdateCached(date) {
 }
 
 export function invalidateDashboardCache() {
-  revalidateTag("parking-dashboard");
+  // Pages Router API routes do not provide the static-generation store that
+  // revalidateTag requires. Calling it after a successful write throws and
+  // incorrectly tells the user that the booking failed. The 60-second cache
+  // lifetime above is the intentional fallback for Dashboard and Mobile.
 }
