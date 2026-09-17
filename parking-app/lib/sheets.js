@@ -1198,7 +1198,7 @@ export async function getDashboardData(dateStr) {
   const currentBlockStart = getCurrentOperationalBlock().startTime;
   urgentLogs.filter((log) => log.accessDate === targetDateStr && !(targetDateStr === currentOperationalDate && toOperationalMinutes(log.startTime ? serialToMinutes(log.startTime) : 0) < toOperationalMinutes(serialToMinutes(currentBlockStart)))).forEach((log) => {
     const booking = activeBookings.find((b) => b.slot === log.slot && b.startTime === log.startTime && (log.bookingRowNumber ? b.rowNumber === log.bookingRowNumber : true));
-    if (!booking) return;
+    if (!booking || isClosingReason(booking.reason)) return;
     const key = `${booking.slot}::${booking.startTime}`;
     const paidIndex = paidBookings.findIndex((item) => `${item.slot}::${item.startTime}` === key);
     if (paidIndex >= 0) paidBookings.splice(paidIndex, 1);
