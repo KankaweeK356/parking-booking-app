@@ -4,7 +4,7 @@ import { createSession, hashPassword, sessionCookie, validateEmployeeId, validat
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
   const { employeeId, password, confirmPassword } = req.body || {};
-  if (!validateEmployeeId(employeeId)) return res.status(400).json({ error: "รหัสพนักงานต้องเป็นตัวเลข 4 หลัก" });
+  if (!validateEmployeeId(employeeId)) return res.status(400).json({ error: "รหัสพนักงานไม่ถูกต้อง" });
   if (!validatePassword(password)) return res.status(400).json({ error: "Password ต้องเป็นตัวเลข 5 หลัก" });
   if (password !== confirmPassword) return res.status(400).json({ error: "ยืนยัน Password ไม่ตรงกัน" });
   try {

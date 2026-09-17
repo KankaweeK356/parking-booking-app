@@ -223,7 +223,18 @@ export async function getEmployeeDirectory() {
   await ensureAuthSheets();
   const sheets = getSheetsClient();
   const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "Employee_Directory!A2:E", valueRenderOption: "UNFORMATTED_VALUE" });
-  return (res.data.values || []).filter((row) => row[0]).map((row, index) => ({ rowNumber: index + 2, employeeId: String(row[0]).trim(), name: String(row[1] || "").trim(), department: String(row[2] || "").trim(), role: String(row[3] || "Field").trim(), active: ["ใช้งาน", "active", "true", "1"].includes(String(row[4] || "").trim().toLowerCase()) }));
+  return (res.data.values || []).filter((row) => row[0]).map((row, index) => {
+    const rawStatus = String(row[4] || "").trim().toLowerCase();
+    const isInactive = ["ลาออก", "ระงับ", "ปิดใช้งาน", "ไม่ใช้งาน", "inactive", "false", "0"].includes(rawStatus);
+    return {
+      rowNumber: index + 2,
+      employeeId: String(row[0]).trim(),
+      name: String(row[1] || "").trim(),
+      department: String(row[2] || "").trim(),
+      role: String(row[3] || "Field").trim(),
+      active: !isInactive,
+    };
+  });
 }
 
 export async function getUserAccounts() {
@@ -242,8 +253,9 @@ export async function getEmployeeUser(employeeId) {
 
 export async function createUserAccount({ employeeId, passwordHash }) {
   const existing = await getEmployeeUser(employeeId);
-  if (!existing || !existing.active) throw new Error("ไม่พบรหัสพนักงานที่เปิดใช้งาน กรุณาติดต่อ Admin");
-  if (existing.account) throw new Error("รหัสพนักงานนี้สมัครใช้งานแล้ว");
+  if (!existing) throw new Error("ไม่พบรหัสพนักงานในฐานข้อมูล กรุณาติดต่อ Admin");
+  if (!existing.active) throw new Error("รหัสพนักงานนี้ถูกระงับการใช้งาน กรุณาติดต่อ Admin");
+  if (existing.account) throw new Error("รหัสพนักงานนี้สมัครใช้งานแล้ว สามารถเข้าสู่ระบบได้เลย");
   const sheets = getSheetsClient();
   await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: "User_Accounts!A2:H", valueInputOption: "USER_ENTERED", insertDataOption: "INSERT_ROWS", requestBody: { values: [[employeeId, passwordHash, new Date().toISOString(), "", "ใช้งาน", "1", "ไม่", ""]] } });
   return getEmployeeUser(employeeId);
