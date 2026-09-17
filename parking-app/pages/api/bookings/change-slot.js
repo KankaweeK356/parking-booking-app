@@ -1,6 +1,7 @@
 import { changeSlot } from "../../../lib/sheets";
 import { getCurrentOperationalDateIso } from "../../../lib/operational-day";
 import { requireRole, ROLE } from "../../../lib/auth";
+import { invalidateDashboardCache } from "../../../lib/dashboard-cache";
 
 function nextDay(dateStr) {
   const date = new Date(`${dateStr}T00:00:00Z`);
@@ -39,6 +40,7 @@ export default async function handler(req, res) {
       newStartTime,
       actor: session,
     });
+    invalidateDashboardCache();
     return res.status(200).json(result);
   } catch (err) {
     return res.status(409).json({ error: err.message });

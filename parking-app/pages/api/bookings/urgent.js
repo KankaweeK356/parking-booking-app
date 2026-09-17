@@ -1,6 +1,7 @@
 import { appendUrgentAccessLogs, createBookingBatch, getActiveBookingsForCustomer, getDashboardData, getSlotsWithStatus, getUrgentAccessLogs } from "../../../lib/sheets";
 import { getUrgentAccessDefaultDateIso, isBeforeOperationalBlockStart } from "../../../lib/operational-day";
 import { requireRole, ROLE } from "../../../lib/auth";
+import { invalidateDashboardCache } from "../../../lib/dashboard-cache";
 
 export default async function handler(req, res) {
   const session = await requireRole(req, res, [ROLE.ADMIN, ROLE.CS]);
@@ -32,6 +33,7 @@ export default async function handler(req, res) {
     }
     if (logEntries.some((entry) => !isBeforeOperationalBlockStart(date, entry.startTime))) throw new Error("เลือกรอบที่ยังไม่เริ่มเท่านั้น");
     const result = await appendUrgentAccessLogs({ customer, accessDate: date, entries: logEntries, reason, note, actionType: newBooking ? "เพิ่มช่องด่วนระหว่างวัน" : "ตีตั๋วเพิ่มตามการจองเดิม", actor: session });
+    invalidateDashboardCache();
     return res.status(200).json(result);
   } catch (err) { return res.status(409).json({ error: err.message }); }
 }

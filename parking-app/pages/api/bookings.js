@@ -3,6 +3,7 @@ import {
   createBookingBatch,
 } from "../../lib/sheets";
 import { requireRole, ROLE } from "../../lib/auth";
+import { invalidateDashboardCache } from "../../lib/dashboard-cache";
 
 export default async function handler(req, res) {
   const session = await requireRole(req, res, [ROLE.ADMIN, ROLE.CS]);
@@ -37,6 +38,7 @@ export default async function handler(req, res) {
         reason: reason || "จองใหม่",
         actor: session,
       });
+      invalidateDashboardCache();
       return res.status(200).json({ ok: true, ...result });
     } catch (err) {
       // If error is conflict or closed slot, return 409 Conflict

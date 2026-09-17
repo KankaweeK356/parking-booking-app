@@ -5,6 +5,7 @@ import {
   openSlot,
 } from "../../lib/sheets";
 import { requireRole, ROLE } from "../../lib/auth";
+import { invalidateDashboardCache } from "../../lib/dashboard-cache";
 
 export default async function handler(req, res) {
   const session = await requireRole(req, res, [ROLE.ADMIN, ROLE.CS]);
@@ -40,6 +41,7 @@ export default async function handler(req, res) {
     try {
       if (action === "เปิด") {
         await openSlot(slotCode, session);
+        invalidateDashboardCache();
         return res.status(200).json({ ok: true });
       }
 
@@ -51,10 +53,12 @@ export default async function handler(req, res) {
           bookingRowNumbersToClose,
           actor: session,
         });
+        invalidateDashboardCache();
         return res.status(200).json(result);
       }
 
       await appendSlotStatusLog({ slotCode, action, reason, actor: session });
+      invalidateDashboardCache();
       return res.status(200).json({ ok: true });
     } catch (err) {
       return res.status(500).json({ error: err.message });

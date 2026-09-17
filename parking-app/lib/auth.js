@@ -3,6 +3,17 @@ import { getEmployeeUser } from "./sheets";
 
 const COOKIE_NAME = "parking_session";
 const SESSION_DAYS = 30;
+const USER_CACHE_TTL_MS = 60 * 1000;
+const userCache = new Map();
+
+async function getCachedEmployeeUser(employeeId) {
+  const key = String(employeeId || "");
+  const cached = userCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.user;
+  const user = await getEmployeeUser(key);
+  userCache.set(key, { user, expiresAt: Date.now() + USER_CACHE_TTL_MS });
+  return user;
+}
 
 function secret() {
   const value = process.env.SESSION_SECRET;
@@ -90,7 +101,7 @@ export async function requireRole(req, res, roles) {
     res.status(401).json({ error: "กรุณาเข้าสู่ระบบ" });
     return null;
   }
-  const user = await getEmployeeUser(session.employeeId);
+  const user = await getCachedEmployeeUser(session.employeeId);
   if (!user?.active || !user.account?.active || user.account.sessionVersion !== String(session.version || "1")) {
     res.status(401).json({ error: "เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่" });
     return null;

@@ -1,5 +1,6 @@
 import { extendBooking } from "../../../lib/sheets";
 import { requireRole, ROLE } from "../../../lib/auth";
+import { invalidateDashboardCache } from "../../../lib/dashboard-cache";
 
 export default async function handler(req, res) {
   if (!(await requireRole(req, res, [ROLE.ADMIN, ROLE.CS]))) return;
@@ -12,6 +13,7 @@ export default async function handler(req, res) {
 
   try {
     const result = await extendBooking({ rowNumber, lot, slot, startDate, endDate, startTime });
+    invalidateDashboardCache();
     return res.status(200).json(result);
   } catch (err) {
     return res.status(409).json({ error: err.message });

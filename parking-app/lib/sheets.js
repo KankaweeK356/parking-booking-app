@@ -20,6 +20,10 @@ const BOOKING_FIRST_ROW = 2;
 const MASTER_FIRST_ROW = 2;
 const SLOT_FIRST_ROW = 2;
 const SLOT_LOG_FIRST_ROW = 2;
+let knownSheetNames = null;
+let loadingSheetNames = null;
+let adjustmentLogHeadersReady = false;
+let urgentLogHeadersReady = false;
 
 const GOOGLE_SHEETS_EPOCH = Date.UTC(1899, 11, 30); // 1899-12-30
 const MS_PER_DAY = 86400000;
@@ -158,13 +162,24 @@ const EMPLOYEE_HEADERS = ["Employee_Id", "Name", "Department", "Role", "Active"]
 const USER_HEADERS = ["Employee_Id", "Password_Hash", "Registered_At", "Last_Login_At", "Active", "Session_Version", "Must_Change_Password", "Temporary_Password_Expires_At"];
 const RESET_HEADERS = ["Created_At", "Employee_Id", "Reset_By", "Expires_At", "Status"];
 
+async function getKnownSheetNames(sheets) {
+  if (knownSheetNames) return knownSheetNames;
+  if (!loadingSheetNames) {
+    loadingSheetNames = sheets.spreadsheets.get({ spreadsheetId: SHEET_ID }).then((meta) => {
+      knownSheetNames = new Set((meta.data.sheets || []).map((sheet) => sheet.properties?.title));
+      return knownSheetNames;
+    }).finally(() => { loadingSheetNames = null; });
+  }
+  return loadingSheetNames;
+}
+
 async function ensureSheet(title, headers, firstRow) {
   const sheets = getSheetsClient();
-  const meta = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID });
-  const names = (meta.data.sheets || []).map((sheet) => sheet.properties?.title);
-  if (!names.includes(title)) {
+  await getKnownSheetNames(sheets);
+  if (!knownSheetNames.has(title)) {
     await sheets.spreadsheets.batchUpdate({ spreadsheetId: SHEET_ID, requestBody: { requests: [{ addSheet: { properties: { title } } }] } });
     await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: `${title}!A1`, valueInputOption: "USER_ENTERED", requestBody: { values: [headers] } });
+    knownSheetNames.add(title);
   }
   if (title === "Employee_Directory") {
     const existing = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${title}!A2:E`, valueRenderOption: "UNFORMATTED_VALUE" });
@@ -408,8 +423,11 @@ export async function appendBookingChangeLog({
 // ---------- Booking_Adjustment_Log (ลดเฉพาะวัน) ----------
 export async function ensureAdjustmentLogSheet() {
   await ensureSheet("Booking_Adjustment_Log", ["Created_At", "Effective_Date", "Action", "Booking_Row_Number", "Reason"], 2);
-  const sheets = getSheetsClient();
-  await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: "Booking_Adjustment_Log!F1:G1", valueInputOption: "USER_ENTERED", requestBody: { values: [["Created_By_Employee_Id", "Created_By_Name"]] } });
+  if (!adjustmentLogHeadersReady) {
+    const sheets = getSheetsClient();
+    await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: "Booking_Adjustment_Log!F1:G1", valueInputOption: "USER_ENTERED", requestBody: { values: [["Created_By_Employee_Id", "Created_By_Name"]] } });
+    adjustmentLogHeadersReady = true;
+  }
 }
 
 export async function appendDailyAdjustments({ rowNumbers, effectiveDate, reason = "ลดสิทธิ์เฉพาะวัน", actor }) {
@@ -429,14 +447,19 @@ export async function getAdjustedBookingRows(dateStr) {
 // ---------- Urgent_Access_Log ----------
 export async function ensureUrgentAccessLogSheet() {
   const sheets = getSheetsClient();
-  const meta = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID });
-  const names = (meta.data.sheets || []).map((sheet) => sheet.properties?.title);
-  const exists = names.includes("Urgent_Access_Log");
-  if (!exists) await sheets.spreadsheets.batchUpdate({ spreadsheetId: SHEET_ID, requestBody: { requests: [{ addSheet: { properties: { title: "Urgent_Access_Log" } } }] } });
+  await getKnownSheetNames(sheets);
+  const exists = knownSheetNames.has("Urgent_Access_Log");
+  if (!exists) {
+    await sheets.spreadsheets.batchUpdate({ spreadsheetId: SHEET_ID, requestBody: { requests: [{ addSheet: { properties: { title: "Urgent_Access_Log" } } }] } });
+    knownSheetNames.add("Urgent_Access_Log");
+  }
   // ต่อท้ายคอลัมน์เดิมเท่านั้น เพื่อไม่ให้ MIS/formula ที่มีอยู่เสีย
-  const headerRange = exists ? "Urgent_Access_Log!O1:P1" : "Urgent_Access_Log!A1:P1";
-  const headerValues = exists ? [["Created_By_Employee_Id", "Created_By_Name"]] : [["Created_At", "Ticket_Issued_Date", "Access_Operational_Date", "Action_Type", "Customer", "Doc_Id", "Booking_Row_Number", "Lot", "Slot_Code", "Slot_Number", "Start_Time", "Ticket_Count", "Reason", "Note", "Created_By_Employee_Id", "Created_By_Name"]];
-  await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: headerRange, valueInputOption: "USER_ENTERED", requestBody: { values: headerValues } });
+  if (!urgentLogHeadersReady) {
+    const headerRange = exists ? "Urgent_Access_Log!O1:P1" : "Urgent_Access_Log!A1:P1";
+    const headerValues = exists ? [["Created_By_Employee_Id", "Created_By_Name"]] : [["Created_At", "Ticket_Issued_Date", "Access_Operational_Date", "Action_Type", "Customer", "Doc_Id", "Booking_Row_Number", "Lot", "Slot_Code", "Slot_Number", "Start_Time", "Ticket_Count", "Reason", "Note", "Created_By_Employee_Id", "Created_By_Name"]];
+    await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: headerRange, valueInputOption: "USER_ENTERED", requestBody: { values: headerValues } });
+    urgentLogHeadersReady = true;
+  }
 }
 
 export async function getUrgentAccessLogs() {
@@ -923,7 +946,7 @@ export async function getTransectionRows() {
     valueRenderOption: "UNFORMATTED_VALUE",
   });
   const rows = res.data.values || [];
-  if (rows.length < 2) return [];
+  if (rows.length < 2) throw new Error("ข้อมูลตั๋วจาก MIS กำลังอัปเดต จึงยังไม่สร้างสถานะชำระเงินใหม่");
   const headers = rows[0].map((h) => String(h || "").trim().toLowerCase());
   const boothCodeIdx = headers.indexOf("boothcode");
   const docDateIdx = headers.indexOf("docdate");
