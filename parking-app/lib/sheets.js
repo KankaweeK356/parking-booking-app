@@ -1020,10 +1020,12 @@ export async function getCsOverviewData(dateStr) {
 // ---------- Dashboard & Mobile View Data ----------
 const PAYMENT_SNAPSHOT_HEADERS = ["Operational_Date", "Payment_Source_Date", "Booking_Row_Number", "Doc_Id", "Slot_Code", "Start_Time", "Is_Paid", "Snapshot_Updated_At"];
 const PAYMENT_SNAPSHOT_RUN_HEADERS = ["Operational_Date", "Payment_Source_Date", "Snapshot_Updated_At", "Status"];
+const PAYMENT_REFRESH_HEADERS = ["Operational_Date", "Attempted_At", "Source", "Status", "Message"];
 
 async function ensurePaymentSnapshotSheets() {
   await ensureSheet("Payment_Snapshot", PAYMENT_SNAPSHOT_HEADERS, 2);
   await ensureSheet("Payment_Snapshot_Run", PAYMENT_SNAPSHOT_RUN_HEADERS, 2);
+  await ensureSheet("Payment_Refresh_Log", PAYMENT_REFRESH_HEADERS, 2);
 }
 
 function snapshotKey(rowNumber) { return String(rowNumber || ""); }
@@ -1044,6 +1046,22 @@ export async function getPaymentSnapshot(operationalDate) {
     byBookingRow.set(snapshotKey(row[2]), String(row[6] || "").toLowerCase() === "true");
   });
   return { operationalDate, sourceDate: String(run[1] || ""), updatedAt, byBookingRow };
+}
+
+export async function getPaymentRefreshState(operationalDate) {
+  await ensurePaymentSnapshotSheets();
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "Payment_Refresh_Log!A2:E", valueRenderOption: "UNFORMATTED_VALUE" });
+  const latest = (res.data.values || []).filter((row) => String(row[0] || "") === operationalDate).sort((a, b) => String(b[1] || "").localeCompare(String(a[1] || "")))[0];
+  return latest ? { attemptedAt: String(latest[1] || ""), source: String(latest[2] || ""), status: String(latest[3] || ""), message: String(latest[4] || "") } : null;
+}
+
+export async function appendPaymentRefreshState({ operationalDate, source, status, message = "" }) {
+  await ensurePaymentSnapshotSheets();
+  const sheets = getSheetsClient();
+  const attemptedAt = new Date().toISOString();
+  await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: "Payment_Refresh_Log!A2:E", valueInputOption: "RAW", insertDataOption: "INSERT_ROWS", requestBody: { values: [[operationalDate, attemptedAt, source, status, message]] } });
+  return { attemptedAt, source, status, message };
 }
 
 export async function createPaymentSnapshot(operationalDate) {
@@ -1073,9 +1091,9 @@ export async function createPaymentSnapshot(operationalDate) {
   activeByDoc.forEach((bookings, key) => {
     let remaining = ticketCountByDocId.get(key) || 0;
     bookings.sort((left, right) => {
-      const byTime = toOperationalMinutes(left.startMinutes ?? serialToMinutes(left.startTime)) - toOperationalMinutes(right.startMinutes ?? serialToMinutes(right.startTime));
-      if (byTime !== 0) return byTime;
-      return String(slotNumberByCode.get(left.slot) || left.slot).localeCompare(String(slotNumberByCode.get(right.slot) || right.slot), "th", { numeric: true });
+      const bySlot = String(slotNumberByCode.get(left.slot) || left.slot).localeCompare(String(slotNumberByCode.get(right.slot) || right.slot), "th", { numeric: true });
+      if (bySlot !== 0) return bySlot;
+      return toOperationalMinutes(left.startMinutes ?? serialToMinutes(left.startTime)) - toOperationalMinutes(right.startMinutes ?? serialToMinutes(right.startTime));
     });
     bookings.forEach((booking) => { const isPaid = remaining > 0; if (isPaid) remaining -= 1; isPaidByBookingRow.set(booking.rowNumber, isPaid); });
   });
@@ -1138,7 +1156,8 @@ export async function getDashboardData(dateStr) {
   });
 
   // สิทธิ์ด่วนมีผลทันทีใน operational day ที่ CS ระบุ
-  urgentLogs.filter((log) => log.accessDate === targetDateStr).forEach((log) => {
+  const currentBlockStart = getCurrentOperationalBlock().startTime;
+  urgentLogs.filter((log) => log.accessDate === targetDateStr && !(targetDateStr === currentOperationalDate && toOperationalMinutes(log.startTime ? serialToMinutes(log.startTime) : 0) < toOperationalMinutes(serialToMinutes(currentBlockStart)))).forEach((log) => {
     const booking = activeBookings.find((b) => b.slot === log.slot && b.startTime === log.startTime && (log.bookingRowNumber ? b.rowNumber === log.bookingRowNumber : true));
     if (!booking) return;
     const key = `${booking.slot}::${booking.startTime}`;

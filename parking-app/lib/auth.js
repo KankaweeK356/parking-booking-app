@@ -15,6 +15,10 @@ async function getCachedEmployeeUser(employeeId) {
   return user;
 }
 
+export function clearCachedEmployeeUser(employeeId) {
+  userCache.delete(String(employeeId || ""));
+}
+
 function secret() {
   const value = process.env.SESSION_SECRET;
   if (!value) throw new Error("ยังไม่ได้ตั้งค่า SESSION_SECRET สำหรับระบบล็อกอิน");
