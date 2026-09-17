@@ -16,6 +16,10 @@ function getNextDay(dateStr) {
   return d.toISOString().slice(0, 10);
 }
 
+function laterDate(first, second) {
+  return first && first > second ? first : second;
+}
+
 export default function EditBooking() {
   const [customers, setCustomers] = useState([]);
   const [customer, setCustomer] = useState("");
@@ -43,7 +47,6 @@ export default function EditBooking() {
   const [selectedChangeRow, setSelectedChangeRow] = useState(null);
   const [newLot, setNewLot] = useState("");
   const [newSlot, setNewSlot] = useState("");
-  const [changeOldEndDate, setChangeOldEndDate] = useState(today());
   const [changeNewStartDate, setChangeNewStartDate] = useState(getNextDay(today()));
   const [changeNewEndDate, setChangeNewEndDate] = useState("");
   const [changeNewStartTime, setChangeNewStartTime] = useState("07:00");
@@ -163,17 +166,10 @@ export default function EditBooking() {
     setChangeMessage(null);
     if (b.lot) setNewLot(b.lot);
     setNewSlot("");
-    setChangeOldEndDate(today());
-    setChangeNewStartDate(getNextDay(today()));
+    const effectiveNewStartDate = laterDate(b.startDate || "", getNextDay(today()));
+    setChangeNewStartDate(effectiveNewStartDate);
     setChangeNewEndDate(b.endDate || "");
     setChangeNewStartTime(b.startTime || "07:00");
-  }
-
-  function handleOldEndDateChange(val) {
-    setChangeOldEndDate(val);
-    if (val) {
-      setChangeNewStartDate(getNextDay(val));
-    }
   }
 
   const availableSlotsInLot = useMemo(() => {
@@ -182,7 +178,7 @@ export default function EditBooking() {
 
   async function handleSubmitChange(e) {
     e.preventDefault();
-    if (!selectedChangeRow || !newSlot || !changeOldEndDate || !changeNewStartDate || !changeNewEndDate || !changeNewStartTime) {
+    if (!selectedChangeRow || !newSlot || !changeNewStartDate || !changeNewEndDate || !changeNewStartTime) {
       return;
     }
     setSubmittingChange(true);
@@ -194,7 +190,6 @@ export default function EditBooking() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           oldRowNumber: selectedChangeRow.rowNumber,
-          oldEndDate: changeOldEndDate,
           customer,
           newLot,
           newSlot,

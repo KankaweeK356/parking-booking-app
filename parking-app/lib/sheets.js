@@ -22,6 +22,7 @@ const SLOT_FIRST_ROW = 2;
 const SLOT_LOG_FIRST_ROW = 2;
 let knownSheetNames = null;
 let loadingSheetNames = null;
+const pendingSheetEnsures = new Map();
 let adjustmentLogHeadersReady = false;
 let urgentLogHeadersReady = false;
 
@@ -174,11 +175,34 @@ async function getKnownSheetNames(sheets) {
 }
 
 async function ensureSheet(title, headers, firstRow) {
+  const pending = pendingSheetEnsures.get(title);
+  if (pending) return pending;
+
+  const task = ensureSheetInternal(title, headers, firstRow);
+  pendingSheetEnsures.set(title, task);
+  try {
+    return await task;
+  } finally {
+    pendingSheetEnsures.delete(title);
+  }
+}
+
+async function ensureSheetInternal(title, headers, firstRow) {
   const sheets = getSheetsClient();
   await getKnownSheetNames(sheets);
   if (!knownSheetNames.has(title)) {
-    await sheets.spreadsheets.batchUpdate({ spreadsheetId: SHEET_ID, requestBody: { requests: [{ addSheet: { properties: { title } } }] } });
-    await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: `${title}!A1`, valueInputOption: "USER_ENTERED", requestBody: { values: [headers] } });
+    let created = false;
+    try {
+      await sheets.spreadsheets.batchUpdate({ spreadsheetId: SHEET_ID, requestBody: { requests: [{ addSheet: { properties: { title } } }] } });
+      created = true;
+    } catch (err) {
+      // Another server instance may have created this tab between our metadata
+      // read and addSheet call. It is safe to continue with that same tab.
+      if (!String(err.message || err).includes("already exists")) throw err;
+    }
+    if (created) {
+      await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: `${title}!A1`, valueInputOption: "USER_ENTERED", requestBody: { values: [headers] } });
+    }
     knownSheetNames.add(title);
   }
   if (title === "Employee_Directory") {
@@ -825,11 +849,15 @@ export async function changeSlot({
 }) {
   const oldRow = await getBookingRow(oldRowNumber);
   if (!oldRow) throw new Error(`ไม่พบรายการจองเดิมแถวที่ ${oldRowNumber}`);
-  const effectiveOldEndDate = getCurrentOperationalDateIso();
-  const effectiveNewStartDate = addDaysIso(effectiveOldEndDate, 1);
+  const nextOperationalDate = addDaysIso(getCurrentOperationalDateIso(), 1);
+  // A future booking must never be moved to a date before its original start.
+  // This keeps the normal 07:00 next-day rule while preserving a future plan.
+  const effectiveNewStartDate = oldRow.startDate > nextOperationalDate ? oldRow.startDate : nextOperationalDate;
+  const effectiveOldEndDate = addDaysIso(effectiveNewStartDate, -1);
   const effectiveNewEndDate = oldRow.endDate;
   const effectiveNewStartTime = oldRow.startTime;
   if (!effectiveNewEndDate) throw new Error("รายการเดิมไม่มีวันสิ้นสุด จึงยังย้ายช่องตามกติกาใหม่ไม่ได้");
+  if (effectiveNewStartDate > effectiveNewEndDate) throw new Error("สิทธิ์เดิมสิ้นสุดก่อนวันที่ย้ายช่อง จึงไม่สามารถย้ายได้");
 
   // 1. เช็คสถานะช่องใหม่จาก getSlotsWithStatus
   const slotsWithStatus = await getSlotsWithStatus();

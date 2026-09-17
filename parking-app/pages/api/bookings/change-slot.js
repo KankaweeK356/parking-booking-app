@@ -1,13 +1,6 @@
 import { changeSlot } from "../../../lib/sheets";
-import { getCurrentOperationalDateIso } from "../../../lib/operational-day";
 import { requireRole, ROLE } from "../../../lib/auth";
 import { invalidateDashboardCache } from "../../../lib/dashboard-cache";
-
-function nextDay(dateStr) {
-  const date = new Date(`${dateStr}T00:00:00Z`);
-  date.setUTCDate(date.getUTCDate() + 1);
-  return date.toISOString().slice(0, 10);
-}
 
 export default async function handler(req, res) {
   const session = await requireRole(req, res, [ROLE.ADMIN, ROLE.CS]);
@@ -15,11 +8,9 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
   const {
     oldRowNumber,
-    oldEndDate,
     customer,
     newLot,
     newSlot,
-    newStartDate,
     newEndDate,
     newStartTime,
   } = req.body || {};
@@ -31,11 +22,9 @@ export default async function handler(req, res) {
   try {
     const result = await changeSlot({
       oldRowNumber,
-      oldEndDate: getCurrentOperationalDateIso(),
       customer,
       newLot,
       newSlot,
-      newStartDate: nextDay(getCurrentOperationalDateIso()),
       newEndDate,
       newStartTime,
       actor: session,
