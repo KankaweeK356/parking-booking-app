@@ -16,31 +16,30 @@ export default function Home() {
       </div>
       <div className="page">
         <h2>เลือกงานที่ต้องการทำ</h2>
-        <p className="subtitle">ข้อมูลทั้งหมดเชื่อมกับ Google Sheet โดยตรง บันทึกผลและอัปเดตแบบเรียลไทม์</p>
         <div className="home-tabs"><button className={`btn ${tab === "booking" ? "btn-primary" : "btn-secondary"}`} onClick={() => setTab("booking")}>การจัดการการจอง</button><button className={`btn ${tab === "field" ? "btn-primary" : "btn-secondary"}`} onClick={() => setTab("field")}>การตรวจสอบพื้นที่</button></div>
         {tab === "booking" && canManage && <div className="nav-grid">
           <Link href="/booking/new" className="nav-card">
             <div className="title">📝 จองใหม่ / เพิ่มช่องจอด</div>
-            <div className="desc">บันทึกการจองใหม่ เลือกหลายช่องและหลายรอบพร้อมกันได้</div>
+            <div className="desc">จองช่องจอดระยะยาว โดยเริ่มใช้งานช่องจริงได้ตั้งแต่วันถัดไป</div>
           </Link>
+          <Link href="/booking/urgent" className="nav-card"><div className="title">⚡ จองรายวัน</div><div className="desc">จองระหว่างวัน ต้องบันทึกก่อนเวลาเริ่มรอบที่เลือก</div></Link>
           <Link href="/booking/edit" className="nav-card">
-            <div className="title">✏️ ปรับ / ยกเลิก / ย้ายช่อง</div>
-            <div className="desc">พักการจอง ยกเลิกการจอง หรือย้ายช่องทีละรอบ</div>
+            <div className="title">✏️ พัก / ยกเลิกการจอง / ย้ายช่องจอด</div>
+            <div className="desc">เลือกทำรายการจากการจองเดิมของลูกค้า ทีละรอบ</div>
           </Link>
-          <Link href="/booking/urgent" className="nav-card"><div className="title">⚡ จองรายวัน</div><div className="desc">จองเพิ่ม หรือจองใหม่รายวันสำหรับรอบที่ยังไม่เริ่ม</div></Link>
           <Link href="/required-summary" className="nav-card">
             <div className="title">🎟️ สรุปรายการตีตั๋ว</div>
-            <div className="desc">ดูและพิมพ์สรุปรายการตั๋วตามชื่อลูกค้า</div>
+            <div className="desc">สรุปจำนวนตั๋วที่ลูกค้าต้องตี และพิมพ์รายการให้ลูกค้า</div>
           </Link>
           <Link href="/cs-overview" className="nav-card">
             <div className="title">📋 ภาพรวมการจอง</div>
-            <div className="desc">ดูชื่อลูกค้าที่ได้รับสิทธิ์ในแต่ละช่องและรอบเวลา</div>
+            <div className="desc">ดูว่าช่องจอดใดถูกลูกค้าจองแล้วในแต่ละรอบ</div>
           </Link>
           <Link href="/slot-status" className="nav-card">
             <div className="title">⛔ ปิด / เปิดช่องจอด</div>
-            <div className="desc">ปิดหรือเปิดช่อง โดยตรวจสอบรายการจองที่กระทบก่อน</div>
+            <div className="desc">ปิดหรือเปิดช่องจอด กรณีช่องจอดไม่สามารถใช้งานได้</div>
           </Link>
-          {canAdmin && <Link href="/admin/users" className="nav-card"><div className="title">👤 จัดการผู้ใช้</div><div className="desc">ดูบัญชีพนักงานและ reset Password</div></Link>}
+          {canAdmin && <Link href="/admin/users" className="nav-card"><div className="title">👤 จัดการผู้ใช้</div><div className="desc">จัดการบัญชีพนักงานและรีเซ็ตรหัสผ่าน</div></Link>}
         </div>}
         {tab === "booking" && user && !canManage && <div className="card"><p className="subtitle">บัญชีทีมตรวจพื้นที่มีสิทธิ์ดูเฉพาะการตรวจสอบพื้นที่</p></div>}
         {tab === "field" && <div className="nav-grid">

@@ -614,7 +614,7 @@ export async function getBookingRow(rowNumber) {
 // รายการจองที่ยัง Active ของลูกค้าคนหนึ่ง — ใช้ในหน้า "ปรับ/ยกเลิกการจอง"
 // ซ่อนเฉพาะรายการที่มี closing reason (เช่น ยกเลิก, ย้ายออก, ปิดช่อง) เท่านั้น
 export async function getActiveBookingsForCustomer(customerName) {
-  const all = await getAllBookingRows();
+  const [all, adjustments] = await Promise.all([getAllBookingRows(), getBookingAdjustments()]);
   const today = getTodaySerial();
   return all
     .filter((r) => {
@@ -624,6 +624,12 @@ export async function getActiveBookingsForCustomer(customerName) {
       if (isClosingReason(r.reason)) return false;
       return true;
     })
+    .map((booking) => ({
+      ...booking,
+      pausePeriods: adjustments
+        .filter((adjustment) => adjustment.rowNumber === booking.rowNumber && adjustment.action.includes("พัก") && isoDateToSerial(adjustment.endDate) >= today)
+        .map((adjustment) => ({ startDate: adjustment.startDate, endDate: adjustment.endDate })),
+    }))
     .sort((a, b) => (a.startSerial || 0) - (b.startSerial || 0));
 }
 
@@ -908,7 +914,7 @@ export async function changeSlot({
   const slotsWithStatus = await getSlotsWithStatus();
   const slotInfo = slotsWithStatus.find((s) => s.slotCode === newSlot);
   if (!slotInfo || slotInfo.status === "ปิด" || slotInfo.isRoad) {
-    throw new Error(`ช่อง ${newSlot} ถูกปิดใช้งานอยู่ (${slotInfo?.reason || "สถานะพื้นฐานปิดใช้งาน"}) ไม่สามารถย้ายไปได้`);
+    throw new Error(`ช่อง ${slotInfo?.number || "-"} ถูกปิดใช้งานอยู่ (${slotInfo?.reason || "สถานะพื้นฐานปิดใช้งาน"}) ไม่สามารถย้ายไปได้`);
   }
 
   // 2. เช็คเวลาชนกันของช่องใหม่ก่อนเสมอ
@@ -919,7 +925,7 @@ export async function changeSlot({
     startTime: effectiveNewStartTime,
   });
   if (conflict.conflict) {
-    throw new Error(`ช่อง ${newSlot} ช่วงเวลานี้ชนกับการจองของ "${conflict.withCustomer}" แล้ว กรุณาเลือกช่องอื่น`);
+    throw new Error(`ช่อง ${slotInfo.number || "-"} ช่วงเวลานี้ชนกับการจองของ "${conflict.withCustomer}" แล้ว กรุณาเลือกช่องอื่น`);
   }
 
   // 3. ปิดแถวเดิม

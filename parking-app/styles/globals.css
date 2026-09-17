@@ -189,7 +189,16 @@ select:focus, input:focus {
 }
 .slot-btn.open { color: var(--green); }
 .slot-btn.closed { color: var(--red); background: #fbeae7; }
+.slot-btn.unavailable { color: #9a3412; background: #fff1eb; border-color: #fdba74; cursor: not-allowed; }
+.slot-btn.move-source { color: #6b7280; background: #f3f4f6; border-color: #d1d5db; cursor: not-allowed; }
 .slot-btn.active { outline: 2px solid var(--navy); }
+
+.booking-pause-note {
+  margin-top: 6px;
+  color: #92400e;
+  font-size: 13px;
+  font-weight: 700;
+}
 
 .table-container {
   width: 100%;
@@ -412,6 +421,13 @@ input[type="password"] {
   background: var(--navy);
   color: #fff;
   border-color: var(--navy);
+}
+
+.time-block-btn.unavailable {
+  background: #f3f4f6;
+  color: #6b7280;
+  border-color: #d1d5db;
+  cursor: not-allowed;
 }
 
 .timeline-page {

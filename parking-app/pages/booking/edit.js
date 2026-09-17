@@ -56,6 +56,9 @@ export default function EditBooking() {
   const [changeNewStartTime, setChangeNewStartTime] = useState("07:00");
   const [changeMessage, setChangeMessage] = useState(null);
   const [submittingChange, setSubmittingChange] = useState(false);
+  const [moveAvailability, setMoveAvailability] = useState({});
+  const [moveAvailabilityLoading, setMoveAvailabilityLoading] = useState(false);
+  const [moveAvailabilityError, setMoveAvailabilityError] = useState("");
 
   // === State สำหรับ "ปรับวัน-เวลาจอง (ขยายเวลา/Extend)" ===
   const [selectedExtendRow, setSelectedExtendRow] = useState(null);
@@ -68,6 +71,17 @@ export default function EditBooking() {
   function slotLabel(booking) {
     const number = allSlots.find((slot) => slot.slotCode === booking.slot)?.number || "-";
     return `${displayLotName(booking.lot)} / ช่อง ${number}`;
+  }
+
+  function formatDate(dateStr) {
+    const [year, month, day] = String(dateStr || "").split("-");
+    return year && month && day ? `${day}/${month}/${year}` : "-";
+  }
+
+  function pauseNote(booking) {
+    const periods = booking.pausePeriods || [];
+    if (!periods.length) return "";
+    return periods.map((period) => `พักการจอง: ${formatDate(period.startDate)} ถึง ${formatDate(period.endDate)}`).join(" · ");
   }
 
   // โหลดรายชื่อลูกค้าและข้อมูลช่องจอด
@@ -181,6 +195,36 @@ export default function EditBooking() {
     return allSlots.filter((s) => s.lot === newLot);
   }, [allSlots, newLot]);
 
+  useEffect(() => {
+    if (!selectedChangeRow || !newLot || !changeNewStartDate || !changeNewEndDate || !changeNewStartTime) {
+      setMoveAvailability({});
+      setMoveAvailabilityLoading(false);
+      setMoveAvailabilityError("");
+      return undefined;
+    }
+    let active = true;
+    setMoveAvailabilityLoading(true);
+    setMoveAvailabilityError("");
+    fetch(`/api/booking-availability?lot=${encodeURIComponent(newLot)}&startDate=${changeNewStartDate}&endDate=${changeNewEndDate}&startTimes=${encodeURIComponent(changeNewStartTime)}`)
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "ตรวจสอบสถานะช่องไม่สำเร็จ");
+        return data;
+      })
+      .then((data) => {
+        if (!active) return;
+        const nextAvailability = Object.fromEntries((data.availability || []).map((item) => [item.slotCode, item]));
+        setMoveAvailability(nextAvailability);
+        setNewSlot((selected) => {
+          if (!selected || selected === selectedChangeRow.slot || nextAvailability[selected]?.blocked || !nextAvailability[selected]) return "";
+          return selected;
+        });
+      })
+      .catch((error) => active && setMoveAvailabilityError(error.message || "ตรวจสอบสถานะช่องไม่สำเร็จ"))
+      .finally(() => active && setMoveAvailabilityLoading(false));
+    return () => { active = false; };
+  }, [selectedChangeRow?.rowNumber, selectedChangeRow?.slot, newLot, changeNewStartDate, changeNewEndDate, changeNewStartTime]);
+
   async function handleSubmitChange(e) {
     e.preventDefault();
     if (!selectedChangeRow || !newSlot || !changeNewStartDate || !changeNewEndDate || !changeNewStartTime) {
@@ -210,7 +254,7 @@ export default function EditBooking() {
 
       setChangeMessage({
         type: "success",
-      text: `✓ ย้ายช่องสำเร็จ มีผลวันที่ ${changeNewStartDate} เวลา 07:00 โดยคงรอบและวันสิ้นสุดเดิมไว้แล้ว`,
+      text: `✓ ย้ายช่องสำเร็จ มีผลวันที่ ${formatDate(changeNewStartDate)} รอบ ${selectedChangeRow.startTime || changeNewStartTime} น. โดยคงวันสิ้นสุดเดิมไว้แล้ว`,
       });
       loadCustomerBookings(customer);
     } catch (err) {
@@ -273,7 +317,7 @@ export default function EditBooking() {
     <div>
       <div className="top-bar">
         <div className="inner">
-          <h1>ปรับ / ยกเลิกการจอง</h1>
+          <h1>พัก / ยกเลิกการจอง / ย้ายช่องจอด</h1>
           <Link href="/" className="back">← กลับหน้าหลัก</Link>
         </div>
       </div>
@@ -282,7 +326,7 @@ export default function EditBooking() {
           <div className="section-heading-row">
             <button type="button" className="btn btn-secondary" onClick={refreshBookingStatus}>↻ Refresh สถานะช่อง</button>
           </div>
-          <CustomerPicker customers={customers} value={customer} onChange={setCustomer} label="เลือกลูกค้า" />
+          <CustomerPicker customers={customers} value={customer} onChange={setCustomer} />
         </div>
 
         {customer && (
@@ -333,6 +377,7 @@ export default function EditBooking() {
                       <div className="meta">
                         รอบ {b.startTime || "-"} น. | สิทธิ์เดิม: {b.startDate} ถึง {b.endDate || "ไม่มีกำหนด"}
                       </div>
+                      {pauseNote(b) && <div className="booking-pause-note">{pauseNote(b)}</div>}
                     </div>
                     <input
                       type="checkbox"
@@ -388,6 +433,7 @@ export default function EditBooking() {
                       <div className="meta">
                         รอบ {b.startTime || "-"} น. | สิทธิ์เดิม: {b.startDate} ถึง {b.endDate || "ไม่มีกำหนด"}
                       </div>
+                      {pauseNote(b) && <div className="booking-pause-note">{pauseNote(b)}</div>}
                     </div>
                     <input
                       type="radio"
@@ -403,9 +449,9 @@ export default function EditBooking() {
             {selectedChangeRow && (
               <div className="card">
                 <h2 style={{ fontSize: 16 }}>2. เลือกช่องใหม่</h2>
-                <p className="subtitle">ย้ายเฉพาะรอบ {selectedChangeRow.startTime} น. ช่องเดิมจะใช้ถึงวันก่อนหน้า และช่องใหม่จะใช้ถึง {changeNewEndDate}</p>
+                <p className="subtitle">ย้ายเฉพาะรอบ {selectedChangeRow.startTime} น. ช่องเดิมจะใช้ถึงวันก่อนหน้า และช่องใหม่จะใช้ถึง {formatDate(changeNewEndDate)}</p>
                 <label>เริ่มใช้ช่องใหม่วันที่</label>
-                <input type="date" min={laterDate(selectedChangeRow.startDate || "", getNextDay(today()))} max={changeNewEndDate || undefined} value={changeNewStartDate} onChange={(e) => setChangeNewStartDate(e.target.value)} />
+                <input type="date" min={laterDate(selectedChangeRow.startDate || "", getNextDay(today()))} max={changeNewEndDate || undefined} value={changeNewStartDate} onChange={(e) => { setChangeNewStartDate(e.target.value); setNewSlot(""); }} />
                 <label>ลานใหม่</label>
                 <select value={newLot} onChange={(e) => { setNewLot(e.target.value); setNewSlot(""); }}>
                   {lots.map((l) => (
@@ -414,18 +460,35 @@ export default function EditBooking() {
                 </select>
 
                 <label>เลือกช่องใหม่</label>
+                <p className="subtitle">ตรวจสถานะช่องสำหรับรอบ {selectedChangeRow.startTime} น. ตั้งแต่ {formatDate(changeNewStartDate)} ถึง {formatDate(changeNewEndDate)}</p>
+                {moveAvailabilityLoading && <p className="subtitle">กำลังตรวจสอบช่องว่าง…</p>}
+                {moveAvailabilityError && <div className="alert alert-error">{moveAvailabilityError}</div>}
                 <div className="slot-grid">
                   {availableSlotsInLot.map((s) => {
-                    const disabled = s.status === "ปิด" || s.isRoad;
+                    const isSourceSlot = s.slotCode === selectedChangeRow.slot;
+                    const availability = moveAvailability[s.slotCode];
+                    const hasConflict = availability?.blocked && !isSourceSlot && s.status !== "ปิด" && !s.isRoad;
+                    const disabled = isSourceSlot || s.status === "ปิด" || s.isRoad || hasConflict || moveAvailabilityLoading || Boolean(moveAvailabilityError);
                     const active = newSlot === s.slotCode;
+                    const title = isSourceSlot
+                      ? "ช่องเดิมที่เลือกย้ายออก"
+                      : s.status === "ปิด" || s.isRoad
+                        ? `ปิดใช้งาน: ${s.reason || (s.isRoad ? "ถนน/ไม่เปิดใช้งาน" : "สถานะพื้นฐานปิดใช้งาน")}`
+                        : hasConflict
+                          ? availability.reason || "มีการจองในช่วงวันที่เลือก"
+                          : moveAvailabilityLoading
+                            ? "กำลังตรวจสอบสถานะช่อง"
+                            : moveAvailabilityError
+                              ? "ยังตรวจสอบสถานะช่องไม่ได้"
+                              : "ว่าง";
                     return (
                       <button
                         type="button"
                         key={s.slotCode}
-                        className={`slot-btn ${disabled ? "closed" : "open"} ${active ? "active" : ""}`}
+                        className={`slot-btn ${isSourceSlot ? "move-source" : hasConflict || moveAvailabilityError ? "unavailable" : disabled ? "closed" : "open"} ${active ? "active" : ""}`}
                         disabled={disabled}
                         onClick={() => setNewSlot(s.slotCode)}
-                        title={disabled ? `ปิดใช้งาน: ${s.reason || (s.isRoad ? "ถนน/ไม่เปิดใช้งาน" : "สถานะพื้นฐานปิดใช้งาน")}` : "ว่าง"}
+                        title={title}
                       >
                         ช่อง {s.number || "-"}
                       </button>
@@ -437,9 +500,9 @@ export default function EditBooking() {
                   <button
                     type="submit"
                     className="btn btn-primary"
-                    disabled={submittingChange || !newSlot}
+                    disabled={submittingChange || !newSlot || moveAvailabilityLoading || Boolean(moveAvailabilityError)}
                   >
-                    {submittingChange ? "กำลังตรวจสอบและย้ายช่อง..." : `ยืนยันย้ายไปช่อง ${newSlot || "(กรุณาเลือกช่อง)"}`}
+                    {submittingChange ? "กำลังตรวจสอบและย้ายช่อง..." : `ยืนยันย้ายไปช่อง ${allSlots.find((slot) => slot.slotCode === newSlot)?.number || "(กรุณาเลือกช่อง)"}`}
                   </button>
                 </div>
               </div>

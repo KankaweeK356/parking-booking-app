@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { displayCustomerName } from "../lib/display";
 
-export default function CustomerPicker({ customers = [], value, onChange, label = "ลูกค้า", required = false }) {
+export default function CustomerPicker({ customers = [], value, onChange, label = "ระบุชื่อลูกค้า", required = false }) {
   const selected = customers.find((item) => item.name === value);
   const [query, setQuery] = useState(selected ? displayCustomerName(selected.name) : "");
   const [open, setOpen] = useState(false);
@@ -14,7 +14,7 @@ export default function CustomerPicker({ customers = [], value, onChange, label 
 
   return <div className="customer-picker">
     <label>{label}{required ? " (จำเป็น)" : ""}</label>
-    <input value={query} placeholder="พิมพ์ค้นหาชื่อลูกค้า" autoComplete="off"
+    <input value={query} placeholder="พิมพ์ชื่อ หรือกดเพื่อเลือกรายชื่อ" autoComplete="off"
       onFocus={() => setOpen(true)}
       onChange={(event) => { setQuery(event.target.value); if (value) onChange(""); setOpen(true); }}
       onBlur={() => setTimeout(() => setOpen(false), 150)} required={required} />

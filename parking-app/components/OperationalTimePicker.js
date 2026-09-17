@@ -1,6 +1,6 @@
 import { OPERATIONAL_TIME_BLOCKS } from "../lib/operational-day";
 
-export default function OperationalTimePicker({ value, values, onChange, label = "รอบเวลา", required = false, multiple = false, availableValues }) {
+export default function OperationalTimePicker({ value, values, onChange, label = "รอบเวลา", required = false, multiple = false, availableValues, onUnavailableSelect }) {
   const selectedValues = multiple ? (values || []) : [value];
   function selectTime(startTime) {
     if (!multiple) return onChange(startTime);
@@ -16,11 +16,11 @@ export default function OperationalTimePicker({ value, values, onChange, label =
           <button
             type="button"
             key={block.startTime}
-            className={`time-block-btn ${selectedValues.includes(block.startTime) ? "selected" : ""}`}
+            className={`time-block-btn ${selectedValues.includes(block.startTime) ? "selected" : ""} ${unavailable ? "unavailable" : ""}`}
             aria-pressed={selectedValues.includes(block.startTime)}
-            disabled={unavailable}
+            aria-disabled={unavailable}
             title={unavailable ? "รอบนี้เริ่มไปแล้ว จึงบันทึกสิทธิ์ระหว่างวันไม่ได้" : ""}
-            onClick={() => selectTime(block.startTime)}
+            onClick={() => unavailable ? onUnavailableSelect?.(block) : selectTime(block.startTime)}
           >
             {block.label}
           </button>
