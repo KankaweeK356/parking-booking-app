@@ -11,11 +11,12 @@ export default async function handler(req, res) {
     customer,
     newLot,
     newSlot,
+    newStartDate,
     newEndDate,
     newStartTime,
   } = req.body || {};
 
-  if (!oldRowNumber || !customer || !newLot || !newSlot || !newEndDate || !newStartTime) {
+  if (!oldRowNumber || !customer || !newLot || !newSlot || !newStartDate || !newEndDate || !newStartTime) {
     return res.status(400).json({ error: "กรอกข้อมูลไม่ครบถ้วนสำหรับการย้ายช่องจอด" });
   }
 
@@ -25,6 +26,7 @@ export default async function handler(req, res) {
       customer,
       newLot,
       newSlot,
+      newStartDate,
       newEndDate,
       newStartTime,
       actor: session,

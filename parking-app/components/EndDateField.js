@@ -12,7 +12,7 @@ export default function EndDateField({ startDate, value, onChange, label = "ว�
         required={required}
       />
       <div className="date-shortcuts" aria-label="เลือกวันสิ้นสุดแบบรวดเร็ว">
-        {[1, 2, 3].map((months) => (
+        {[1, 3, 6].map((months) => (
           <button
             type="button"
             className="btn btn-secondary"

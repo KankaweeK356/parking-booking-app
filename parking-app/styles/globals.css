@@ -510,6 +510,11 @@ input[type="password"] {
   font-size: 13px;
 }
 
+.customer-picker { position: relative; margin-bottom: 14px; }
+.customer-options { position: absolute; z-index: 10; top: calc(100% - 2px); left: 0; right: 0; max-height: 260px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; background: white; box-shadow: 0 8px 20px rgba(15,23,42,.14); padding: 4px; }
+.customer-option { display: block; width: 100%; text-align: left; border: 0; background: transparent; padding: 9px 10px; border-radius: 5px; color: var(--text); cursor: pointer; }
+.customer-option:hover { background: #f1f5f9; }
+
 @media (max-width: 640px) {
   .timeline-page { padding: 16px 10px; }
   .timeline-controls { align-items: stretch; }

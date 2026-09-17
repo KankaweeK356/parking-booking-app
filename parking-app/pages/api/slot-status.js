@@ -45,17 +45,10 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true });
       }
 
-      // action === "ปิด"
-      if (Array.isArray(bookingRowNumbersToClose) && bookingRowNumbersToClose.length > 0) {
-        const result = await closeSlotWithBookings({
-          slotCode,
-          reason,
-          bookingRowNumbersToClose,
-          actor: session,
-        });
-        invalidateDashboardCache();
-        return res.status(200).json(result);
-      }
+      // A closure must never silently cancel bookings.  CS must resolve them
+      // through the adjustment flow (move, pause, or cancel) first.
+      const active = await getActiveBookingsForSlot(slotCode);
+      if (active.length) return res.status(409).json({ error: "ช่องนี้ยังมีรายการจองอยู่ กรุณาย้ายช่อง พักการจอง หรือยกเลิกรายการที่กระทบก่อนปิดช่อง" });
 
       await appendSlotStatusLog({ slotCode, action, reason, actor: session });
       invalidateDashboardCache();

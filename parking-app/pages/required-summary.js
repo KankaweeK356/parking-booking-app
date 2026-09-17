@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { displayCustomerName } from "../lib/display";
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -45,21 +46,21 @@ export default function RequiredSummary() {
     <div>
       <div className="top-bar">
         <div className="inner">
-          <h1>สรุปจำนวนตั๋วที่ต้องตี</h1>
+          <h1>สรุปรายการตีตั๋ว</h1>
           <Link href="/" className="back">← กลับหน้าหลัก</Link>
         </div>
       </div>
 
       <div className="page">
-        <h2>สรุปจำนวนตั๋วที่ต้องเตรียมแจ้งด่าน</h2>
+        <h2>รายการจองระยะยาว</h2>
         <p className="subtitle">
-          เลือกวันที่ X เพื่อดูยอดจองที่ active ในวัน <strong>X + 1</strong> (เตรียมตั๋วล่วงหน้า 1 วันตามเกณฑ์ด่าน)
+          เลือกวันที่ทำรายการ เพื่อดูยอดตั๋วสำหรับใช้สิทธิ์ในวันปฏิบัติการถัดไป
         </p>
 
         {error && <div className="alert alert-error">{error}</div>}
 
         <div className="card">
-          <label>เลือกวันที่ตรวจยอด (วันที่ X):</label>
+          <label>วันที่ทำรายการ</label>
           <div style={{ display: "flex", gap: "10px", alignItems: "center", marginTop: "6px" }}>
             <input
               type="date"
@@ -72,7 +73,7 @@ export default function RequiredSummary() {
           </div>
           {targetDate && (
             <p className="subtitle" style={{ margin: "10px 0 0", color: "var(--navy)" }}>
-              📅 สำหรับวันใช้งาน: <strong>{targetDate}</strong> (วัน X+1)
+              📅 สำหรับใช้สิทธิ์วันที่: <strong>{targetDate}</strong>
             </p>
           )}
         </div>
@@ -85,7 +86,7 @@ export default function RequiredSummary() {
           <div className="card">
             <div className="summary-stat">
               <div className="stat-box">
-                <div className="stat-label">วันที่ใช้งาน (X+1)</div>
+                <div className="stat-label">วันที่ใช้สิทธิ์</div>
                 <div className="stat-value" style={{ fontSize: "18px" }}>
                   {targetDate || "-"}
                 </div>
@@ -122,7 +123,7 @@ export default function RequiredSummary() {
                       <tr key={row.docId || index}>
                         <td style={{ textAlign: "center", color: "var(--gray)" }}>{index + 1}</td>
                         <td style={{ fontWeight: 600 }}>{row.docId || "-"}</td>
-                        <td>{row.name || row.customer}</td>
+                        <td>{displayCustomerName(row.name || row.customer)}</td>
                         <td style={{ textAlign: "center" }}>
                           <span className="ticket-badge">{row.required}</span>
                         </td>
@@ -134,6 +135,7 @@ export default function RequiredSummary() {
             )}
           </div>
         )}
+        {!loading && <div className="btn-row"><button type="button" className="btn btn-secondary" onClick={() => window.print()}>พิมพ์รายการ</button><button type="button" className="btn btn-secondary" onClick={() => loadData(selectedDate)}>↻ อัปเดตรายการ</button></div>}
       </div>
     </div>
   );

@@ -461,7 +461,7 @@ export async function ensureAdjustmentLogSheet() {
   await ensureSheet("Booking_Adjustment_Log", ["Created_At", "Effective_Date", "Action", "Booking_Row_Number", "Reason"], 2);
   if (!adjustmentLogHeadersReady) {
     const sheets = getSheetsClient();
-    await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: "Booking_Adjustment_Log!F1:G1", valueInputOption: "USER_ENTERED", requestBody: { values: [["Created_By_Employee_Id", "Created_By_Name"]] } });
+    await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: "Booking_Adjustment_Log!F1:H1", valueInputOption: "USER_ENTERED", requestBody: { values: [["Created_By_Employee_Id", "Created_By_Name", "End_Date"]] } });
     adjustmentLogHeadersReady = true;
   }
 }
@@ -469,15 +469,33 @@ export async function ensureAdjustmentLogSheet() {
 export async function appendDailyAdjustments({ rowNumbers, effectiveDate, reason = "ลดสิทธิ์เฉพาะวัน", actor }) {
   await ensureAdjustmentLogSheet();
   const sheets = getSheetsClient();
-  const rows = rowNumbers.map((rowNumber) => [new Date().toISOString(), effectiveDate, "ลดเฉพาะวัน", rowNumber, reason, actor?.employeeId || "", actor?.name || ""]);
-  await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: "Booking_Adjustment_Log!A2:G", valueInputOption: "USER_ENTERED", insertDataOption: "INSERT_ROWS", requestBody: { values: rows } });
+  const rows = rowNumbers.map((rowNumber) => [new Date().toISOString(), effectiveDate, "ลดเฉพาะวัน", rowNumber, reason, actor?.employeeId || "", actor?.name || "", effectiveDate]);
+  await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: "Booking_Adjustment_Log!A2:H", valueInputOption: "USER_ENTERED", insertDataOption: "INSERT_ROWS", requestBody: { values: rows } });
+}
+
+export async function appendPauseAdjustments({ rowNumbers, startDate, endDate, reason = "พักการจอง", actor }) {
+  if (!startDate || !endDate || isoDateToSerial(endDate) < isoDateToSerial(startDate)) throw new Error("ช่วงวันพักการจองไม่ถูกต้อง");
+  await ensureAdjustmentLogSheet();
+  const sheets = getSheetsClient();
+  const rows = rowNumbers.map((rowNumber) => [new Date().toISOString(), startDate, "พักการจอง", rowNumber, reason, actor?.employeeId || "", actor?.name || "", endDate]);
+  await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: "Booking_Adjustment_Log!A2:H", valueInputOption: "USER_ENTERED", insertDataOption: "INSERT_ROWS", requestBody: { values: rows } });
+}
+
+async function getBookingAdjustments() {
+  await ensureAdjustmentLogSheet();
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "Booking_Adjustment_Log!A2:H", valueRenderOption: "UNFORMATTED_VALUE" });
+  return (res.data.values || []).map((row) => ({
+    startDate: isoFromSerial(row[1]) || String(row[1] || ""),
+    endDate: isoFromSerial(row[7]) || String(row[7] || "") || isoFromSerial(row[1]) || String(row[1] || ""),
+    action: String(row[2] || ""), rowNumber: Number(row[3] || 0),
+  })).filter((row) => row.rowNumber && row.startDate);
 }
 
 export async function getAdjustedBookingRows(dateStr) {
-  await ensureAdjustmentLogSheet();
-  const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "Booking_Adjustment_Log!A2:E", valueRenderOption: "UNFORMATTED_VALUE" });
-  return new Set((res.data.values || []).filter((row) => isoFromSerial(row[1]) === dateStr || String(row[1] || "") === dateStr).filter((row) => String(row[2] || "").includes("ลด")).map((row) => Number(row[3])).filter(Boolean));
+  const target = isoDateToSerial(dateStr);
+  const adjustments = await getBookingAdjustments();
+  return new Set(adjustments.filter((row) => (row.action.includes("ลด") || row.action.includes("พัก")) && isoDateToSerial(row.startDate) <= target && target <= isoDateToSerial(row.endDate)).map((row) => row.rowNumber));
 }
 
 // ---------- Urgent_Access_Log ----------
@@ -626,7 +644,7 @@ export async function getActiveBookingsForSlot(slotCode) {
 // ตรวจสอบการชนกันของเวลา (Conflict Check)
 // กฎ: ตัดสินจากช่วงวันและเวลาทับกันเท่านั้น ไม่นำคอลัมน์เหตุผลมาตัดสินหรือข้ามแถว
 export async function findConflict({ slot, startDate, endDate, startTime, excludeRowNumber }) {
-  const all = await getAllBookingRows();
+  const [all, adjustments] = await Promise.all([getAllBookingRows(), getBookingAdjustments()]);
   const newStart = typeof startDate === "number" ? serialToDateOnly(startDate) : isoDateToSerial(startDate);
   const newEnd = endDate ? (typeof endDate === "number" ? serialToDateOnly(endDate) : isoDateToSerial(endDate)) : FAR_FUTURE_SERIAL;
   const rawNewStartMin = typeof startTime === "number" ? serialToMinutes(startTime) : (typeof startTime === "string" ? serialToMinutes(startTime) : 0);
@@ -649,6 +667,14 @@ export async function findConflict({ slot, startDate, endDate, startTime, exclud
     const rEndMin = r.endMinutes !== null ? r.endMinutes : (rStartMin + 240);
     const timeOverlap = rStartMin < newEndMin && newStartMin < rEndMin;
     if (timeOverlap) {
+      // A paused booking deliberately releases its slot.  It still conflicts on
+      // every date outside that pause interval, so check the actual overlap.
+      const pauses = adjustments.filter((item) => item.rowNumber === r.rowNumber && (item.action.includes("ลด") || item.action.includes("พัก")));
+      let hasActiveDate = false;
+      for (let day = Math.max(rStart, newStart); day <= Math.min(rEnd, newEnd); day += 1) {
+        if (!pauses.some((pause) => isoDateToSerial(pause.startDate) <= day && day <= isoDateToSerial(pause.endDate))) { hasActiveDate = true; break; }
+      }
+      if (!hasActiveDate) continue;
       return { conflict: true, withCustomer: r.customer, withSlot: r.slot };
     }
   }
@@ -667,6 +693,9 @@ export async function createBookingBatch({ customer, lot, slots, startDate, endD
   }
   if (isoDateToSerial(endDate) < isoDateToSerial(startDate)) {
     throw new Error("วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่ม");
+  }
+  if (bookingType === "Normal" && isoDateToSerial(startDate) < isoDateToSerial(addDaysIso(getCurrentOperationalDateIso(), 1))) {
+    throw new Error("การจองใหม่เริ่มใช้ได้เร็วสุดวันปฏิบัติการถัดไป");
   }
   if (timeList.some((time) => !isOperationalTimeBlock(time))) {
     throw new Error("รอบเวลาต้องเป็นหนึ่งใน 6 รอบของ operational day (เริ่ม 07:00)");
@@ -866,9 +895,11 @@ export async function changeSlot({
   const nextOperationalDate = addDaysIso(getCurrentOperationalDateIso(), 1);
   // A future booking must never be moved to a date before its original start.
   // This keeps the normal 07:00 next-day rule while preserving a future plan.
-  const effectiveNewStartDate = oldRow.startDate > nextOperationalDate ? oldRow.startDate : nextOperationalDate;
+  const requestedStart = String(newStartDate || "");
+  const earliestStart = oldRow.startDate > nextOperationalDate ? oldRow.startDate : nextOperationalDate;
+  const effectiveNewStartDate = requestedStart > earliestStart ? requestedStart : earliestStart;
   const effectiveOldEndDate = addDaysIso(effectiveNewStartDate, -1);
-  const effectiveNewEndDate = oldRow.endDate;
+  const effectiveNewEndDate = newEndDate || oldRow.endDate;
   const effectiveNewStartTime = oldRow.startTime;
   if (!effectiveNewEndDate) throw new Error("รายการเดิมไม่มีวันสิ้นสุด จึงยังย้ายช่องตามกติกาใหม่ไม่ได้");
   if (effectiveNewStartDate > effectiveNewEndDate) throw new Error("สิทธิ์เดิมสิ้นสุดก่อนวันที่ย้ายช่อง จึงไม่สามารถย้ายได้");
@@ -1070,6 +1101,38 @@ async function ensurePaymentSnapshotSheets() {
   await ensureSheet("Payment_Snapshot", PAYMENT_SNAPSHOT_HEADERS, 2);
   await ensureSheet("Payment_Snapshot_Run", PAYMENT_SNAPSHOT_RUN_HEADERS, 2);
   await ensureSheet("Payment_Refresh_Log", PAYMENT_REFRESH_HEADERS, 2);
+}
+
+export async function getSlotAvailability({ lot, startDate, endDate, startTimes = [] }) {
+  // Read each Sheet range once.  The booking screen may show dozens of slots;
+  // calling findConflict for every slot would quickly exhaust Google quota.
+  const [slots, all, adjustments] = await Promise.all([getSlotsWithStatus(), getAllBookingRows(), getBookingAdjustments()]);
+  const inLot = slots.filter((slot) => !lot || slot.lot === lot);
+  const requestedStart = isoDateToSerial(startDate);
+  const requestedEnd = isoDateToSerial(endDate) || FAR_FUTURE_SERIAL;
+  const activeOutsidePause = (booking, overlapStart, overlapEnd) => {
+    const pauses = adjustments.filter((item) => item.rowNumber === booking.rowNumber && (item.action.includes("ลด") || item.action.includes("พัก")));
+    for (let day = overlapStart; day <= overlapEnd; day += 1) {
+      if (!pauses.some((pause) => isoDateToSerial(pause.startDate) <= day && day <= isoDateToSerial(pause.endDate))) return true;
+    }
+    return false;
+  };
+  return inLot.map((slot) => {
+    if (slot.status === "ปิด" || slot.isRoad) return { slotCode: slot.slotCode, blocked: true, reason: "ปิดใช้งาน" };
+    for (const startTime of startTimes) {
+      const startMin = toOperationalMinutes(serialToMinutes(startTime));
+      const conflict = all.find((booking) => {
+        if (String(booking.slot) !== String(slot.slotCode) || !booking.startSerial) return false;
+        if (booking.bookingType === "Urgent" && isClosingReason(booking.reason)) return false;
+        const bookingEnd = booking.endEffectiveSerial ?? FAR_FUTURE_SERIAL;
+        const datesOverlap = booking.startSerial <= requestedEnd && bookingEnd >= requestedStart;
+        const timesOverlap = (booking.startMinutes ?? 0) < startMin + 240 && startMin < (booking.endMinutes ?? ((booking.startMinutes ?? 0) + 240));
+        return datesOverlap && timesOverlap && activeOutsidePause(booking, Math.max(booking.startSerial, requestedStart), Math.min(bookingEnd, requestedEnd));
+      });
+      if (conflict) return { slotCode: slot.slotCode, blocked: true, reason: "มีการจองแล้ว" };
+    }
+    return { slotCode: slot.slotCode, blocked: false, reason: "" };
+  });
 }
 
 function snapshotKey(rowNumber) { return String(rowNumber || ""); }

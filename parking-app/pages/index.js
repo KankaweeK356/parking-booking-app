@@ -24,22 +24,22 @@ export default function Home() {
             <div className="desc">บันทึกการจองใหม่ เลือกหลายช่องและหลายรอบพร้อมกันได้</div>
           </Link>
           <Link href="/booking/edit" className="nav-card">
-            <div className="title">✏️ ปรับ / ยกเลิกการจอง</div>
-            <div className="desc">ลด/ยกเลิกสิทธิ์, ย้ายช่อง หรือปรับวันสิ้นสุด</div>
+            <div className="title">✏️ ปรับ / ยกเลิก / ย้ายช่อง</div>
+            <div className="desc">พักการจอง ยกเลิกการจอง หรือย้ายช่องทีละรอบ</div>
+          </Link>
+          <Link href="/booking/urgent" className="nav-card"><div className="title">⚡ จองรายวัน</div><div className="desc">จองเพิ่ม หรือจองใหม่รายวันสำหรับรอบที่ยังไม่เริ่ม</div></Link>
+          <Link href="/required-summary" className="nav-card">
+            <div className="title">🎟️ สรุปรายการตีตั๋ว</div>
+            <div className="desc">ดูและพิมพ์สรุปรายการตั๋วตามชื่อลูกค้า</div>
+          </Link>
+          <Link href="/cs-overview" className="nav-card">
+            <div className="title">📋 ภาพรวมการจอง</div>
+            <div className="desc">ดูชื่อลูกค้าที่ได้รับสิทธิ์ในแต่ละช่องและรอบเวลา</div>
           </Link>
           <Link href="/slot-status" className="nav-card">
             <div className="title">⛔ ปิด / เปิดช่องจอด</div>
-            <div className="desc">จัดการช่องจอดเสีย/ซ่อม พร้อมระบบช่วยยกเลิกรายการจองที่ค้างอยู่อัตโนมัติ</div>
+            <div className="desc">ปิดหรือเปิดช่อง โดยตรวจสอบรายการจองที่กระทบก่อน</div>
           </Link>
-          <Link href="/required-summary" className="nav-card">
-            <div className="title">🎟️ สรุปจำนวนตั๋วที่ต้องตี</div>
-            <div className="desc">ดูยอดตั๋วที่ต้องเตรียมแจ้งด่านล่วงหน้า 1 วัน (วัน X+1) แยกตามรายชื่อลูกค้า</div>
-          </Link>
-          <Link href="/cs-overview" className="nav-card">
-            <div className="title">📋 ภาพรวมการจัดสรรพื้นที่ (CS Overview)</div>
-            <div className="desc">ดูชื่อลูกค้าที่ได้รับสิทธิ์ในแต่ละช่องและรอบเวลา</div>
-          </Link>
-          <Link href="/booking/urgent" className="nav-card"><div className="title">⚡ จัดการสิทธิ์ระหว่างวัน</div><div className="desc">เปิดสิทธิ์การจองเดิม หรือเพิ่มการจองระหว่างวัน</div></Link>
           {canAdmin && <Link href="/admin/users" className="nav-card"><div className="title">👤 จัดการผู้ใช้</div><div className="desc">ดูบัญชีพนักงานและ reset Password</div></Link>}
         </div>}
         {tab === "booking" && user && !canManage && <div className="card"><p className="subtitle">บัญชีทีมตรวจพื้นที่มีสิทธิ์ดูเฉพาะการตรวจสอบพื้นที่</p></div>}

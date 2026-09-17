@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import ParkingTimelineGrid from "../components/ParkingTimelineGrid";
+import { displayCustomerName, displayLotName } from "../lib/display";
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -40,17 +41,17 @@ export default function CSOverview() {
 
   return (
     <div>
-      <div className="top-bar"><div className="inner"><h1>ภาพรวมการจัดสรรพื้นที่จอดรถ (CS Overview)</h1><Link href="/" className="back">← กลับหน้าหลัก</Link></div></div>
+      <div className="top-bar"><div className="inner"><h1>ภาพรวมการจอง</h1><Link href="/" className="back">← กลับหน้าหลัก</Link></div></div>
       <div className="page timeline-page">
         <h2>การจัดสรรตามรอบปฏิบัติการ 07:00–07:00</h2>
         <p className="subtitle">แสดงชื่อลูกค้าที่มีสิทธิ์จองในแต่ละช่องและรอบเวลา โดยไม่ใช้สถานะการชำระเงินเป็นเงื่อนไข</p>
         {error && <div className="alert alert-error">{error}</div>}
         <div className="card timeline-controls">
-          <div><label>วันที่ของรอบ 07:00</label><input type="date" value={selectedDate} onChange={(e) => { setSelectedDate(e.target.value); loadOverview(e.target.value); }} /></div>
-          <div><label>เลือกลาน</label><div className="lot-buttons">{lots.map((lot) => <button key={lot} type="button" className={`btn ${selectedLot === lot ? "btn-primary" : "btn-secondary"}`} onClick={() => setSelectedLot(lot)}>{lot}</button>)}</div></div>
-          <button type="button" className="btn btn-secondary refresh-button" onClick={() => loadOverview(selectedDate)}>↻ Refresh</button>
+          <div><label>เลือกวันที่</label><input type="date" value={selectedDate} onChange={(e) => { setSelectedDate(e.target.value); loadOverview(e.target.value); }} /></div>
+          <div><label>เลือกลานจอด</label><div className="lot-buttons">{lots.map((lot) => <button key={lot} type="button" className={`btn ${selectedLot === lot ? "btn-primary" : "btn-secondary"}`} onClick={() => setSelectedLot(lot)}>{displayLotName(lot)}</button>)}</div></div>
+          <button type="button" className="btn btn-secondary refresh-button" onClick={() => loadOverview(selectedDate)}>↻ อัปเดตรายการจอง</button>
         </div>
-        {loading ? <div className="card"><p className="subtitle">กำลังโหลดข้อมูลการจัดสรรช่องจอด...</p></div> : <><div className="card"><ParkingTimelineGrid slots={slotsInLot} bookings={assignmentsInLot} mode="cs" /></div>{futureAssignmentsInLot.length > 0 && <div className="card"><h2 style={{ fontSize: 16 }}>รายการจองล่วงหน้าที่ยังมีผล</h2><div className="future-booking-list">{futureAssignmentsInLot.map((booking, index) => <div key={`${booking.slot}-${booking.startDate}-${index}`}><strong>ช่อง {slotNumber(booking.slot)}</strong> — คุณ{booking.customer}, รอบ {booking.startTime}, เริ่ม {booking.startDate}{booking.endDate ? ` ถึง ${booking.endDate}` : ""}</div>)}</div></div>}</>}
+        {loading ? <div className="card"><p className="subtitle">กำลังโหลดข้อมูลการจัดสรรช่องจอด...</p></div> : <><div className="card"><ParkingTimelineGrid slots={slotsInLot} bookings={assignmentsInLot} mode="cs" /></div>{futureAssignmentsInLot.length > 0 && <div className="card"><h2 style={{ fontSize: 16 }}>รายการจองล่วงหน้าที่ยังมีผล</h2><div className="future-booking-list">{futureAssignmentsInLot.map((booking, index) => <div key={`${booking.slot}-${booking.startDate}-${index}`}><strong>ช่อง {slotNumber(booking.slot)}</strong> — {displayCustomerName(booking.customer)}, รอบ {booking.startTime}, เริ่ม {booking.startDate}{booking.endDate ? ` ถึง ${booking.endDate}` : ""}</div>)}</div></div>}</>}
       </div>
     </div>
   );

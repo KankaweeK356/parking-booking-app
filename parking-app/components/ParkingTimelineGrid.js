@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { OPERATIONAL_TIME_BLOCKS } from "../lib/operational-day";
+import { displayCustomerName } from "../lib/display";
 import { getDashboardCellStatus } from "../lib/timeline-status";
 
 function operationalMinute(time) {
@@ -51,7 +52,7 @@ export default function ParkingTimelineGrid({ slots, bookings, mode, currentBloc
                   return <td key={block.startTime} className="timeline-cell timeline-closed" title={slot.closedReason || "ปิดใช้งาน"}>ปิดใช้งาน</td>;
                 }
                 if (booking) {
-                  const label = mode === "cs" ? `คุณ${booking.customer}` : booking.isUrgent ? "รอตรวจตั๋ว" : "มีการจอง";
+                  const label = mode === "cs" ? displayCustomerName(booking.customer) : booking.isUrgent ? "รอตรวจตั๋ว" : "มีการจอง";
                   const className = mode === "cs" ? "timeline-booked" : booking.isUrgent ? "timeline-ticket-check" : "timeline-booked";
                   const savedAt = booking.isUrgent ? savedAtLabel(booking.createdAt) : "";
                   const title = mode === "cs" ? label : booking.isUrgent ? `รอตรวจตั๋ว${savedAt ? ` — บันทึก ${savedAt}` : ""}` : "มีการจอง";

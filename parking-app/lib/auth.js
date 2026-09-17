@@ -34,7 +34,7 @@ function sign(value) {
 }
 
 export function validateEmployeeId(employeeId) {
-  return /^\d{2,6}$/.test(String(employeeId || "").trim());
+  return /^\d{4}$/.test(String(employeeId || "").trim());
 }
 
 export function validatePassword(password) {

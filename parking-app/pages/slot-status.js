@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { displayLotName, displayCustomerName } from "../lib/display";
 
 export default function SlotStatus() {
   const [slots, setSlots] = useState([]);
@@ -8,7 +9,6 @@ export default function SlotStatus() {
   const [selected, setSelected] = useState(null);
   const [reason, setReason] = useState("");
   const [warning, setWarning] = useState(null); // { hasActiveBooking: true, bookings: [...] }
-  const [selectedBookingRowsToClose, setSelectedBookingRowsToClose] = useState([]); // [rowNumber, ...]
   const [checking, setChecking] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState(null);
@@ -33,7 +33,6 @@ export default function SlotStatus() {
     setReason("");
     setMessage(null);
     setWarning(null);
-    setSelectedBookingRowsToClose([]);
 
     if (s.status === "เปิด") {
       setChecking(true);
@@ -42,7 +41,6 @@ export default function SlotStatus() {
         const data = await res.json();
         if (data.hasActiveBooking && data.bookings?.length > 0) {
           setWarning(data);
-          setSelectedBookingRowsToClose(data.bookings.map((b) => b.rowNumber));
         }
       } catch (err) {
         console.error("Error checking active bookings for slot:", err);
@@ -50,12 +48,6 @@ export default function SlotStatus() {
         setChecking(false);
       }
     }
-  }
-
-  function toggleBookingRow(rowNumber) {
-    setSelectedBookingRowsToClose((prev) =>
-      prev.includes(rowNumber) ? prev.filter((id) => id !== rowNumber) : [...prev, rowNumber]
-    );
   }
 
   async function doAction(action) {
@@ -74,31 +66,19 @@ export default function SlotStatus() {
           slotCode: selected.slotCode,
           action,
           reason,
-          bookingRowNumbersToClose: action === "ปิด" ? selectedBookingRowsToClose : [],
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "เกิดข้อผิดพลาดในการบันทึกสถานะช่อง");
 
       if (action === "ปิด") {
-        if (data.bookingResults && data.bookingResults.some((r) => !r.ok)) {
-          setMessage({
-            type: "warning",
-            text: `⚠️ ปิดช่อง ${selected.slotCode} เรียบร้อยแล้ว แต่ยกเลิกการจองบางรายการไม่สำเร็จ`,
-          });
-        } else {
-          setMessage({
-            type: "success",
-            text: `✓ ปิดช่อง ${selected.slotCode} เรียบร้อยแล้ว${selectedBookingRowsToClose.length > 0 ? " (และปิดสิทธิ์การจองที่เกี่ยวข้องแล้ว)" : ""}`,
-          });
-        }
+          setMessage({ type: "success", text: `✓ ปิดช่อง ${selected.number || ""} เรียบร้อยแล้ว` });
       } else {
         setMessage({ type: "success", text: `✓ เปิดใช้งานช่อง ${selected.slotCode} เรียบร้อยแล้ว` });
       }
 
       setSelected(null);
       setWarning(null);
-      setSelectedBookingRowsToClose([]);
       loadSlots();
     } catch (err) {
       setMessage({ type: "error", text: err.message });
@@ -116,14 +96,14 @@ export default function SlotStatus() {
         </div>
       </div>
       <div className="page">
-        <h2>ปิด / เปิดช่องจอด</h2>
-        <p className="subtitle">จัดการสถานะช่องจอดที่ชำรุดหรือเปิดใช้งาน พร้อมระบบช่วยยกเลิกรายการจองที่ค้างอยู่อัตโนมัติ</p>
+        <h2>จัดการสถานะช่องจอด</h2>
+        <p className="subtitle">ปิดหรือเปิดช่องจอดที่ชำรุด โดยต้องจัดการรายการจองที่กระทบให้เสร็จก่อนปิดช่อง</p>
 
         <div className="card">
           <label>1. เลือกลานที่ต้องการจัดการ</label>
           <select value={lot} onChange={(e) => { setLot(e.target.value); setSelected(null); }}>
             {lots.map((l) => (
-              <option key={l} value={l}>{l}</option>
+              <option key={l} value={l}>{displayLotName(l)}</option>
             ))}
           </select>
 
@@ -150,7 +130,7 @@ export default function SlotStatus() {
         {selected && (
           <div className="card">
             <h2 style={{ fontSize: 16 }}>
-              ช่อง {selected.slotCode} — สถานะปัจจุบัน: {" "}
+              ช่อง {selected.number || "-"} — สถานะปัจจุบัน: {" "}
               <span className={`status-badge ${selected.status === "ปิด" || selected.isRoad ? "status-closed" : "status-open"}`}>
                 {selected.status === "ปิด" || selected.isRoad ? (selected.isRoad ? "ถนน / ปิดใช้งาน" : "ปิดใช้งานชั่วคราว") : "เปิดใช้งานปกติ"}
               </span>
@@ -161,14 +141,13 @@ export default function SlotStatus() {
             {warning && warning.bookings && (
               <div className="alert alert-warning" style={{ marginTop: "14px" }}>
                 <div style={{ fontWeight: 700, marginBottom: "4px" }}>
-                  ⚠️ ช่องนี้มีรายการจองค้างอยู่ ({warning.bookings.map((b) => b.customer).join(", ")})
+                  ⚠️ ช่องนี้มีรายการจองที่ได้รับผลกระทบ ({warning.bookings.map((b) => displayCustomerName(b.customer)).join(", ")})
                 </div>
                 <div style={{ fontSize: "13px", marginBottom: "10px" }}>
-                  เลือกรายการจองที่ต้องการยกเลิกพร้อมการปิดช่อง (วันสิ้นสุด = วันนี้ / บันทึกเหตุผล &quot;ช่องถูกปิดใช้งาน&quot; ให้อัตโนมัติ):
+                  กรุณาไปที่เมนู “ปรับ / ยกเลิก / ย้ายช่อง” เพื่อย้ายช่อง พักการจอง หรือยกเลิกรายการเหล่านี้ก่อน แล้วจึงกลับมาปิดช่อง:
                 </div>
                 <div style={{ background: "white", padding: "8px 12px", borderRadius: "6px", border: "1px solid #f0d2a8" }}>
                   {warning.bookings.map((b) => {
-                    const isChecked = selectedBookingRowsToClose.includes(b.rowNumber);
                     return (
                       <label
                         key={b.rowNumber}
@@ -177,18 +156,12 @@ export default function SlotStatus() {
                           alignItems: "center",
                           gap: "8px",
                           margin: "6px 0",
-                          cursor: "pointer",
+                        cursor: "default",
                           fontWeight: "normal",
                         }}
                       >
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => toggleBookingRow(b.rowNumber)}
-                          style={{ width: "16px", height: "16px", cursor: "pointer" }}
-                        />
                         <span>
-                          ยกเลิกการจองของ <strong>คุณ{b.customer}</strong> (รอบ {b.startTime || "-"} น. | สิทธิ์เดิม: {b.startDate} ถึง {b.endDate || "ไม่มีกำหนด"})
+                          <strong>{displayCustomerName(b.customer)}</strong> (รอบ {b.startTime || "-"} น. | {b.startDate} ถึง {b.endDate || "-"})
                         </span>
                       </label>
                     );
@@ -207,8 +180,8 @@ export default function SlotStatus() {
                   placeholder="เช่น พื้นทรุด, ทาสีเส้นใหม่, ชำรุดรอซ่อม"
                 />
                 <div className="btn-row">
-                  <button className="btn btn-danger" disabled={submitting} onClick={() => doAction("ปิด")}>
-                    {submitting ? "กำลังบันทึกข้อมูล..." : `ยืนยันปิดช่อง ${selected.slotCode}`}
+                  <button className="btn btn-danger" disabled={submitting || Boolean(warning?.bookings?.length)} onClick={() => doAction("ปิด")}>
+                    {submitting ? "กำลังบันทึกข้อมูล..." : `ยืนยันปิดช่อง ${selected.number || ""}`}
                   </button>
                 </div>
               </>

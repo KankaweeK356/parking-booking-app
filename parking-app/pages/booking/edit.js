@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import OperationalTimePicker from "../../components/OperationalTimePicker";
 import EndDateField from "../../components/EndDateField";
+import CustomerPicker from "../../components/CustomerPicker";
+import { displayLotName } from "../../lib/display";
 import { getCurrentOperationalDateIso } from "../../lib/operational-day";
 
 function today() {
@@ -40,6 +42,8 @@ export default function EditBooking() {
   const [selectedReduceRows, setSelectedReduceRows] = useState([]);
   const [reduceEndDate, setReduceEndDate] = useState(today());
   const [reduceMode, setReduceMode] = useState("permanent");
+  const [pauseStartDate, setPauseStartDate] = useState(getNextDay(today()));
+  const [pauseEndDate, setPauseEndDate] = useState(getNextDay(today()));
   const [reduceResults, setReduceResults] = useState(null);
   const [submittingReduce, setSubmittingReduce] = useState(false);
 
@@ -63,7 +67,7 @@ export default function EditBooking() {
 
   function slotLabel(booking) {
     const number = allSlots.find((slot) => slot.slotCode === booking.slot)?.number || "-";
-    return `${booking.lot} / ช่อง ${number}`;
+    return `${displayLotName(booking.lot)} / ช่อง ${number}`;
   }
 
   // โหลดรายชื่อลูกค้าและข้อมูลช่องจอด
@@ -139,8 +143,9 @@ export default function EditBooking() {
         body: JSON.stringify({
           rowNumbers: selectedReduceRows,
           endDate: reduceEndDate,
-          adjustmentDate: reduceMode === "day" ? getNextDay(today()) : "",
-          reason: reduceMode === "day" ? "ลดสิทธิ์เฉพาะวัน" : "ยกเลิกสิทธิ์",
+          pauseStartDate: reduceMode === "pause" ? pauseStartDate : "",
+          pauseEndDate: reduceMode === "pause" ? pauseEndDate : "",
+          reason: reduceMode === "pause" ? "พักการจอง" : "ยกเลิกการจอง",
         }),
       });
       const data = await res.json();
@@ -275,15 +280,9 @@ export default function EditBooking() {
       <div className="page">
         <div className="card">
           <div className="section-heading-row">
-            <label>เลือกลูกค้า</label>
             <button type="button" className="btn btn-secondary" onClick={refreshBookingStatus}>↻ Refresh สถานะช่อง</button>
           </div>
-          <select value={customer} onChange={(e) => setCustomer(e.target.value)}>
-            <option value="">— เลือกลูกค้า —</option>
-            {customers.map((c) => (
-              <option key={c.docId || c.name} value={c.name}>{c.name}</option>
-            ))}
-          </select>
+          <CustomerPicker customers={customers} value={customer} onChange={setCustomer} label="เลือกลูกค้า" />
         </div>
 
         {customer && (
@@ -295,8 +294,8 @@ export default function EditBooking() {
                 style={{ cursor: "pointer", borderLeft: changeType === "reduce" ? "5px solid var(--navy)" : "1px solid var(--border)" }}
                 onClick={() => setChangeType("reduce")}
               >
-                <div className="title" style={{ fontSize: 15 }}>1. ลด / ยกเลิกสิทธิ์</div>
-                <div className="desc">เลือกทั้งช่องหรือเลือกลดเฉพาะบางรอบ มีผลวันถัดไป 07:00</div>
+                <div className="title" style={{ fontSize: 15 }}>1. พัก / ยกเลิกการจอง</div>
+                <div className="desc">เลือกทั้งช่องหรือเฉพาะรอบ แล้วกำหนดวันที่มีผล</div>
               </div>
               <div
                 className={`nav-card ${changeType === "change" ? "selected-nav" : ""}`}
@@ -304,7 +303,7 @@ export default function EditBooking() {
                 onClick={() => setChangeType("change")}
               >
                 <div className="title" style={{ fontSize: 15 }}>2. ย้ายช่องจอด</div>
-                <div className="desc">มีผลวันถัดไป 07:00 โดยคงรอบและวันสิ้นสุดเดิม</div>
+                <div className="desc">เลือกทีละรอบ และกำหนดวันเริ่มใช้ช่องใหม่</div>
               </div>
             </div>
           </div>
@@ -320,8 +319,8 @@ export default function EditBooking() {
         {customer && !loadingBookings && bookings.length > 0 && changeType === "reduce" && (
           <form onSubmit={handleSubmitReduce}>
             <div className="card">
-              <h2 style={{ fontSize: 16 }}>เลือกสิทธิ์ที่ต้องการลดหรือยกเลิก</h2>
-              <p className="subtitle">เลือกทุกรอบของช่องเดียวกันเพื่อลดทั้งช่อง หรือเลือกเพียงบางรอบเพื่อลดรอบเวลา มีผลวันถัดไป 07:00</p>
+              <h2 style={{ fontSize: 16 }}>เลือกการจองที่ต้องการพักหรือยกเลิก</h2>
+              <p className="subtitle">เลือกทุกรอบของช่องเดียวกันเพื่อทำทั้งช่อง หรือเลือกเฉพาะรอบที่ต้องการ</p>
               <div style={{ margin: "14px 0" }}>
                 {bookings.map((b) => (
                   <div
@@ -345,9 +344,9 @@ export default function EditBooking() {
                 ))}
               </div>
 
-              <label>วันสุดท้ายที่ยังใช้สิทธิ์ได้</label>
-              <div className="type-grid"><button type="button" className={`type-btn ${reduceMode === "permanent" ? "active" : ""}`} onClick={() => setReduceMode("permanent")}>ลด/ยกเลิกถาวร</button><button type="button" className={`type-btn ${reduceMode === "day" ? "active" : ""}`} onClick={() => setReduceMode("day")}>ลดเฉพาะวันถัดไป</button></div>
-              {reduceMode === "permanent" ? <input type="date" value={reduceEndDate} readOnly /> : <p className="alert alert-warning">รายการที่เลือกจะไม่ใช้สิทธิ์เฉพาะวันที่ {getNextDay(today())} และกลับมาใช้ตามการจองเดิมในวันถัดไป</p>}
+              <label>เลือกวิธีดำเนินการ</label>
+              <div className="type-grid"><button type="button" className={`type-btn ${reduceMode === "permanent" ? "active" : ""}`} onClick={() => setReduceMode("permanent")}>ยกเลิกการจอง</button><button type="button" className={`type-btn ${reduceMode === "pause" ? "active" : ""}`} onClick={() => setReduceMode("pause")}>พักการจอง</button></div>
+              {reduceMode === "permanent" ? <><label>วันสุดท้ายที่ยังใช้ช่องได้</label><input type="date" min={today()} value={reduceEndDate} onChange={(e) => setReduceEndDate(e.target.value)} /></> : <><label>เริ่มพักวันที่</label><input type="date" min={getNextDay(today())} value={pauseStartDate} onChange={(e) => setPauseStartDate(e.target.value)} /><label>สิ้นสุดพักวันที่</label><input type="date" min={pauseStartDate} value={pauseEndDate} onChange={(e) => setPauseEndDate(e.target.value)} /><p className="alert alert-warning">ระหว่างวันที่พัก ช่องนี้เปิดให้ลูกค้าคนอื่นจองได้ และจะกลับมาเป็นสิทธิ์เดิมหลังวันสิ้นสุดพัก</p></>}
 
               <div className="btn-row">
                 <button
@@ -355,7 +354,7 @@ export default function EditBooking() {
                   className="btn btn-danger"
                   disabled={submittingReduce || selectedReduceRows.length === 0}
                 >
-                  {submittingReduce ? "กำลังบันทึก..." : `ยืนยันยกเลิก (${selectedReduceRows.length} รายการ)`}
+                  {submittingReduce ? "กำลังบันทึก..." : `ยืนยัน${reduceMode === "pause" ? "พักการจอง" : "ยกเลิกการจอง"} (${selectedReduceRows.length} รายการ)`}
                 </button>
               </div>
             </div>
@@ -404,11 +403,13 @@ export default function EditBooking() {
             {selectedChangeRow && (
               <div className="card">
                 <h2 style={{ fontSize: 16 }}>2. เลือกช่องใหม่</h2>
-                <p className="subtitle">มีผลวันที่ {changeNewStartDate} เวลา 07:00 และคงรอบ {selectedChangeRow.startTime} กับวันสิ้นสุด {selectedChangeRow.endDate} เดิม</p>
+                <p className="subtitle">ย้ายเฉพาะรอบ {selectedChangeRow.startTime} น. ช่องเดิมจะใช้ถึงวันก่อนหน้า และช่องใหม่จะใช้ถึง {changeNewEndDate}</p>
+                <label>เริ่มใช้ช่องใหม่วันที่</label>
+                <input type="date" min={laterDate(selectedChangeRow.startDate || "", getNextDay(today()))} max={changeNewEndDate || undefined} value={changeNewStartDate} onChange={(e) => setChangeNewStartDate(e.target.value)} />
                 <label>ลานใหม่</label>
                 <select value={newLot} onChange={(e) => { setNewLot(e.target.value); setNewSlot(""); }}>
                   {lots.map((l) => (
-                    <option key={l} value={l}>{l}</option>
+                    <option key={l} value={l}>{displayLotName(l)}</option>
                   ))}
                 </select>
 
