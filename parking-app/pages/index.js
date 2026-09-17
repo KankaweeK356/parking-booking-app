@@ -11,7 +11,7 @@ export default function Home() {
     <div>
       <div className="top-bar">
         <div className="inner">
-          <h1>ระบบจองที่จอดรถชั่วคราว</h1>
+          <h1>ระบบจองที่จอดรถเรียงสินค้า</h1>
         </div>
       </div>
       <div className="page">
