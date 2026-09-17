@@ -625,6 +625,8 @@ export async function findConflict({ slot, startDate, endDate, startTime, exclud
     if (r.rowNumber === excludeRowNumber) continue;
     if (String(r.slot) !== String(slot)) continue;
     if (!r.startSerial) continue;
+    // สิทธิ์ด่วนที่ถูกยกเลิกแล้ว ไม่นำมาตัดสิน conflict เพื่อให้สามารถจัดสรรช่องเดิมใหม่ได้
+    if (r.bookingType === "Urgent" && isClosingReason(r.reason)) continue;
 
     const rStart = r.startSerial;
     const rEnd = r.endEffectiveSerial !== null && r.endEffectiveSerial !== undefined ? r.endEffectiveSerial : FAR_FUTURE_SERIAL;
@@ -1111,7 +1113,12 @@ export async function createPaymentSnapshot(operationalDate) {
   transectionRows.filter((ticket) => ticket.dateSerial === sourceSerial && ticket.boothCode).forEach((ticket) => {
     ticketCountByDocId.set(ticket.boothCode, (ticketCountByDocId.get(ticket.boothCode) || 0) + 1);
   });
-  urgentLogs.filter((log) => log.ticketIssuedDate === sourceDate && log.docId).forEach((log) => {
+  const cancelledUrgentKeys = new Set(
+    allBookings
+      .filter((b) => b.bookingType === "Urgent" && isClosingReason(b.reason))
+      .map((b) => `${b.slot}::${b.startTime}`)
+  );
+  urgentLogs.filter((log) => log.ticketIssuedDate === sourceDate && log.docId && !cancelledUrgentKeys.has(`${log.slot}::${log.startTime}`)).forEach((log) => {
     ticketCountByDocId.set(log.docId, Math.max(0, (ticketCountByDocId.get(log.docId) || 0) - log.ticketCount));
   });
   const slotNumberByCode = new Map(slotsWithStatus.map((slot) => [slot.slotCode, slot.number]));
@@ -1157,6 +1164,8 @@ export async function getDashboardData(dateStr) {
   // หา bookings ที่ active ในวันเป้าหมาย
   const activeBookings = allBookings.filter((b) => {
     if (!b.startSerial) return false;
+    // สิทธิ์ด่วนที่ถูกยกเลิก ไม่นำมาแสดงบน Dashboard
+    if (b.bookingType === "Urgent" && isClosingReason(b.reason)) return false;
     const endEff = b.endEffectiveSerial !== null && b.endEffectiveSerial !== undefined ? b.endEffectiveSerial : FAR_FUTURE_SERIAL;
     return !adjustedRows.has(b.rowNumber) && b.startSerial <= targetSerial && targetSerial <= endEff;
   });

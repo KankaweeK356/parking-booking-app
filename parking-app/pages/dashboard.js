@@ -17,6 +17,7 @@ export default function Dashboard() {
   const [canRetryPayment, setCanRetryPayment] = useState(false);
   const [paymentMessage, setPaymentMessage] = useState("");
   const [retryingPayment, setRetryingPayment] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => { fetch("/api/auth/me").then((response) => response.ok ? response.json() : null).then((result) => setCanRetryPayment(["Admin", "Field"].includes(result?.user?.role))); }, []);
   useEffect(() => {
@@ -32,10 +33,12 @@ export default function Dashboard() {
     try { return JSON.parse(raw); } catch { throw new Error(fallbackMessage); }
   }
 
-  async function loadDashboard(date, { silent = false } = {}) {
-    if (!silent) { setLoading(true); setError(""); }
+  async function loadDashboard(date, { silent = false, force = false } = {}) {
+    if (!silent && !force) { setLoading(true); setError(""); }
+    if (force) { setRefreshing(true); setError(""); }
     try {
-      const response = await fetch(`/api/dashboard?date=${encodeURIComponent(date)}`);
+      const url = `/api/dashboard?date=${encodeURIComponent(date)}${force ? "&force=true" : ""}`;
+      const response = await fetch(url);
       const result = await readApiJson(response, "โหลดข้อมูล Dashboard ไม่สำเร็จ กรุณารอสักครู่");
       if (!response.ok) throw new Error(result.error || "โหลดข้อมูล Dashboard ไม่สำเร็จ");
       setData(result);
@@ -43,9 +46,10 @@ export default function Dashboard() {
       const availableLots = Array.from(new Set((result.slots || []).map((slot) => slot.lot).filter(Boolean))).sort();
       setSelectedLot((current) => availableLots.includes(current) ? current : availableLots[0] || "");
     } catch (err) {
-      if (!silent) setError(err.message);
+      if (!silent || force) setError(err.message);
     } finally {
-      if (!silent) setLoading(false);
+      if (!silent && !force) setLoading(false);
+      if (force) setRefreshing(false);
     }
   }
 
@@ -87,6 +91,19 @@ export default function Dashboard() {
         <div className="card timeline-controls">
           <div><label>วันที่ของรอบ 07:00</label><input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} /></div>
           <div><label>เลือกลาน</label><div className="lot-buttons">{lots.map((lot) => <button key={lot} type="button" className={`btn ${selectedLot === lot ? "btn-primary" : "btn-secondary"}`} onClick={() => setSelectedLot(lot)}>{lot}</button>)}</div></div>
+          <div>
+            <label>&nbsp;</label>
+            <div>
+              <button
+                type="button"
+                className="btn btn-secondary refresh-button"
+                disabled={loading || refreshing}
+                onClick={() => loadDashboard(selectedDate, { force: true })}
+              >
+                {refreshing ? "กำลังรีเฟรช..." : "↻ รีเฟรชข้อมูล"}
+              </button>
+            </div>
+          </div>
         </div>
         {paymentMessage && <div className={`alert ${paymentMessage.includes("สำเร็จ") ? "alert-success" : "alert-error"}`}>{paymentMessage}</div>}
         {!loading && paymentUpdate?.status === "UPDATING" && <div className="alert alert-warning">ระบบกำลังอัปเดตข้อมูลสำหรับวันที่ {paymentDateLabel}{canShowRetry && <><br />โปรดรอข้อมูล หรือกด <button type="button" className="btn btn-secondary refresh-button" disabled={retryingPayment} onClick={retryPaymentSnapshot}>{retryingPayment ? "กำลังอัปเดตข้อมูล..." : "อัปเดตข้อมูลใหม่"}</button></>}</div>}

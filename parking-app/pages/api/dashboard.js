@@ -6,10 +6,14 @@ export default async function handler(req, res) {
   if (!(await requireRole(req, res, [ROLE.ADMIN, ROLE.CS, ROLE.FIELD]))) return;
   res.setHeader("Cache-Control", "private, no-store");
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
-  const { date } = req.query;
+  const { date, force } = req.query;
+  const isForce = force === "true" || force === "1";
   try {
     const paymentDate = getBangkokCalendarDateIso();
-    const [data, paymentUpdate] = await Promise.all([getDashboardDataCached(date), getPaymentUpdateCached(paymentDate)]);
+    const [data, paymentUpdate] = await Promise.all([
+      getDashboardDataCached(date, { force: isForce }),
+      getPaymentUpdateCached(paymentDate, { force: isForce }),
+    ]);
     // เวลาเดินต่อเนื่องแม้ข้อมูลช่องจอดอยู่ใน cache จึงคำนวณรอบปัจจุบันใหม่ทุกคำขอ
     return res.status(200).json({
       ...data,
