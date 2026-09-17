@@ -1008,7 +1008,9 @@ export async function getCsOverviewData(dateStr) {
   const futureAssignments = [];
   for (const b of allBookings) {
     const endEff = b.endEffectiveSerial !== null && b.endEffectiveSerial !== undefined ? b.endEffectiveSerial : FAR_FUTURE_SERIAL;
-    if (!b.startSerial || endEff < targetSerial || adjustedRows.has(b.rowNumber)) continue;
+    // รายการที่ถูกปิดด้วย ยกเลิก / ย้ายออก / ปิดช่อง เป็นประวัติเท่านั้น
+    // ห้ามนำไปแสดงทั้งตารางหลักและรายการจองล่วงหน้าของ CS Overview
+    if (!b.startSerial || endEff < targetSerial || adjustedRows.has(b.rowNumber) || isClosingReason(b.reason)) continue;
     const assignment = {
       slot: b.slot,
       customer: b.customer,
