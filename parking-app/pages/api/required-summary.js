@@ -1,12 +1,12 @@
-import { getRequiredSummary } from "../../lib/sheets";
+import { getTicketReport } from "../../lib/sheets";
 import { requireRole, ROLE } from "../../lib/auth";
 
 export default async function handler(req, res) {
   if (!(await requireRole(req, res, [ROLE.ADMIN, ROLE.CS]))) return;
   if (req.method === "GET") {
-    const { date } = req.query;
+    const { date, customer } = req.query;
     try {
-      const data = await getRequiredSummary(date);
+      const data = await getTicketReport(date, customer);
       return res.status(200).json(data);
     } catch (err) {
       return res.status(500).json({ error: err.message });
@@ -14,9 +14,9 @@ export default async function handler(req, res) {
   }
 
   if (req.method === "POST") {
-    const { date } = req.body || {};
+    const { date, customer } = req.body || {};
     try {
-      const data = await getRequiredSummary(date);
+      const data = await getTicketReport(date, customer);
       return res.status(200).json(data);
     } catch (err) {
       return res.status(500).json({ error: err.message });

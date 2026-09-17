@@ -14,7 +14,7 @@ export default function CustomerPicker({ customers = [], value, onChange, label 
 
   return <div className="customer-picker">
     <label>{label}{required ? " (จำเป็น)" : ""}</label>
-    <input value={query} placeholder="พิมพ์ชื่อ หรือกดเพื่อเลือกรายชื่อ" autoComplete="off"
+    <input type="text" value={query} placeholder="พิมพ์ชื่อ หรือกดเพื่อเลือกรายชื่อ" autoComplete="off"
       onFocus={() => setOpen(true)}
       onChange={(event) => { setQuery(event.target.value); if (value) onChange(""); setOpen(true); }}
       onBlur={() => setTimeout(() => setOpen(false), 150)} required={required} />

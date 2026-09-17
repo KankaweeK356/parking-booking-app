@@ -324,7 +324,8 @@ export default function EditBooking() {
       <div className="page">
         <div className="card">
           <div className="section-heading-row">
-            <button type="button" className="btn btn-secondary" onClick={refreshBookingStatus}>↻ Refresh สถานะช่อง</button>
+            <label>ข้อมูลการจอง</label>
+            <button type="button" className="btn btn-secondary" onClick={refreshBookingStatus}>↻ อัปเดตสถานะช่อง</button>
           </div>
           <CustomerPicker customers={customers} value={customer} onChange={setCustomer} />
         </div>
@@ -411,6 +412,7 @@ export default function EditBooking() {
                     {r.ok ? `✓ ยกเลิกสำเร็จ (${r.slotDesc})` : `✗ ไม่สำเร็จ (${r.slotDesc}): ${r.error}`}
                   </div>
                 ))}
+                {reduceResults.some((result) => result.ok) && <Link className="btn btn-secondary" href={`/required-summary?customer=${encodeURIComponent(customer)}`}>พิมพ์สรุปให้ลูกค้า</Link>}
               </div>
             )}
           </form>
@@ -510,7 +512,7 @@ export default function EditBooking() {
 
             {changeMessage && (
               <div className={`alert ${changeMessage.type === "success" ? "alert-success" : "alert-error"}`}>
-                {changeMessage.text}
+                {changeMessage.text} {changeMessage.type === "success" && <Link href={`/required-summary?customer=${encodeURIComponent(customer)}`}>พิมพ์สรุปให้ลูกค้า</Link>}
               </div>
             )}
           </form>
@@ -568,7 +570,7 @@ export default function EditBooking() {
 
             {extendMessage && (
               <div className={`alert ${extendMessage.type === "success" ? "alert-success" : "alert-error"}`}>
-                {extendMessage.text}
+                {extendMessage.text} {extendMessage.type === "success" && <Link href={`/required-summary?customer=${encodeURIComponent(customer)}`}>พิมพ์สรุปให้ลูกค้า</Link>}
               </div>
             )}
           </form>

@@ -978,40 +978,73 @@ export async function openSlot(slotCode, actor) {
 // Active วัน X+1: startDate <= (X+1) && (X+1) <= endDateEffective
 // รวมตาม docId/ชื่อลูกค้า และห้ามเขียนค่าลง Required_Summary!F1
 export async function getRequiredSummary(dateStr) {
-  const selectedDateStr = dateStr || isoFromSerial(getTodaySerial());
-  const selectedSerial = isoDateToSerial(selectedDateStr);
-  const targetSerial = selectedSerial + 1; // วันที่ X + 1
-  const targetDateStr = isoFromSerial(targetSerial);
+  const report = await getTicketReport(dateStr);
+  return {
+    selectedDate: report.selectedDate,
+    targetDate: report.nextOperationalDate,
+    date: report.nextOperationalDate,
+    rows: report.rows.map((row) => ({ ...row, required: row.longTickets })),
+  };
+}
 
-  const [allBookings, adjustedRows] = await Promise.all([getAllBookingRows(), getAdjustedBookingRows(targetDateStr)]);
+// รายงานตั๋วที่ CS ต้องจัดเตรียมใน "วันนี้" แยกชัดระหว่าง
+// 1) ตั๋วจองระยะยาว: ตีวันนี้ เพื่อใช้สิทธิ์ในวันปฏิบัติการถัดไป
+// 2) ตั๋วจองรายวัน: ตีและใช้สิทธิ์ในวันปฏิบัติการวันนี้
+// ข้อมูลเป็นการคำนวณสดเท่านั้น ไม่มีการเขียนกลับลง Sheet
+export async function getTicketReport(dateStr, customerName = "") {
+  const selectedDate = dateStr || getBangkokCalendarDateIso();
+  const selectedSerial = isoDateToSerial(selectedDate);
+  if (!selectedSerial) throw new Error("วันที่ออกรายงานไม่ถูกต้อง");
+  const nextOperationalDate = isoFromSerial(selectedSerial + 1);
+  const [allBookings, adjustments, urgentLogs, slots] = await Promise.all([
+    getAllBookingRows(),
+    getBookingAdjustments(),
+    getUrgentAccessLogs(),
+    getSlotsWithStatus(),
+  ]);
+  const adjustedNextDayRows = new Set(
+    adjustments
+      .filter((row) => (row.action.includes("ลด") || row.action.includes("พัก")) && isoDateToSerial(row.startDate) <= selectedSerial + 1 && selectedSerial + 1 <= isoDateToSerial(row.endDate))
+      .map((row) => row.rowNumber)
+  );
+  const slotNumberByCode = new Map(slots.map((slot) => [slot.slotCode, slot.number]));
+  const normalBookings = allBookings.filter((booking) => booking.bookingType !== "Urgent" && booking.startSerial && !isClosingReason(booking.reason));
+  const longTickets = normalBookings.filter((booking) => {
+    const endEffective = booking.endEffectiveSerial ?? FAR_FUTURE_SERIAL;
+    return !adjustedNextDayRows.has(booking.rowNumber) && booking.startSerial <= selectedSerial + 1 && selectedSerial + 1 <= endEffective;
+  });
+  const dailyTickets = urgentLogs.filter((log) => isoFromSerial(isoDateToSerial(log.ticketIssuedDate)) === selectedDate);
+  const byCustomer = new Map();
+  const ensureCustomer = (customer, docId) => {
+    const key = docId || customer;
+    if (!byCustomer.has(key)) byCustomer.set(key, { docId: docId || "", name: customer, customer, longTickets: 0, dailyTickets: 0, totalTickets: 0 });
+    return byCustomer.get(key);
+  };
+  longTickets.forEach((booking) => { ensureCustomer(booking.customer, booking.docId).longTickets += 1; });
+  dailyTickets.forEach((log) => { ensureCustomer(log.customer, log.docId).dailyTickets += Number(log.ticketCount || 1); });
+  const rows = [...byCustomer.values()].map((row) => ({ ...row, totalTickets: row.longTickets + row.dailyTickets }))
+    .sort((a, b) => String(a.name).localeCompare(String(b.name), "th"));
 
-  const countMap = {}; // key: docId (หรือชื่อลูกค้าถ้าไม่มี docId)
-  for (const b of allBookings) {
-    if (!b.startSerial) continue;
-    const endEff = b.endEffectiveSerial !== null && b.endEffectiveSerial !== undefined ? b.endEffectiveSerial : FAR_FUTURE_SERIAL;
-    if (!adjustedRows.has(b.rowNumber) && b.startSerial <= targetSerial && targetSerial <= endEff) {
-      const key = b.docId || b.customer;
-      if (!countMap[key]) {
-        countMap[key] = {
-          docId: b.docId || "",
-          name: b.customer,
-          customer: b.customer,
-          required: 0,
-        };
-      }
-      countMap[key].required += 1;
-    }
+  let customerReport = null;
+  if (customerName) {
+    const totals = rows.find((row) => row.customer === customerName) || { docId: "", name: customerName, customer: customerName, longTickets: 0, dailyTickets: 0, totalTickets: 0 };
+    const activeLongBookings = normalBookings
+      .filter((booking) => booking.customer === customerName && (booking.endEffectiveSerial ?? FAR_FUTURE_SERIAL) >= selectedSerial)
+      .map((booking) => ({
+        ...booking,
+        slotNumber: slotNumberByCode.get(booking.slot) || "-",
+        pausePeriods: adjustments
+          .filter((adjustment) => adjustment.rowNumber === booking.rowNumber && adjustment.action.includes("พัก") && isoDateToSerial(adjustment.endDate) >= selectedSerial)
+          .map((adjustment) => ({ startDate: adjustment.startDate, endDate: adjustment.endDate })),
+      }))
+      .sort((a, b) => (a.startSerial || 0) - (b.startSerial || 0) || String(a.startTime).localeCompare(String(b.startTime)));
+    const customerDailyTickets = dailyTickets
+      .filter((log) => log.customer === customerName)
+      .map((log) => ({ ...log, slotNumber: log.number || slotNumberByCode.get(log.slot) || "-" }));
+    customerReport = { ...totals, longBookings: activeLongBookings, dailyBookings: customerDailyTickets };
   }
 
-  const rows = Object.values(countMap);
-  rows.sort((a, b) => String(a.name).localeCompare(String(b.name), "th"));
-
-  return {
-    selectedDate: selectedDateStr,
-    targetDate: targetDateStr,
-    date: targetDateStr,
-    rows,
-  };
+  return { selectedDate, nextOperationalDate, rows, customerReport };
 }
 
 // ---------- tbt_DailyFee (รายการตั๋วจาก MIS) ----------
