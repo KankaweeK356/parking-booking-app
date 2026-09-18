@@ -22,7 +22,7 @@ export default function OperationalTimePicker({ value, values, onChange, label =
             title={unavailable ? "รอบนี้เริ่มไปแล้ว จึงบันทึกสิทธิ์ระหว่างวันไม่ได้" : ""}
             onClick={() => unavailable ? onUnavailableSelect?.(block) : selectTime(block.startTime)}
           >
-            {block.label}
+            {block.label.replace(" (+1)", "")}
           </button>
           );
         })}
