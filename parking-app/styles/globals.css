@@ -560,9 +560,13 @@ input[type="password"] {
 .booking-context p { margin: 5px 0 0; }
 .existing-bookings-details { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px; }
 .existing-bookings-details summary { cursor: pointer; color: var(--navy); font-weight: 700; }
-.existing-bookings-details p { margin: 8px 0 0; font-size: 13px; color: var(--gray); }
+.existing-booking-item { display: grid; gap: 3px; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.existing-booking-item strong { color: var(--navy-dark); }
+.existing-booking-item span { color: var(--gray); }
+.existing-booking-item em { width: fit-content; padding: 2px 7px; border-radius: 4px; background: #fffbeb; color: #92400e; font-style: normal; font-weight: 700; }
 .pause-print-note { display: block; margin-top: 4px; color: #92400e; }
 .grouped-ticket-table small { font-size: 11px; color: var(--gray); }
+.print-repeat-heading { display: none; }
 .print-cs-overview-header { margin: 0 0 10px; color: #111827; }
 .print-cs-overview-header h1 { margin: 0; color: var(--navy); font-size: 19px; }
 .print-cs-overview-header h2 { margin: 3px 0 6px; font-size: 15px; }
@@ -597,6 +601,7 @@ input[type="password"] {
   .table-container { overflow: visible; }
   table.data-table { font-size: 10.5pt; }
   table.data-table thead { display: table-header-group; }
+  table.data-table .print-repeat-heading { display: table-row; }
   table.data-table tr { break-inside: avoid; }
   .report-section { break-inside: avoid; }
   .report-page .print-only { display: block !important; }
