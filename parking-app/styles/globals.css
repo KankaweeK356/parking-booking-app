@@ -348,6 +348,8 @@ table.data-table tr:hover td {
   background: #fef3c7;
   border-color: #fcd34d;
 }
+.type-btn strong, .type-btn small { display: block; }
+.type-btn small { margin-top: 6px; font-size: 12px; line-height: 1.35; font-weight: 500; }
 input[type="password"] {
   width: 100%;
   padding: 10px 12px;
@@ -404,6 +406,9 @@ input[type="password"] {
 .end-date-field {
   margin-top: 18px;
 }
+.booking-date-range { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 18px; }
+.booking-date-range .end-date-field { margin-top: 0; }
+.availability-prompt { margin: 18px 0 0; padding: 12px; border-radius: 8px; background: #f8fafc; color: var(--gray); font-weight: 700; }
 
 .time-block-btn {
   border: 1px solid var(--border);
@@ -563,6 +568,12 @@ input[type="password"] {
 .report-total strong { display: block; margin-top: 4px; color: var(--navy-dark); font-size: 20px; }
 .report-section { margin-top: 24px; }
 .report-section h3 { margin: 0 0 6px; color: var(--navy); font-size: 17px; }
+.report-payment-terms { margin: 18px 0; padding: 14px; border: 1px solid #fed7aa; border-radius: 8px; background: #fffaf0; }
+.report-payment-terms h3 { margin: 0 0 8px; color: #9a3412; font-size: 16px; }
+.report-payment-terms p { margin: 6px 0; line-height: 1.45; }
+.report-payment-terms small { display: block; margin-top: 10px; color: var(--gray); }
+.report-print-meta { margin-top: 20px; padding-top: 10px; border-top: 1px solid var(--border); font-size: 12px; color: var(--gray); }
+.report-print-meta span + span { margin-left: 18px; }
 
 @media print {
   @page { size: A4; margin: 14mm; }
@@ -575,6 +586,7 @@ input[type="password"] {
   table.data-table thead { display: table-header-group; }
   table.data-table tr { break-inside: avoid; }
   .report-section { break-inside: avoid; }
+  .report-page .print-only { display: block !important; }
 }
 
 @media print {
@@ -608,5 +620,6 @@ input[type="password"] {
   .mobile-status-summary span { flex: 1 1 135px; text-align: center; }
   .mobile-full-grid { padding: 12px; }
   .mobile-timeline-controls { gap: 12px; }
+  .booking-date-range { grid-template-columns: 1fr; gap: 0; }
 }
 

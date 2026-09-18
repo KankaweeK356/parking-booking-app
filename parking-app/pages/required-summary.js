@@ -11,11 +11,21 @@ function formatDate(value) {
   return year && month && day ? `${day}/${month}/${year}` : value;
 }
 
-function TicketTotals({ report }) {
+function formatMoney(value) {
+  return `${new Intl.NumberFormat("th-TH").format(Number(value) || 0)} บาท`;
+}
+
+function formatDateTime(value) {
+  if (!value) return "-";
+  return new Intl.DateTimeFormat("th-TH-u-ca-gregory", { timeZone: "Asia/Bangkok", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
+}
+
+function TicketTotals({ report, showAmounts = false }) {
+  const ticketText = (count, amount) => showAmounts ? `${count || 0} ใบ · ${formatMoney(amount)}` : `${count || 0} ใบ`;
   return <div className="report-totals">
-    <div className="report-total"><small>ตั๋วจองระยะยาว</small><strong>{report.longTickets || 0} ใบ</strong></div>
-    <div className="report-total"><small>ตั๋วจองรายวัน</small><strong>{report.dailyTickets || 0} ใบ</strong></div>
-    <div className="report-total"><small>รวมตั๋วที่ต้องตีวันนี้</small><strong>{report.totalTickets || 0} ใบ</strong></div>
+    <div className="report-total"><small>ตั๋วจองระยะยาว</small><strong>{ticketText(report.longTickets, report.longAmount)}</strong></div>
+    <div className="report-total"><small>ตั๋วจองรายวัน</small><strong>{ticketText(report.dailyTickets, report.dailyAmount)}</strong></div>
+    <div className="report-total"><small>{showAmounts ? "รวมตั๋วและค่าบริการ" : "รวมตั๋วที่ต้องตีวันนี้"}</small><strong>{ticketText(report.totalTickets, report.totalAmount)}</strong></div>
   </div>;
 }
 
@@ -28,6 +38,8 @@ export default function RequiredSummary() {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [printUserName, setPrintUserName] = useState("");
+  const [printedAt, setPrintedAt] = useState("");
 
   async function loadReport(date, selectedCustomer = "") {
     setLoading(true); setError("");
@@ -45,6 +57,7 @@ export default function RequiredSummary() {
   useEffect(() => {
     loadReport(selectedDate);
     fetch("/api/master").then((response) => response.ok ? response.json() : []).then((data) => setCustomers(Array.isArray(data) ? data : []));
+    fetch("/api/auth/me").then((response) => response.ok ? response.json() : null).then((data) => setPrintUserName(data?.user?.name || ""));
   }, []);
 
   useEffect(() => {
@@ -63,6 +76,11 @@ export default function RequiredSummary() {
   function chooseCustomer(name) {
     setCustomer(name);
     if (name) loadReport(selectedDate, name);
+  }
+
+  function printCustomerReport() {
+    setPrintedAt(new Date().toISOString());
+    window.setTimeout(() => window.print(), 100);
   }
 
   const rows = report?.rows || [];
@@ -100,10 +118,17 @@ export default function RequiredSummary() {
           <h2>สรุปสิทธิ์และตั๋วของลูกค้า</h2>
           <p className="report-lead">ลูกค้า: {displayCustomerName(customer)}</p>
           <p className="report-note">รายการตั๋วที่ต้องตี วันที่ {formatDate(selectedDate)}</p>
-          <TicketTotals report={customerReport || {}} />
+          <TicketTotals report={customerReport || {}} showAmounts />
+          <section className="report-payment-terms">
+            <h3>เงื่อนไขการชำระเงิน</h3>
+            <p><strong>ตั๋วจองระยะยาว:</strong> ชำระภายใน 24:00 วันที่ {formatDate(selectedDate)} เพื่อใช้สิทธิ์ตั้งแต่ {formatDate(report?.nextOperationalDate)} เวลา 07:00</p>
+            <p><strong>ตั๋วจองรายวัน:</strong> ชำระก่อนเวลาเริ่มรอบของแต่ละรายการ</p>
+            <small>อัตราค่าบริการ {formatMoney(report?.ticketPrice)} ต่อใบ · เอกสารนี้ไม่ใช่ใบเสร็จรับเงิน</small>
+          </section>
           <section className="report-section"><h3>รายการจองระยะยาว</h3><p className="report-note">แสดงสิทธิ์ที่ยังมีผลทั้งหมด รวมสิทธิ์ในอนาคต · ตั๋วที่ต้องตีวันนี้ {customerReport?.longTickets || 0} ใบ สำหรับสิทธิ์วันที่ {formatDate(report?.nextOperationalDate)}</p>{(customerReport?.longBookings || []).length === 0 ? <p className="subtitle">ไม่มีรายการจองระยะยาวที่ยังมีผล</p> : <div className="table-container"><table className="data-table"><thead><tr><th>ลาน</th><th>ช่อง</th><th>รอบ</th><th>เริ่มใช้</th><th>สิ้นสุด</th><th>หมายเหตุ</th></tr></thead><tbody>{customerReport.longBookings.map((booking) => <tr key={booking.rowNumber}><td>{displayLotName(booking.lot)}</td><td>ช่อง {booking.slotNumber}</td><td>{booking.startTime}</td><td>{formatDate(booking.startDate)}</td><td>{formatDate(booking.endDateEffective || booking.endDate)}</td><td>{booking.pausePeriods?.length ? booking.pausePeriods.map((period) => `พัก ${formatDate(period.startDate)}–${formatDate(period.endDate)}`).join(", ") : "-"}</td></tr>)}</tbody></table></div>}</section>
           <section className="report-section"><h3>รายการจองรายวัน</h3><p className="report-note">ตั๋วที่ใช้ภายในวันที่ {formatDate(selectedDate)}: {customerReport?.dailyTickets || 0} ใบ</p>{(customerReport?.dailyBookings || []).length === 0 ? <p className="subtitle">ไม่มีรายการจองรายวันในวันนี้</p> : <div className="table-container"><table className="data-table"><thead><tr><th>ลาน</th><th>ช่อง</th><th>รอบ</th><th>จำนวนตั๋ว</th></tr></thead><tbody>{customerReport.dailyBookings.map((booking, index) => <tr key={`${booking.slot}-${booking.startTime}-${index}`}><td>{displayLotName(booking.lot)}</td><td>ช่อง {booking.slotNumber}</td><td>{booking.startTime}</td><td style={{ textAlign: "center" }}>{booking.ticketCount || 1} ใบ</td></tr>)}</tbody></table></div>}</section>
-          <div className="btn-row no-print"><button type="button" className="btn btn-secondary" onClick={() => window.print()}>พิมพ์สรุปให้ลูกค้า</button><button type="button" className="btn btn-secondary" onClick={() => loadReport(selectedDate, customer)}>↻ อัปเดตรายการ</button></div>
+          <div className="report-print-meta print-only"><span>พิมพ์โดย: {printUserName || "-"}</span><span>พิมพ์เมื่อ: {formatDateTime(printedAt)}</span></div>
+          <div className="btn-row no-print"><button type="button" className="btn btn-secondary" onClick={printCustomerReport}>พิมพ์สรุปให้ลูกค้า</button><button type="button" className="btn btn-secondary" onClick={() => loadReport(selectedDate, customer)}>↻ อัปเดตรายการ</button></div>
         </div>}
       </>}
     </main>

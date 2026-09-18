@@ -387,8 +387,8 @@ export default function EditBooking() {
               </div>
 
               <label>เลือกวิธีดำเนินการ</label>
-              <div className="type-grid"><button type="button" className={`type-btn ${reduceMode === "permanent" ? "active" : ""}`} onClick={() => setReduceMode("permanent")}>ยกเลิกการจอง</button><button type="button" className={`type-btn ${reduceMode === "pause" ? "active" : ""}`} onClick={() => setReduceMode("pause")}>พักการจอง</button></div>
-              {reduceMode === "permanent" ? <><label>วันสุดท้ายที่ยังใช้ช่องได้</label><input type="date" min={today()} value={reduceEndDate} onChange={(e) => setReduceEndDate(e.target.value)} /></> : <><label>เริ่มพักวันที่</label><input type="date" min={getNextDay(today())} value={pauseStartDate} required onChange={(e) => { const nextStartDate = e.target.value; setPauseStartDate(nextStartDate); setPauseEndDate((current) => current < nextStartDate ? nextStartDate : current); }} /><label>สิ้นสุดพักวันที่</label><input type="date" min={pauseStartDate} value={pauseEndDate} required onChange={(e) => setPauseEndDate(e.target.value)} /><p className="subtitle">เริ่มมีผลตั้งแต่รอบ 07:00 ของวันที่เลือก</p><p className="alert alert-warning">ระหว่างวันที่พัก ช่องนี้เปิดให้ลูกค้าคนอื่นจองได้ และจะกลับมาเป็นสิทธิ์เดิมหลังวันสิ้นสุดพัก</p></>}
+              <div className="type-grid"><button type="button" className={`type-btn ${reduceMode === "permanent" ? "active" : ""}`} onClick={() => setReduceMode("permanent")}><strong>ยกเลิกการจอง</strong><small>กำหนดวันสุดท้ายที่ลูกค้ายังใช้ช่องได้ หลังจากวันนั้นสิทธิ์จะสิ้นสุดถาวร</small></button><button type="button" className={`type-btn ${reduceMode === "pause" ? "active" : ""}`} onClick={() => setReduceMode("pause")}><strong>พักการจองชั่วคราว</strong><small>ระบุช่วงวันที่ลูกค้าไม่ใช้ช่องนี้ เมื่อครบกำหนดจะกลับมาใช้สิทธิ์เดิมต่อ</small></button></div>
+              {reduceMode === "permanent" ? <><label>วันสุดท้ายที่ยังใช้ช่องได้</label><input type="date" min={today()} value={reduceEndDate} onChange={(e) => setReduceEndDate(e.target.value)} /></> : <><label>เริ่มพักวันที่</label><input type="date" min={getNextDay(today())} value={pauseStartDate} required onChange={(e) => { const nextStartDate = e.target.value; setPauseStartDate(nextStartDate); setPauseEndDate((current) => current < nextStartDate ? nextStartDate : current); }} /><label>สิ้นสุดพักวันที่</label><input type="date" min={pauseStartDate} value={pauseEndDate} required onChange={(e) => setPauseEndDate(e.target.value)} /><p className="alert alert-warning">ระหว่างวันที่พัก ช่องนี้เปิดให้ลูกค้าคนอื่นจองได้ และจะกลับมาเป็นสิทธิ์เดิมหลังวันสิ้นสุดพัก</p></>}
 
               <div className="btn-row">
                 <button
@@ -405,7 +405,7 @@ export default function EditBooking() {
               <div className="card">
                 {reduceResults.map((r, i) => (
                   <div key={i} className={`alert ${r.ok ? "alert-success" : "alert-error"}`}>
-                    {r.ok ? `✓ ยกเลิกสำเร็จ (${r.slotDesc})` : `✗ ไม่สำเร็จ (${r.slotDesc}): ${r.error}`}
+                    {r.ok ? `✓ ${reduceMode === "pause" ? "พักการจองสำเร็จ" : "บันทึกวันสิ้นสุดสิทธิ์สำเร็จ"} (${r.slotDesc})` : `✗ ไม่สำเร็จ (${r.slotDesc}): ${r.error}`}
                   </div>
                 ))}
                 {reduceResults.some((result) => result.ok) && <Link className="btn btn-secondary" href={`/required-summary?customer=${encodeURIComponent(customer)}`}>พิมพ์สรุปให้ลูกค้า</Link>}
@@ -448,14 +448,15 @@ export default function EditBooking() {
               <div className="card">
                 <h2 style={{ fontSize: 16 }}>2. เลือกช่องใหม่</h2>
                 <p className="subtitle">ย้ายเฉพาะรอบ {selectedChangeRow.startTime} น. ช่องเดิมจะใช้ถึงวันก่อนหน้า และช่องใหม่จะใช้ถึง {formatDate(changeNewEndDate)}</p>
-                <label>เริ่มใช้ช่องใหม่วันที่</label>
-                <input type="date" min={laterDate(selectedChangeRow.startDate || "", getNextDay(today()))} max={changeNewEndDate || undefined} value={changeNewStartDate} onChange={(e) => { setChangeNewStartDate(e.target.value); setNewSlot(""); }} />
                 <label>ลานใหม่</label>
                 <select value={newLot} onChange={(e) => { setNewLot(e.target.value); setNewSlot(""); }}>
                   {lots.map((l) => (
                     <option key={l} value={l}>{displayLotName(l)}</option>
                   ))}
                 </select>
+
+                <label>เริ่มใช้ช่องใหม่วันที่</label>
+                <input type="date" min={laterDate(selectedChangeRow.startDate || "", getNextDay(today()))} max={changeNewEndDate || undefined} value={changeNewStartDate} onChange={(e) => { setChangeNewStartDate(e.target.value); setNewSlot(""); }} />
 
                 <label>เลือกช่องใหม่</label>
                 <p className="subtitle">ตรวจสถานะช่องสำหรับรอบ {selectedChangeRow.startTime} น. ตั้งแต่ {formatDate(changeNewStartDate)} ถึง {formatDate(changeNewEndDate)}</p>

@@ -13,6 +13,7 @@
 
 import { google } from "googleapis";
 import { getBangkokCalendarDateIso, getCurrentOperationalBlock, getCurrentOperationalDateIso, getUrgentAccessDefaultDateIso, isBeforeOperationalBlockStart, isOperationalTimeBlock } from "./operational-day";
+import { calculateTicketAmount, TICKET_PRICE_PER_UNIT } from "./ticket-pricing";
 
 const SHEET_ID = process.env.GOOGLE_SHEET_ID;
 
@@ -773,6 +774,13 @@ export async function createBooking(params) {
 export async function closeBookingRow({ rowNumber, endDate, reason, actor }) {
   const sheets = getSheetsClient();
   const oldRow = await getBookingRow(rowNumber);
+  // กำหนดวันสิ้นสุดล่วงหน้าและย้ายช่องต้องยังคงสิทธิ์เดิมไว้จนถึงวันสิ้นสุดจริง
+  // จึงไม่ใช้ closing reason ที่ทำให้ Dashboard ซ่อนรายการทันที
+  const bookingReason = String(reason || "").includes("ยกเลิก")
+    ? "กำหนดวันสิ้นสุดสิทธิ์"
+    : String(reason || "").includes("ย้ายออก")
+      ? "สิทธิ์สิ้นสุดเนื่องจากย้ายช่อง"
+      : reason;
 
   await appendBookingChangeLog({
     action: reason || "ปิด/ยกเลิก",
@@ -795,7 +803,7 @@ export async function closeBookingRow({ rowNumber, endDate, reason, actor }) {
       valueInputOption: "USER_ENTERED",
       data: [
         { range: `Booking_Input!F${rowNumber}:G${rowNumber}`, values: [[endDate, endDate]] },
-        { range: `Booking_Input!J${rowNumber}`, values: [[reason]] },
+        { range: `Booking_Input!J${rowNumber}`, values: [[bookingReason]] },
       ],
     },
   });
@@ -1022,12 +1030,22 @@ export async function getTicketReport(dateStr, customerName = "") {
   };
   longTickets.forEach((booking) => { ensureCustomer(booking.customer, booking.docId).longTickets += 1; });
   dailyTickets.forEach((log) => { ensureCustomer(log.customer, log.docId).dailyTickets += Number(log.ticketCount || 1); });
-  const rows = [...byCustomer.values()].map((row) => ({ ...row, totalTickets: row.longTickets + row.dailyTickets }))
+  const withAmounts = (row) => {
+    const totalTickets = row.longTickets + row.dailyTickets;
+    return {
+      ...row,
+      totalTickets,
+      longAmount: calculateTicketAmount(row.longTickets),
+      dailyAmount: calculateTicketAmount(row.dailyTickets),
+      totalAmount: calculateTicketAmount(totalTickets),
+    };
+  };
+  const rows = [...byCustomer.values()].map(withAmounts)
     .sort((a, b) => String(a.name).localeCompare(String(b.name), "th"));
 
   let customerReport = null;
   if (customerName) {
-    const totals = rows.find((row) => row.customer === customerName) || { docId: "", name: customerName, customer: customerName, longTickets: 0, dailyTickets: 0, totalTickets: 0 };
+    const totals = rows.find((row) => row.customer === customerName) || withAmounts({ docId: "", name: customerName, customer: customerName, longTickets: 0, dailyTickets: 0 });
     const activeLongBookings = normalBookings
       .filter((booking) => booking.customer === customerName && (booking.endEffectiveSerial ?? FAR_FUTURE_SERIAL) >= selectedSerial)
       .map((booking) => ({
@@ -1044,7 +1062,7 @@ export async function getTicketReport(dateStr, customerName = "") {
     customerReport = { ...totals, longBookings: activeLongBookings, dailyBookings: customerDailyTickets };
   }
 
-  return { selectedDate, nextOperationalDate, rows, customerReport };
+  return { selectedDate, nextOperationalDate, ticketPrice: TICKET_PRICE_PER_UNIT, rows, customerReport };
 }
 
 // ---------- tbt_DailyFee (รายการตั๋วจาก MIS) ----------

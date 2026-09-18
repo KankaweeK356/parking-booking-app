@@ -1,15 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import MobileRoundSlotList from "../components/MobileRoundSlotList";
-import { getCurrentOperationalDateIso, OPERATIONAL_TIME_BLOCKS } from "../lib/operational-day";
+import { getBangkokCalendarDateIso, getCurrentOperationalDateIso } from "../lib/operational-day";
 import { displayLotName } from "../lib/display";
 import { getDashboardStatusCounts } from "../lib/timeline-status";
 
 function today() { return getCurrentOperationalDateIso(); }
-function formatPaymentDate(date) {
-  if (!date) return "";
-  return new Intl.DateTimeFormat("th-TH-u-ca-gregory", { timeZone: "Asia/Bangkok", day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(`${date}T00:00:00Z`));
-}
 
 export default function MobileView() {
   const [selectedDate, setSelectedDate] = useState(today());
@@ -19,7 +15,7 @@ export default function MobileView() {
   const [selectedLot, setSelectedLot] = useState("");
   const [lastUpdated, setLastUpdated] = useState("");
   const [refreshing, setRefreshing] = useState(false);
-  const [selectedRound, setSelectedRound] = useState("");
+  const [retryingPayment, setRetryingPayment] = useState(false);
 
   useEffect(() => {
     loadData(selectedDate);
@@ -31,9 +27,6 @@ export default function MobileView() {
     }, 60 * 1000);
     return () => window.clearInterval(timer);
   }, [selectedDate]);
-  useEffect(() => {
-    if (data.currentBlock?.startTime) setSelectedRound(data.currentBlock.startTime);
-  }, [data.currentBlock?.startTime]);
   async function loadData(date, { silent = false, force = false } = {}) {
     if (!silent && !force) { setLoading(true); setError(""); }
     if (force) { setRefreshing(true); setError(""); }
@@ -51,13 +44,26 @@ export default function MobileView() {
     } catch (err) { if (!silent || force) setError(err.message); } finally { if (!silent && !force) setLoading(false); if (force) setRefreshing(false); }
   }
 
+  async function retryPaymentSnapshot() {
+    setRetryingPayment(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/payment-snapshot?date=${encodeURIComponent(data.paymentUpdate?.date || getBangkokCalendarDateIso())}`, { method: "POST" });
+      const raw = await response.text();
+      let result;
+      try { result = JSON.parse(raw); } catch { throw new Error("อัปเดตข้อมูลใหม่ไม่สำเร็จ กรุณารอสักครู่"); }
+      if (!response.ok) throw new Error(result.error || "อัปเดตข้อมูลใหม่ไม่สำเร็จ");
+      await loadData(selectedDate, { force: true });
+    } catch (err) { setError(err.message); } finally { setRetryingPayment(false); }
+  }
+
   const lots = useMemo(() => Array.from(new Set((data.slots || []).map((slot) => slot.lot).filter(Boolean))).sort(), [data.slots]);
   const slotsInLot = useMemo(() => (data.slots || []).filter((slot) => slot.lot === selectedLot), [data.slots, selectedLot]);
   const paidBookingsInLot = useMemo(() => (data.bookings || []).filter((booking) => booking.lot === selectedLot), [data.bookings, selectedLot]);
   const stats = useMemo(() => getDashboardStatusCounts({ slots: slotsInLot, bookings: paidBookingsInLot, currentBlockStartTime: data.currentBlock?.startTime, isLiveOperationalDate: data.isLiveOperationalDate }), [slotsInLot, paidBookingsInLot, data.currentBlock, data.isLiveOperationalDate]);
   const paymentUpdate = data.paymentUpdate;
   const paymentDateLabel = paymentUpdate?.date ? new Intl.DateTimeFormat("th-TH-u-ca-gregory", { timeZone: "Asia/Bangkok", day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(`${paymentUpdate.date}T00:00:00Z`)) : "";
-  const activeRound = selectedRound || data.currentBlock?.startTime || "07:00";
+  const activeRound = data.currentBlock?.startTime || "07:00";
   const attentionCount = stats["ticket-check"] + stats.expired;
 
   return (
@@ -82,7 +88,7 @@ export default function MobileView() {
             </div>
           </div>
         </div>
-        {loading ? <div className="card"><p className="subtitle">กำลังโหลดสถานะช่องจอด...</p></div> : <>{paymentUpdate?.status !== "READY" ? <div className="alert alert-warning">ข้อมูลสำหรับวันที่ {paymentDateLabel} ยังไม่พร้อม</div> : <div className="alert alert-success">สิทธิ์วันที่ {paymentDateLabel} พร้อมแล้ว<br />ตรวจสอบการชำระเงินเมื่อ {paymentUpdate?.snapshot?.updatedAt ? new Intl.DateTimeFormat("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" }).format(new Date(paymentUpdate.snapshot.updatedAt)) : "-"} · ใช้ตั๋ววันที่ {formatPaymentDate(paymentUpdate?.snapshot?.sourceDate)}</div>}{data.paymentStatus === "UPDATING" ? <div className="card"><p className="subtitle">โปรดรอให้ข้อมูลพร้อมก่อนใช้สถานะช่องจอดตัดสินพื้นที่</p></div> : <><div className="dashboard-current-block">รอบปัจจุบัน: {data.currentBlock?.label || "-"}{lastUpdated ? ` · ข้อมูลสถานะช่องล่าสุด ${lastUpdated}` : ""}</div><div className="mobile-status-summary"><span>มีการจอง {stats.booked}</span><span>รอตรวจตั๋ว {stats["ticket-check"]}</span><span>หมดเวลาจอด {stats.expired}</span></div><p className="mobile-attention-count">ต้องตรวจ {attentionCount} ช่อง</p><section className="mobile-round-picker"><h2>ดูสถานะตามรอบ</h2><div className="round-buttons">{OPERATIONAL_TIME_BLOCKS.map((block) => <button type="button" key={block.startTime} className={`round-button ${activeRound === block.startTime ? "active" : ""}`} onClick={() => setSelectedRound(block.startTime)}>{block.startTime}</button>)}</div></section><MobileRoundSlotList slots={slotsInLot} bookings={paidBookingsInLot} selectedRound={activeRound} currentBlockStartTime={data.currentBlock?.startTime} isLiveOperationalDate={data.isLiveOperationalDate} /></>}</>}
+        {loading ? <div className="card"><p className="subtitle">กำลังโหลดสถานะช่องจอด...</p></div> : <>{paymentUpdate?.status !== "READY" && <div className="alert alert-warning">ข้อมูลสำหรับวันที่ {paymentDateLabel} ยังไม่พร้อม<br />โปรดรอหรือกด <button type="button" className="btn btn-secondary refresh-button" disabled={retryingPayment} onClick={retryPaymentSnapshot}>{retryingPayment ? "กำลังอัปเดตข้อมูล..." : "อัปเดตข้อมูลใหม่"}</button></div>}{data.paymentStatus === "UPDATING" ? <div className="card"><p className="subtitle">โปรดรอให้ข้อมูลพร้อมก่อนใช้สถานะช่องจอดตัดสินพื้นที่</p></div> : <><div className="dashboard-current-block">รอบปัจจุบัน: {data.currentBlock?.label || "-"}{lastUpdated ? ` · อัปเดต ${lastUpdated}` : ""}</div><p className="mobile-attention-count">ต้องตรวจ {attentionCount} ช่อง</p><MobileRoundSlotList slots={slotsInLot} bookings={paidBookingsInLot} selectedRound={activeRound} currentBlockStartTime={data.currentBlock?.startTime} isLiveOperationalDate={data.isLiveOperationalDate} /></>}</>}
       </div>
     </div>
   );
