@@ -1,9 +1,8 @@
 import { bookingForBlock, getDashboardCellStatus } from "../lib/timeline-status";
-import { getPreviousOperationalBlock } from "../lib/operational-day";
+import { formatBangkokTime, getPreviousOperationalBlock } from "../lib/operational-day";
 
 function savedAtLabel(createdAt) {
-  const match = String(createdAt || "").match(/T(\d{2}):(\d{2})/) || String(createdAt || "").match(/\s(\d{2}):(\d{2})/);
-  return match ? `${match[1]}:${match[2]}` : "";
+  return formatBangkokTime(createdAt);
 }
 
 export default function DashboardAttentionList({ slots, bookings, currentBlockStartTime, isLiveOperationalDate }) {

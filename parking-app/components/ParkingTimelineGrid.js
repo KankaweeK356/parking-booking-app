@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { OPERATIONAL_TIME_BLOCKS } from "../lib/operational-day";
+import { formatBangkokTime, OPERATIONAL_TIME_BLOCKS } from "../lib/operational-day";
 import { displayCustomerName } from "../lib/display";
 import { getDashboardCellStatus } from "../lib/timeline-status";
 
@@ -17,9 +17,7 @@ function overlapsBlock(booking, slotCode, blockStartTime) {
 }
 
 function savedAtLabel(createdAt) {
-  const value = String(createdAt || "");
-  const match = value.match(/T(\d{2}):(\d{2})/) || value.match(/\s(\d{2}):(\d{2})/);
-  return match ? `${match[1]}:${match[2]}` : "";
+  return formatBangkokTime(createdAt);
 }
 
 export default function ParkingTimelineGrid({ slots, bookings, mode, currentBlockStartTime, isLiveOperationalDate = false }) {

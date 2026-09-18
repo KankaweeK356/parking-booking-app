@@ -2,12 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import OperationalTimePicker from "../../components/OperationalTimePicker";
 import CustomerPicker from "../../components/CustomerPicker";
-import { getUrgentAccessDefaultDateIso, isBeforeOperationalBlockStart } from "../../lib/operational-day";
+import { formatBangkokTime, getUrgentAccessDefaultDateIso, isBeforeOperationalBlockStart } from "../../lib/operational-day";
 import { displayLotName } from "../../lib/display";
 
 function timeLabel(value) {
-  const match = String(value || "").match(/T(\d{2}:\d{2})/) || String(value || "").match(/\s(\d{2}:\d{2})/);
-  return match ? match[1] : "";
+  return formatBangkokTime(value);
 }
 
 export default function UrgentBooking() {

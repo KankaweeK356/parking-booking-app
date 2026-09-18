@@ -4,18 +4,14 @@ import OperationalTimePicker from "../../components/OperationalTimePicker";
 import EndDateField from "../../components/EndDateField";
 import CustomerPicker from "../../components/CustomerPicker";
 import { displayLotName } from "../../lib/display";
-import { getCurrentOperationalDateIso } from "../../lib/operational-day";
+import { addDaysToIso, getCurrentOperationalDateIso } from "../../lib/operational-day";
 
 function today() {
   return getCurrentOperationalDateIso();
 }
 
 function getNextDay(dateStr) {
-  if (!dateStr) return "";
-  const d = new Date(dateStr + "T00:00:00");
-  if (isNaN(d.getTime())) return "";
-  d.setDate(d.getDate() + 1);
-  return d.toISOString().slice(0, 10);
+  return addDaysToIso(dateStr, 1);
 }
 
 function laterDate(first, second) {
@@ -392,7 +388,7 @@ export default function EditBooking() {
 
               <label>เลือกวิธีดำเนินการ</label>
               <div className="type-grid"><button type="button" className={`type-btn ${reduceMode === "permanent" ? "active" : ""}`} onClick={() => setReduceMode("permanent")}>ยกเลิกการจอง</button><button type="button" className={`type-btn ${reduceMode === "pause" ? "active" : ""}`} onClick={() => setReduceMode("pause")}>พักการจอง</button></div>
-              {reduceMode === "permanent" ? <><label>วันสุดท้ายที่ยังใช้ช่องได้</label><input type="date" min={today()} value={reduceEndDate} onChange={(e) => setReduceEndDate(e.target.value)} /></> : <><label>เริ่มพักวันที่</label><input type="date" min={getNextDay(today())} value={pauseStartDate} onChange={(e) => setPauseStartDate(e.target.value)} /><label>สิ้นสุดพักวันที่</label><input type="date" min={pauseStartDate} value={pauseEndDate} onChange={(e) => setPauseEndDate(e.target.value)} /><p className="alert alert-warning">ระหว่างวันที่พัก ช่องนี้เปิดให้ลูกค้าคนอื่นจองได้ และจะกลับมาเป็นสิทธิ์เดิมหลังวันสิ้นสุดพัก</p></>}
+              {reduceMode === "permanent" ? <><label>วันสุดท้ายที่ยังใช้ช่องได้</label><input type="date" min={today()} value={reduceEndDate} onChange={(e) => setReduceEndDate(e.target.value)} /></> : <><label>เริ่มพักวันที่</label><input type="date" min={getNextDay(today())} value={pauseStartDate} required onChange={(e) => { const nextStartDate = e.target.value; setPauseStartDate(nextStartDate); setPauseEndDate((current) => current < nextStartDate ? nextStartDate : current); }} /><label>สิ้นสุดพักวันที่</label><input type="date" min={pauseStartDate} value={pauseEndDate} required onChange={(e) => setPauseEndDate(e.target.value)} /><p className="subtitle">เริ่มมีผลตั้งแต่รอบ 07:00 ของวันที่เลือก</p><p className="alert alert-warning">ระหว่างวันที่พัก ช่องนี้เปิดให้ลูกค้าคนอื่นจองได้ และจะกลับมาเป็นสิทธิ์เดิมหลังวันสิ้นสุดพัก</p></>}
 
               <div className="btn-row">
                 <button

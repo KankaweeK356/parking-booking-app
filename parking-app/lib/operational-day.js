@@ -23,12 +23,40 @@ export function addMonthsToIso(dateStr, months) {
   return result.toISOString().slice(0, 10);
 }
 
+// ใช้ UTC เฉพาะสำหรับ "เลขวัน" เพื่อไม่ให้วันที่ถอย 1 วันเมื่อผู้ใช้เปิดจากเวลาไทย
+export function addDaysToIso(dateStr, days) {
+  const [year, month, day] = String(dateStr || "").split("-").map(Number);
+  if (!year || !month || !day || !Number.isInteger(days)) return "";
+  const result = new Date(Date.UTC(year, month - 1, day));
+  result.setUTCDate(result.getUTCDate() + days);
+  return result.toISOString().slice(0, 10);
+}
+
 export function getCurrentOperationalDateIso(now = new Date()) {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23" }).formatToParts(now);
   const value = (type) => parts.find((part) => part.type === type)?.value;
   const date = new Date(Date.UTC(Number(value("year")), Number(value("month")) - 1, Number(value("day"))));
   if (Number(value("hour")) < 7) date.setUTCDate(date.getUTCDate() - 1);
   return date.toISOString().slice(0, 10);
+}
+
+export function getNextOperationalDateIso(now = new Date()) {
+  return addDaysToIso(getCurrentOperationalDateIso(now), 1);
+}
+
+export function formatBangkokTime(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (!Number.isNaN(date.getTime())) {
+    return new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Asia/Bangkok",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).format(date);
+  }
+  const match = String(value).match(/T(\d{2}:\d{2})/) || String(value).match(/\s(\d{2}:\d{2})/);
+  return match ? match[1] : "";
 }
 
 // วันที่สำหรับสิทธิ์ระหว่างวันต้องอ้างอิง "รอบถัดไปที่ยังไม่เริ่ม":
