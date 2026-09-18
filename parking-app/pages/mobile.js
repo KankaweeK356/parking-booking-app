@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import DashboardAttentionList from "../components/DashboardAttentionList";
 import MobileRoundSlotList from "../components/MobileRoundSlotList";
 import { getCurrentOperationalDateIso, OPERATIONAL_TIME_BLOCKS } from "../lib/operational-day";
 import { displayLotName } from "../lib/display";
 import { getDashboardStatusCounts } from "../lib/timeline-status";
 
 function today() { return getCurrentOperationalDateIso(); }
+function formatPaymentDate(date) {
+  if (!date) return "";
+  return new Intl.DateTimeFormat("th-TH-u-ca-gregory", { timeZone: "Asia/Bangkok", day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(`${date}T00:00:00Z`));
+}
 
 export default function MobileView() {
   const [selectedDate, setSelectedDate] = useState(today());
@@ -55,6 +58,7 @@ export default function MobileView() {
   const paymentUpdate = data.paymentUpdate;
   const paymentDateLabel = paymentUpdate?.date ? new Intl.DateTimeFormat("th-TH-u-ca-gregory", { timeZone: "Asia/Bangkok", day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(`${paymentUpdate.date}T00:00:00Z`)) : "";
   const activeRound = selectedRound || data.currentBlock?.startTime || "07:00";
+  const attentionCount = stats["ticket-check"] + stats.expired;
 
   return (
     <div>
@@ -78,7 +82,7 @@ export default function MobileView() {
             </div>
           </div>
         </div>
-        {loading ? <div className="card"><p className="subtitle">กำลังโหลดสถานะช่องจอด...</p></div> : <>{paymentUpdate?.status !== "READY" ? <div className="alert alert-warning">{paymentUpdate?.status === "FAILED" ? `ระบบยังอัปเดตข้อมูลสำหรับวันที่ ${paymentDateLabel} ไม่สำเร็จ` : `ระบบกำลังอัปเดตข้อมูลสำหรับวันที่ ${paymentDateLabel}`}</div> : <div className="alert alert-success">ระบบอัปเดตข้อมูลสำหรับวันที่ {paymentDateLabel} เรียบร้อยแล้ว</div>}{data.paymentStatus === "UPDATING" ? <div className="card"><p className="subtitle">โปรดรอให้ข้อมูลพร้อมก่อนใช้สถานะช่องจอดตัดสินพื้นที่</p></div> : <><div className="dashboard-current-block">รอบปัจจุบัน: {data.currentBlock?.label || "-"}{lastUpdated ? ` · ข้อมูลล่าสุด ${lastUpdated}` : ""}</div><div className="mobile-status-summary"><span>มีการจอง {stats.booked}</span><span>รอตรวจตั๋ว {stats["ticket-check"]}</span><span>หมดเวลาจอด {stats.expired}</span></div><DashboardAttentionList slots={slotsInLot} bookings={paidBookingsInLot} currentBlockStartTime={data.currentBlock?.startTime} isLiveOperationalDate={data.isLiveOperationalDate} /><section className="mobile-round-picker"><h2>ดูสถานะตามรอบ</h2><div className="round-buttons">{OPERATIONAL_TIME_BLOCKS.map((block) => <button type="button" key={block.startTime} className={`round-button ${activeRound === block.startTime ? "active" : ""}`} onClick={() => setSelectedRound(block.startTime)}>{block.startTime}</button>)}</div></section><MobileRoundSlotList slots={slotsInLot} bookings={paidBookingsInLot} selectedRound={activeRound} currentBlockStartTime={data.currentBlock?.startTime} isLiveOperationalDate={data.isLiveOperationalDate} /></>}</>}
+        {loading ? <div className="card"><p className="subtitle">กำลังโหลดสถานะช่องจอด...</p></div> : <>{paymentUpdate?.status !== "READY" ? <div className="alert alert-warning">ข้อมูลสำหรับวันที่ {paymentDateLabel} ยังไม่พร้อม</div> : <div className="alert alert-success">สิทธิ์วันที่ {paymentDateLabel} พร้อมแล้ว<br />ตรวจสอบการชำระเงินเมื่อ {paymentUpdate?.snapshot?.updatedAt ? new Intl.DateTimeFormat("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" }).format(new Date(paymentUpdate.snapshot.updatedAt)) : "-"} · ใช้ตั๋ววันที่ {formatPaymentDate(paymentUpdate?.snapshot?.sourceDate)}</div>}{data.paymentStatus === "UPDATING" ? <div className="card"><p className="subtitle">โปรดรอให้ข้อมูลพร้อมก่อนใช้สถานะช่องจอดตัดสินพื้นที่</p></div> : <><div className="dashboard-current-block">รอบปัจจุบัน: {data.currentBlock?.label || "-"}{lastUpdated ? ` · ข้อมูลสถานะช่องล่าสุด ${lastUpdated}` : ""}</div><div className="mobile-status-summary"><span>มีการจอง {stats.booked}</span><span>รอตรวจตั๋ว {stats["ticket-check"]}</span><span>หมดเวลาจอด {stats.expired}</span></div><p className="mobile-attention-count">ต้องตรวจ {attentionCount} ช่อง</p><section className="mobile-round-picker"><h2>ดูสถานะตามรอบ</h2><div className="round-buttons">{OPERATIONAL_TIME_BLOCKS.map((block) => <button type="button" key={block.startTime} className={`round-button ${activeRound === block.startTime ? "active" : ""}`} onClick={() => setSelectedRound(block.startTime)}>{block.startTime}</button>)}</div></section><MobileRoundSlotList slots={slotsInLot} bookings={paidBookingsInLot} selectedRound={activeRound} currentBlockStartTime={data.currentBlock?.startTime} isLiveOperationalDate={data.isLiveOperationalDate} /></>}</>}
       </div>
     </div>
   );

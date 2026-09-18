@@ -512,6 +512,7 @@ input[type="password"] {
 .dashboard-current-block { font-size: 14px; font-weight: 700; color: var(--navy-dark); margin: 0 0 10px; }
 .status-legend, .mobile-status-summary { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; }
 .status-legend span, .mobile-status-summary span { border-radius: 6px; padding: 6px 9px; font-size: 12px; font-weight: 700; }
+.mobile-attention-count { margin: 0 0 14px; font-weight: 700; color: var(--navy-dark); }
 .dashboard-attention h2 { margin: 0 0 12px; font-size: 16px; }
 .attention-list { display: grid; gap: 8px; }
 .attention-item { display: grid; grid-template-columns: 82px 1fr; gap: 2px 10px; border-radius: 8px; padding: 10px 12px; }
