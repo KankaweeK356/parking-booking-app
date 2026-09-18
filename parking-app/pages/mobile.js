@@ -58,7 +58,7 @@ export default function MobileView() {
 
   return (
     <div>
-      <div className="top-bar"><div className="inner"><h1>📱 ติดตามสถานะลานจอด</h1><Link href="/" className="back">หน้าหลัก</Link></div></div>
+      <div className="top-bar"><div className="inner"><h1>📱 ติดตามสถานะช่องจอด</h1><Link href="/" className="back">หน้าหลัก</Link></div></div>
       <div className="page timeline-page mobile-timeline-page">
         {error && <div className="alert alert-error">{error}</div>}
         <div className="card timeline-controls mobile-timeline-controls">

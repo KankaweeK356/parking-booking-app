@@ -45,11 +45,11 @@ export default function Home() {
         {tab === "field" && <div className="nav-grid">
           <Link href="/dashboard" className="nav-card">
             <div className="title">📊 ติดตามสถานะลานจอด</div>
-            <div className="desc">ตรวจสถานะช่อง, รอตรวจตั๋ว และหมดเวลาจอดตามประวัติ Transection</div>
+            <div className="desc">ดูสถานะช่องจอดในแต่ละลาน</div>
           </Link>
           <Link href="/mobile" className="nav-card">
-            <div className="title">📱 ตรวจสอบพื้นที่หน้างาน (Mobile View)</div>
-            <div className="desc">มุมมองแบบการ์ดขนาดกะทัดรัด สำหรับทีมหน้างานใช้ตรวจสอบช่องจอดผ่านมือถือ</div>
+            <div className="title">📱 ติดตามสถานะช่องจอด (Mobile View)</div>
+            <div className="desc">ตรวจสอบสถานะช่องจอด เหมาะสำหรับใช้งานบนมือถือ</div>
           </Link>
         </div>}
       </div>

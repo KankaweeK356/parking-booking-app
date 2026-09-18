@@ -533,6 +533,13 @@ input[type="password"] {
 .mobile-slot-vacant { background: #ecfdf5; border-color: #86efac; color: #166534; }
 .mobile-slot-expired { background: #fef3c7; border-color: #fcd34d; color: #854d0e; }
 .mobile-slot-closed { background: #f1f5f9; border-color: #cbd5e1; color: #475569; }
+.print-only { display: none; }
+.print-dashboard-header { margin: 0 0 10px; color: #111827; }
+.print-dashboard-header h1 { margin: 0; color: var(--navy); font-size: 19px; }
+.print-dashboard-header h2 { margin: 3px 0 8px; color: #111827; font-size: 15px; }
+.print-dashboard-header > div { display: flex; flex-wrap: wrap; gap: 5px 18px; font-size: 11px; }
+.print-dashboard-header p { margin: 5px 0; color: #854d0e; font-size: 11px; font-weight: 700; }
+.print-status-legend { color: #374151; }
 
 .future-booking-list {
   display: grid;
@@ -567,6 +574,28 @@ input[type="password"] {
   table.data-table thead { display: table-header-group; }
   table.data-table tr { break-inside: avoid; }
   .report-section { break-inside: avoid; }
+}
+
+@media print {
+  body.dashboard-printing { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body.dashboard-printing .print-only { display: block !important; }
+  body.dashboard-printing .screen-only,
+  body.dashboard-printing .session-bar,
+  body.dashboard-printing .top-bar,
+  body.dashboard-printing .timeline-controls,
+  body.dashboard-printing .alert,
+  body.dashboard-printing .summary-stat,
+  body.dashboard-printing .dashboard-attention,
+  body.dashboard-printing .dashboard-current-block { display: none !important; }
+  body.dashboard-printing .page { max-width: none; padding: 0; margin: 0; }
+  body.dashboard-printing .dashboard-print-grid { border: 0; padding: 0; margin: 0; }
+  body.dashboard-printing .timeline-scroll { overflow: visible; }
+  body.dashboard-printing .timeline-grid { min-width: 0; width: 100%; table-layout: fixed; font-size: 8.5pt; }
+  body.dashboard-printing .timeline-grid th,
+  body.dashboard-printing .timeline-grid td { padding: 3px 4px; }
+  body.dashboard-printing .timeline-slot-heading { position: static; width: 44px; }
+  body.dashboard-printing .timeline-cell { min-width: 0; }
+  body.dashboard-printing .timeline-cell small { margin-top: 1px; font-size: 7.5pt; }
 }
 
 @media (max-width: 640px) {
