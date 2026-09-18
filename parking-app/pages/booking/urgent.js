@@ -11,8 +11,8 @@ function timeLabel(value) {
 
 export default function UrgentBooking() {
   const [customers, setCustomers] = useState([]); const [slots, setSlots] = useState([]); const [customer, setCustomer] = useState("");
-  const [data, setData] = useState(null); const [selected, setSelected] = useState([]); const [note, setNote] = useState("");
-  const [mode, setMode] = useState("existing"); const [lot, setLot] = useState(""); const [newSlots, setNewSlots] = useState([]); const [startTime, setStartTime] = useState("");
+  const [data, setData] = useState(null); const [note, setNote] = useState("");
+  const [mode, setMode] = useState(""); const [lot, setLot] = useState(""); const [newSlots, setNewSlots] = useState([]); const [startTime, setStartTime] = useState("");
   const [message, setMessage] = useState(""); const [error, setError] = useState(""); const [timeNotice, setTimeNotice] = useState(""); const [loading, setLoading] = useState(true); const [submitting, setSubmitting] = useState(false);
   const [availability, setAvailability] = useState({}); const [availabilityLoading, setAvailabilityLoading] = useState(false); const [availabilityError, setAvailabilityError] = useState("");
   const accessDate = getUrgentAccessDefaultDateIso();
@@ -35,48 +35,56 @@ export default function UrgentBooking() {
     try {
       const response = await fetch(`/api/bookings/urgent?customer=${encodeURIComponent(customer)}&date=${accessDate}`);
       const result = await response.json(); if (!response.ok) throw new Error(result.error || "โหลดสิทธิ์ลูกค้าไม่สำเร็จ");
-      setData(result); setSelected([]); setMessage("");
-    } catch (err) { setData(null); setError(err.message); }
+      setData(result); setMode((result.paidBookings || []).length ? "additional" : "daily-new"); setNewSlots([]); setStartTime(""); setMessage("");
+    } catch (err) { setData(null); setMode(""); setError(err.message); }
   }
 
   useEffect(() => { loadReferenceData(); }, []);
-  useEffect(() => { if (customer) loadCustomer(); else { setData(null); setSelected([]); } }, [customer, accessDate]);
+  useEffect(() => { if (customer) loadCustomer(); else { setData(null); setMode(""); } }, [customer, accessDate]);
 
-  const uncovered = useMemo(() => (data?.bookings || []).filter((b) => !(data.coveredKeys || []).includes(`${b.slot}::${b.startTime}`) && isBeforeOperationalBlockStart(accessDate, b.startTime)), [data, accessDate]);
   const allowedStartTimes = useMemo(() => ["07:00", "11:00", "15:00", "19:00", "23:00", "03:00"].filter((time) => isBeforeOperationalBlockStart(accessDate, time)), [accessDate]);
   const lotSlots = useMemo(() => slots.filter((s) => s.lot === lot), [slots, lot]);
 
   useEffect(() => {
-    if (mode !== "new" || !lot || !startTime) { setAvailability({}); setAvailabilityLoading(false); setAvailabilityError(""); return undefined; }
+    if (!mode || !lot || !startTime || data?.paymentStatus !== "READY") { setAvailability({}); setAvailabilityLoading(false); setAvailabilityError(""); return undefined; }
     let active = true;
     setAvailabilityLoading(true); setAvailabilityError("");
-    fetch(`/api/booking-availability?lot=${encodeURIComponent(lot)}&startDate=${accessDate}&endDate=${accessDate}&startTimes=${encodeURIComponent(startTime)}`)
+    fetch(`/api/booking-availability?lot=${encodeURIComponent(lot)}&startDate=${accessDate}&endDate=${accessDate}&startTimes=${encodeURIComponent(startTime)}&purpose=urgent`)
       .then(async (response) => { const result = await response.json(); if (!response.ok) throw new Error(result.error || "ตรวจสอบสถานะช่องไม่สำเร็จ"); return result; })
       .then((result) => { if (!active) return; const nextAvailability = Object.fromEntries((result.availability || []).map((item) => [item.slotCode, item])); setAvailability(nextAvailability); setNewSlots((selected) => selected.filter((code) => !nextAvailability[code]?.blocked)); })
       .catch((err) => active && setAvailabilityError(err.message || "ตรวจสอบสถานะช่องไม่สำเร็จ"))
       .finally(() => active && setAvailabilityLoading(false));
     return () => { active = false; };
-  }, [mode, lot, startTime, accessDate]);
+  }, [mode, lot, startTime, accessDate, data?.paymentStatus]);
 
   async function submit() {
     setSubmitting(true); setError(""); setMessage("");
     try {
-      const body = { customer, accessDate, note };
-      if (mode === "existing") body.entries = uncovered.filter((b) => selected.includes(b.rowNumber)).map((b) => ({ rowNumber: b.rowNumber, lot: b.lot, slot: b.slot, number: slots.find((s) => s.slotCode === b.slot)?.number || "", startTime: b.startTime }));
-      else body.newBooking = { lot, slots: newSlots, startTime };
+      const body = { customer, accessDate, note, bookingKind: mode, newBooking: { lot, slots: newSlots, startTime } };
       const response = await fetch("/api/bookings/urgent", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const result = await response.json(); if (!response.ok) throw new Error(result.error || "บันทึกไม่สำเร็จ");
-      setMessage(`บันทึกสำเร็จ ${result.count} สิทธิ์`); setSelected([]); setNewSlots([]); setStartTime(""); await loadCustomer();
+      setMessage(`บันทึกสำเร็จ ${result.count} ช่อง`); setNewSlots([]); setStartTime(""); await loadCustomer();
     } catch (err) { setError(err.message); } finally { setSubmitting(false); }
   }
 
-  const cannotSubmit = submitting || !customer || (mode === "existing" ? selected.length === 0 : newSlots.length === 0 || !startTime);
+  const cannotSubmit = submitting || !customer || !mode || data?.paymentStatus !== "READY" || newSlots.length === 0 || !startTime;
   return <div><div className="top-bar"><div className="inner"><h1>จองรายวัน</h1><Link href="/" className="back">← กลับหน้าหลัก</Link></div></div><div className="page">
     <div className="card"><div className="section-heading-row"><label>ข้อมูลการจอง</label><button type="button" className="btn btn-secondary" onClick={loadReferenceData} disabled={loading}>↻ อัปเดตสถานะช่อง</button></div><CustomerPicker customers={customers} value={customer} onChange={setCustomer} required /><p className="subtitle">วันที่ใช้สิทธิ์: {accessDate} · บันทึกได้เฉพาะก่อนเวลาเริ่มรอบ</p></div>
-    {error && <div className="alert alert-error">{error}</div>}{message && <div className="alert alert-success">{message} <Link href={`/required-summary?customer=${encodeURIComponent(customer)}`}>พิมพ์สรุปให้ลูกค้า</Link></div>}
-    {data && <><details className="card"><summary>ประวัติสิทธิ์ระหว่างวันล่าสุด ({(data.history || []).length} รายการ)</summary>{(data.history || []).map((h, i) => <p key={i}>วันที่ {h.accessDate} — {h.lot || "-"} / ช่อง {h.number || "-"} / รอบ {h.startTime} — {h.actionType || "สิทธิ์ระหว่างวัน"}{timeLabel(h.createdAt) ? ` · บันทึก ${timeLabel(h.createdAt)}` : ""}</p>)}</details>
-      <div className="card"><div className="home-tabs"><button className={`btn ${mode === "existing" ? "btn-primary" : "btn-secondary"}`} onClick={() => setMode("existing")}>จองเพิ่ม</button><button className={`btn ${mode === "new" ? "btn-primary" : "btn-secondary"}`} onClick={() => setMode("new")}>จองใหม่รายวัน</button></div>
-        {mode === "existing" ? <>{uncovered.length === 0 ? <p className="subtitle">ไม่มีรายการจองเดิมที่ยังบันทึกได้ก่อนรอบเริ่ม</p> : uncovered.map((b) => <label key={b.rowNumber} className="booking-row"><input type="checkbox" checked={selected.includes(b.rowNumber)} onChange={() => setSelected((items) => items.includes(b.rowNumber) ? items.filter((id) => id !== b.rowNumber) : [...items, b.rowNumber])} /><span>{displayLotName(b.lot)} / ช่อง {slots.find((s) => s.slotCode === b.slot)?.number || "-"} / รอบ {b.startTime}</span></label>)}</> : <><label>เลือกลานจอด</label><select value={lot} onChange={(e) => { setLot(e.target.value); setNewSlots([]); }}>{[...new Set(slots.map((s) => s.lot))].map((item) => <option key={item}>{displayLotName(item)}</option>)}</select><OperationalTimePicker value={startTime} onChange={(value) => { setStartTime(value); setTimeNotice(""); }} label="เลือกรอบเวลา (เลือกได้ 1 รอบ)" availableValues={allowedStartTimes} onUnavailableSelect={(block) => setTimeNotice(`รอบ ${block.label} เริ่มไปแล้ว จองรายวันต้องบันทึกก่อนเวลาเริ่มรอบ กรุณาเลือกรอบที่ยังไม่เริ่ม`)} />{timeNotice && <p className="alert alert-warning">{timeNotice}</p>}{!startTime ? <p className="availability-prompt">เลือกรอบที่ต้องการ เพื่อดูช่องว่าง</p> : <><label>เลือกช่องจอด</label>{availabilityLoading ? <p className="availability-prompt">กำลังตรวจสอบช่องว่าง…</p> : <div className="slot-grid">{lotSlots.map((s) => { const isClosed = s.status === "ปิด" || s.isRoad; const hasConflict = !isClosed && availability[s.slotCode]?.blocked; const blocked = isClosed || hasConflict || Boolean(availabilityError); const active = newSlots.includes(s.slotCode); return <button type="button" key={s.slotCode} className={`slot-btn ${isClosed ? "closed" : hasConflict ? "unavailable" : "open"} ${active ? "active" : ""}`} disabled={blocked} title={blocked ? (availability[s.slotCode]?.reason || s.reason || "ปิดใช้งาน") : "ว่าง"} onClick={() => setNewSlots((items) => items.includes(s.slotCode) ? items.filter((id) => id !== s.slotCode) : [...items, s.slotCode])}>ช่อง {s.number}</button>; })}</div>}{availabilityError && <p className="alert alert-error">{availabilityError}</p>}<p className="subtitle">เขียว = เลือกได้ · แดง = มีการจองแล้ว · เทา = ปิดใช้งาน</p></>}</>}</div>
-      <div className="card"><label>หมายเหตุเพิ่มเติม (ถ้ามี)</label><input value={note} onChange={(e) => setNote(e.target.value)} /><button className="btn btn-primary" disabled={cannotSubmit} onClick={submit}>{submitting ? "กำลังบันทึก..." : "บันทึกสิทธิ์ระหว่างวัน"}</button></div>
-    </>}</div></div>;
+    {error && <div className="alert alert-error">{error}</div>}
+    {message && <div className="alert alert-success">{message} <Link href={`/required-summary?customer=${encodeURIComponent(customer)}`}>พิมพ์สรุปให้ลูกค้า</Link></div>}
+    {data && <>
+      <details className="card"><summary>ประวัติสิทธิ์ระหว่างวันล่าสุด ({(data.history || []).length} รายการ)</summary>{(data.history || []).map((h, i) => <p key={i}>วันที่ {h.accessDate} — {h.lot || "-"} / ช่อง {h.number || "-"} / รอบ {h.startTime} — {h.actionType || "สิทธิ์ระหว่างวัน"}{timeLabel(h.createdAt) ? ` · บันทึก ${timeLabel(h.createdAt)}` : ""}</p>)}</details>
+      {data.paymentStatus !== "READY" ? <div className="alert alert-warning">ข้อมูลสถานะการชำระเงินยังไม่พร้อม กรุณารอหรืออัปเดตข้อมูลใหม่จากหน้า Dashboard</div> : <>
+        <div className="card">
+          <h2>{mode === "additional" ? "จองเพิ่ม" : "จองใหม่รายวัน"}</h2>
+          {mode === "additional" ? <><p className="subtitle">ลูกค้ารายนี้มีสิทธิ์ที่ชำระแล้ว เลือกช่องเพิ่มในลานและรอบที่ต้องการได้</p><div className="booking-reference-list">{data.paidBookings.map((b, index) => <p key={`${b.slot}-${b.startTime}-${index}`}>{displayLotName(b.lot)} / ช่อง {slots.find((s) => s.slotCode === b.slot)?.number || "-"} / รอบ {b.startTime}</p>)}</div></> : <p className="subtitle">ลูกค้าไม่มีสิทธิ์ที่ชำระแล้วสำหรับวันนี้ จึงจองได้เฉพาะวันปฏิบัติการนี้</p>}
+          <label>เลือกลานจอด</label><select value={lot} onChange={(e) => { setLot(e.target.value); setNewSlots([]); }}>{[...new Set(slots.map((s) => s.lot))].map((item) => <option key={item}>{displayLotName(item)}</option>)}</select>
+          <OperationalTimePicker value={startTime} onChange={(value) => { setStartTime(value); setTimeNotice(""); }} label="เลือกรอบเวลา (เลือกได้ 1 รอบ)" availableValues={allowedStartTimes} onUnavailableSelect={(block) => setTimeNotice(`รอบ ${block.label} เริ่มไปแล้ว จองรายวันต้องบันทึกก่อนเวลาเริ่มรอบ กรุณาเลือกรอบที่ยังไม่เริ่ม`)} />
+          {timeNotice && <p className="alert alert-warning">{timeNotice}</p>}
+          {!startTime ? <p className="availability-prompt">เลือกรอบที่ต้องการ เพื่อดูช่องว่าง</p> : <><label>เลือกช่องจอด</label>{availabilityLoading ? <p className="availability-prompt">กำลังตรวจสอบช่องว่าง…</p> : <div className="slot-grid">{lotSlots.map((s) => { const isClosed = s.status === "ปิด" || s.isRoad; const hasConflict = !isClosed && availability[s.slotCode]?.blocked; const blocked = isClosed || hasConflict || Boolean(availabilityError); const active = newSlots.includes(s.slotCode); return <button type="button" key={s.slotCode} className={`slot-btn ${isClosed ? "closed" : hasConflict ? "unavailable" : "open"} ${active ? "active" : ""}`} disabled={blocked} title={blocked ? (availability[s.slotCode]?.reason || s.reason || "ปิดใช้งาน") : "ว่าง"} onClick={() => setNewSlots((items) => items.includes(s.slotCode) ? items.filter((id) => id !== s.slotCode) : [...items, s.slotCode])}>ช่อง {s.number}</button>; })}</div>}{availabilityError && <p className="alert alert-error">{availabilityError}</p>}<p className="subtitle">เขียว = เลือกได้ · แดง = มีการจองแล้ว · เทา = ปิดใช้งาน</p></>}
+        </div>
+        <div className="card"><label>หมายเหตุเพิ่มเติม (ถ้ามี)</label><input value={note} onChange={(e) => setNote(e.target.value)} /><button className="btn btn-primary" disabled={cannotSubmit} onClick={submit}>{submitting ? "กำลังบันทึก..." : "บันทึกสิทธิ์ระหว่างวัน"}</button></div>
+      </>}
+    </>}
+  </div></div>;
 }

@@ -727,12 +727,30 @@ export async function createBookingBatch({ customer, lot, slots, startDate, endD
   const orderedSlotList = [...slotList].sort((left, right) => String(statusMap[left]?.number || left).localeCompare(String(statusMap[right]?.number || right), "th", { numeric: true }));
   const orderedTimeList = [...timeList].sort((left, right) => toOperationalMinutes(serialToMinutes(left)) - toOperationalMinutes(serialToMinutes(right)));
 
+  // สิทธิ์ระหว่างวันไม่ใช้ conflict ของรายการจองปกติโดยตรง เพราะรายการ
+  // ที่ยังไม่ชำระสำหรับวันปฏิบัติการนี้ต้องปล่อยช่องว่างให้จองรายวันได้
+  let urgentOccupiedKeys = null;
+  if (bookingType === "Urgent") {
+    if (startDate !== endDate || orderedTimeList.length !== 1) {
+      throw new Error("จองรายวันบันทึกได้ครั้งละ 1 รอบของวันปฏิบัติการปัจจุบัน");
+    }
+    const dashboard = await getDashboardData(startDate);
+    if (dashboard.paymentStatus !== "READY") {
+      throw new Error("ข้อมูลสถานะการชำระเงินยังไม่พร้อม กรุณารอหรืออัปเดตข้อมูลใหม่");
+    }
+    urgentOccupiedKeys = new Set((dashboard.bookings || []).map((booking) => `${booking.slot}::${booking.startTime}`));
+  }
+
   for (const slot of orderedSlotList) {
     const slotInfo = statusMap[slot];
     if (!slotInfo || slotInfo.status === "ปิด" || slotInfo.isRoad) {
       throw new Error(`ช่อง ${slot} ถูกปิดใช้งานอยู่ (${slotInfo?.reason || "สถานะพื้นฐานปิดใช้งาน"}) ไม่สามารถจองได้`);
     }
     for (const time of orderedTimeList) {
+      if (urgentOccupiedKeys?.has(`${slot}::${time}`)) {
+        throw new Error(`ช่อง ${slot} รอบ ${time} มีการจองแล้ว`);
+      }
+      if (bookingType === "Urgent") continue;
       const conflict = await findConflict({ slot, startDate, endDate, startTime: time });
       if (conflict.conflict) {
         throw new Error(`ช่อง ${slot} ช่วงเวลา ${time} ชนกับการจองของ "${conflict.withCustomer}" แล้ว`);
@@ -1160,7 +1178,20 @@ async function ensurePaymentSnapshotSheets() {
   await ensureSheet("Payment_Refresh_Log", PAYMENT_REFRESH_HEADERS, 2);
 }
 
-export async function getSlotAvailability({ lot, startDate, endDate, startTimes = [] }) {
+export async function getSlotAvailability({ lot, startDate, endDate, startTimes = [], purpose = "normal" }) {
+  if (purpose === "urgent") {
+    if (startDate !== endDate || startTimes.length !== 1) throw new Error("จองรายวันเลือกได้ครั้งละ 1 รอบ");
+    const dashboard = await getDashboardData(startDate);
+    if (dashboard.paymentStatus !== "READY") throw new Error("ข้อมูลสถานะการชำระเงินยังไม่พร้อม กรุณารอหรืออัปเดตข้อมูลใหม่");
+    const occupied = new Set((dashboard.bookings || []).filter((booking) => booking.lot === lot).map((booking) => `${booking.slot}::${booking.startTime}`));
+    const startTime = startTimes[0];
+    return (dashboard.slots || []).filter((slot) => !lot || slot.lot === lot).map((slot) => {
+      if (slot.status === "ปิด" || slot.isRoad) return { slotCode: slot.code, blocked: true, reason: "ปิดใช้งาน" };
+      return occupied.has(`${slot.code}::${startTime}`)
+        ? { slotCode: slot.code, blocked: true, reason: "มีการจองแล้ว" }
+        : { slotCode: slot.code, blocked: false, reason: "" };
+    });
+  }
   // Read each Sheet range once.  The booking screen may show dozens of slots;
   // calling findConflict for every slot would quickly exhaust Google quota.
   const [slots, all, adjustments] = await Promise.all([getSlotsWithStatus(), getAllBookingRows(), getBookingAdjustments()]);
