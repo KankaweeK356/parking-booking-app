@@ -1077,7 +1077,30 @@ export async function getTicketReport(dateStr, customerName = "") {
     const customerDailyTickets = dailyTickets
       .filter((log) => log.customer === customerName)
       .map((log) => ({ ...log, slotNumber: log.number || slotNumberByCode.get(log.slot) || "-" }));
-    customerReport = { ...totals, longBookings: activeLongBookings, dailyBookings: customerDailyTickets };
+    const formatSlotNumbers = (items) => {
+      const values = [...new Set(items.map((item) => Number(item.slotNumber)).filter(Number.isFinite))].sort((a, b) => a - b);
+      const parts = [];
+      for (let index = 0; index < values.length; index += 1) {
+        let end = index;
+        while (end + 1 < values.length && values[end + 1] === values[end] + 1) end += 1;
+        parts.push(end > index ? `${values[index]}–${values[end]}` : String(values[index]));
+        index = end;
+      }
+      return parts.join(", ");
+    };
+    const groupItems = (items, kind) => {
+      const groups = new Map();
+      items.forEach((item) => {
+        const pauseNote = kind === "long" ? (item.pausePeriods || []).map((period) => `${period.startDate}:${period.endDate}`).join("|") : "";
+        const key = kind === "long"
+          ? [item.lot, item.startTime, item.startDate, item.endDateEffective || item.endDate, pauseNote].join("::")
+          : [item.lot, item.startTime, selectedDate].join("::");
+        if (!groups.has(key)) groups.set(key, { lot: item.lot, startTime: item.startTime, startDate: item.startDate, endDate: item.endDateEffective || item.endDate, accessDate: selectedDate, pausePeriods: item.pausePeriods || [], items: [], ticketCount: 0 });
+        const group = groups.get(key); group.items.push(item); group.ticketCount += Number(item.ticketCount || 1);
+      });
+      return [...groups.values()].map((group) => ({ ...group, slots: formatSlotNumbers(group.items) })).sort((a, b) => String(a.lot).localeCompare(String(b.lot), "th") || String(a.startTime).localeCompare(String(b.startTime)));
+    };
+    customerReport = { ...totals, longBookings: activeLongBookings, dailyBookings: customerDailyTickets, longGroups: groupItems(activeLongBookings, "long"), dailyGroups: groupItems(customerDailyTickets, "daily") };
   }
 
   return { selectedDate, nextOperationalDate, ticketPrice: TICKET_PRICE_PER_UNIT, rows, customerReport };
@@ -1125,7 +1148,6 @@ export async function getCsOverviewData(dateStr) {
   ]);
 
   const assignments = [];
-  const futureAssignments = [];
   for (const b of allBookings) {
     const endEff = b.endEffectiveSerial !== null && b.endEffectiveSerial !== undefined ? b.endEffectiveSerial : FAR_FUTURE_SERIAL;
     // รายการที่ถูกปิดด้วย ยกเลิก / ย้ายออก / ปิดช่อง เป็นประวัติเท่านั้น
@@ -1142,11 +1164,7 @@ export async function getCsOverviewData(dateStr) {
       startMin: b.startMinutes !== null ? b.startMinutes : 420,
       endMin: b.endMinutes !== null ? b.endMinutes : 660,
     };
-    if (b.startSerial > targetSerial) {
-      futureAssignments.push(assignment);
-    } else {
-      assignments.push(assignment);
-    }
+    if (b.startSerial <= targetSerial) assignments.push(assignment);
   }
 
   return {
@@ -1163,7 +1181,6 @@ export async function getCsOverviewData(dateStr) {
     })),
     date: targetDateStr,
     assignments,
-    futureAssignments,
   };
 }
 

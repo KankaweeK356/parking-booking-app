@@ -44,6 +44,7 @@ export default function UrgentBooking() {
 
   const allowedStartTimes = useMemo(() => ["07:00", "11:00", "15:00", "19:00", "23:00", "03:00"].filter((time) => isBeforeOperationalBlockStart(accessDate, time)), [accessDate]);
   const lotSlots = useMemo(() => slots.filter((s) => s.lot === lot), [slots, lot]);
+  const relevantPaidBookings = useMemo(() => (data?.paidBookings || []).filter((booking) => booking.lot === lot && booking.startTime === startTime), [data, lot, startTime]);
 
   useEffect(() => {
     if (!mode || !lot || !startTime || data?.paymentStatus !== "READY") { setAvailability({}); setAvailabilityLoading(false); setAvailabilityError(""); return undefined; }
@@ -77,12 +78,14 @@ export default function UrgentBooking() {
       {data.paymentStatus !== "READY" ? <div className="alert alert-warning">ข้อมูลสถานะการชำระเงินยังไม่พร้อม กรุณารอหรืออัปเดตข้อมูลใหม่จากหน้า Dashboard</div> : <>
         <div className="card">
           <h2>{mode === "additional" ? "จองเพิ่ม" : "จองใหม่รายวัน"}</h2>
-          {mode === "additional" ? <><p className="subtitle">ลูกค้ารายนี้มีสิทธิ์ที่ชำระแล้ว เลือกช่องเพิ่มในลานและรอบที่ต้องการได้</p><div className="booking-reference-list">{data.paidBookings.map((b, index) => <p key={`${b.slot}-${b.startTime}-${index}`}>{displayLotName(b.lot)} / ช่อง {slots.find((s) => s.slotCode === b.slot)?.number || "-"} / รอบ {b.startTime}</p>)}</div></> : <p className="subtitle">ลูกค้าไม่มีสิทธิ์ที่ชำระแล้วสำหรับวันนี้ จึงจองได้เฉพาะวันปฏิบัติการนี้</p>}
+          {mode === "additional" ? <p className="subtitle">ลูกค้ารายนี้มีสิทธิ์ที่ชำระแล้ว เลือกช่องเพิ่มในลานและรอบที่ต้องการได้</p> : <p className="subtitle">ลูกค้าไม่มีสิทธิ์ที่ชำระแล้วสำหรับวันนี้ จึงจองได้เฉพาะวันปฏิบัติการนี้</p>}
           <label>เลือกลานจอด</label><select value={lot} onChange={(e) => { setLot(e.target.value); setNewSlots([]); }}>{[...new Set(slots.map((s) => s.lot))].map((item) => <option key={item}>{displayLotName(item)}</option>)}</select>
           <OperationalTimePicker value={startTime} onChange={(value) => { setStartTime(value); setTimeNotice(""); }} label="เลือกรอบเวลา (เลือกได้ 1 รอบ)" availableValues={allowedStartTimes} onUnavailableSelect={(block) => setTimeNotice(`รอบ ${block.label} เริ่มไปแล้ว จองรายวันต้องบันทึกก่อนเวลาเริ่มรอบ กรุณาเลือกรอบที่ยังไม่เริ่ม`)} />
           {timeNotice && <p className="alert alert-warning">{timeNotice}</p>}
+          {mode === "additional" && relevantPaidBookings.length > 0 && <div className="booking-context"><strong>รายการเดิมในลาน/รอบที่เลือก</strong><p>ช่องเดิม {relevantPaidBookings.map((booking) => slots.find((slot) => slot.slotCode === booking.slot)?.number).filter(Boolean).sort((a, b) => Number(a) - Number(b)).join(", ")}</p></div>}
           {!startTime ? <p className="availability-prompt">เลือกรอบที่ต้องการ เพื่อดูช่องว่าง</p> : <><label>เลือกช่องจอด</label>{availabilityLoading ? <p className="availability-prompt">กำลังตรวจสอบช่องว่าง…</p> : <div className="slot-grid">{lotSlots.map((s) => { const isClosed = s.status === "ปิด" || s.isRoad; const hasConflict = !isClosed && availability[s.slotCode]?.blocked; const blocked = isClosed || hasConflict || Boolean(availabilityError); const active = newSlots.includes(s.slotCode); return <button type="button" key={s.slotCode} className={`slot-btn ${isClosed ? "closed" : hasConflict ? "unavailable" : "open"} ${active ? "active" : ""}`} disabled={blocked} title={blocked ? (availability[s.slotCode]?.reason || s.reason || "ปิดใช้งาน") : "ว่าง"} onClick={() => setNewSlots((items) => items.includes(s.slotCode) ? items.filter((id) => id !== s.slotCode) : [...items, s.slotCode])}>ช่อง {s.number}</button>; })}</div>}{availabilityError && <p className="alert alert-error">{availabilityError}</p>}<p className="subtitle">เขียว = เลือกได้ · แดง = มีการจองแล้ว · เทา = ปิดใช้งาน</p></>}
         </div>
+        {mode === "additional" && <details className="existing-bookings-details"><summary>ดูสิทธิ์ปกติที่ชำระแล้วทั้งหมด ({data.paidBookings.length} รายการ)</summary>{data.paidBookings.map((b, index) => <p key={`${b.slot}-${b.startTime}-${index}`}>{displayLotName(b.lot)} / ช่อง {slots.find((s) => s.slotCode === b.slot)?.number || "-"} / รอบ {b.startTime}</p>)}</details>}
         <div className="card"><label>หมายเหตุเพิ่มเติม (ถ้ามี)</label><input value={note} onChange={(e) => setNote(e.target.value)} /><button className="btn btn-primary" disabled={cannotSubmit} onClick={submit}>{submitting ? "กำลังบันทึก..." : "บันทึกสิทธิ์ระหว่างวัน"}</button></div>
       </>}
     </>}

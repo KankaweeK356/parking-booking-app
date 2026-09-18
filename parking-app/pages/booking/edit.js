@@ -4,7 +4,7 @@ import OperationalTimePicker from "../../components/OperationalTimePicker";
 import EndDateField from "../../components/EndDateField";
 import CustomerPicker from "../../components/CustomerPicker";
 import { displayLotName } from "../../lib/display";
-import { addDaysToIso, getCurrentOperationalDateIso } from "../../lib/operational-day";
+import { addDaysToIso, getCurrentOperationalDateIso, OPERATIONAL_TIME_VALUES } from "../../lib/operational-day";
 
 function today() {
   return getCurrentOperationalDateIso();
@@ -33,6 +33,7 @@ export default function EditBooking() {
   // "change" (ย้ายช่องจอด)
   // "extend" (ปรับวัน-เวลาจอง / ขยายระยะเวลา)
   const [changeType, setChangeType] = useState("reduce");
+  const [roundFilter, setRoundFilter] = useState("all");
 
   // === State สำหรับ "ลดจำนวนช่อง / ยกเลิกบางช่วงเวลา" ===
   const [selectedReduceRows, setSelectedReduceRows] = useState([]);
@@ -362,8 +363,9 @@ export default function EditBooking() {
             <div className="card">
               <h2 style={{ fontSize: 16 }}>เลือกการจองที่ต้องการพักหรือยกเลิก</h2>
               <p className="subtitle">เลือกทุกรอบของช่องเดียวกันเพื่อทำทั้งช่อง หรือเลือกเฉพาะรอบที่ต้องการ</p>
+              <label>รอบที่ต้องการทำรายการ</label><select value={roundFilter} onChange={(e) => setRoundFilter(e.target.value)}><option value="all">ทั้งหมด</option>{[...new Set(bookings.map((booking) => booking.startTime).filter(Boolean))].sort((a, b) => OPERATIONAL_TIME_VALUES.indexOf(a) - OPERATIONAL_TIME_VALUES.indexOf(b)).map((time) => <option key={time} value={time}>{time}</option>)}</select>
               <div style={{ margin: "14px 0" }}>
-                {bookings.map((b) => (
+                {bookings.filter((b) => roundFilter === "all" || b.startTime === roundFilter).map((b) => (
                   <div
                     key={b.rowNumber}
                     className={`booking-row ${selectedReduceRows.includes(b.rowNumber) ? "selected" : ""}`}
@@ -419,8 +421,9 @@ export default function EditBooking() {
           <form onSubmit={handleSubmitChange}>
             <div className="card">
               <h2 style={{ fontSize: 16 }}>1. เลือกรายการเดิมที่จะย้าย</h2>
+              <label>รอบที่ต้องการทำรายการ</label><select value={roundFilter} onChange={(e) => setRoundFilter(e.target.value)}><option value="all">ทั้งหมด</option>{[...new Set(bookings.map((booking) => booking.startTime).filter(Boolean))].sort((a, b) => OPERATIONAL_TIME_VALUES.indexOf(a) - OPERATIONAL_TIME_VALUES.indexOf(b)).map((time) => <option key={time} value={time}>{time}</option>)}</select>
               <div style={{ margin: "14px 0" }}>
-                {bookings.map((b) => (
+                {bookings.filter((b) => roundFilter === "all" || b.startTime === roundFilter).map((b) => (
                   <div
                     key={b.rowNumber}
                     className={`booking-row ${selectedChangeRow?.rowNumber === b.rowNumber ? "selected" : ""}`}

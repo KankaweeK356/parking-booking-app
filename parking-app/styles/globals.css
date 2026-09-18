@@ -555,6 +555,18 @@ input[type="password"] {
   gap: 8px;
   font-size: 13px;
 }
+.booking-count-note { margin: 6px 0 14px; color: var(--gray); font-weight: 700; }
+.booking-context { margin: 14px 0; padding: 12px 14px; border: 1px solid #bfdbfe; border-radius: 8px; background: #eff6ff; color: var(--navy-dark); }
+.booking-context p { margin: 5px 0 0; }
+.existing-bookings-details { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px; }
+.existing-bookings-details summary { cursor: pointer; color: var(--navy); font-weight: 700; }
+.existing-bookings-details p { margin: 8px 0 0; font-size: 13px; color: var(--gray); }
+.pause-print-note { display: block; margin-top: 4px; color: #92400e; }
+.grouped-ticket-table small { font-size: 11px; color: var(--gray); }
+.print-cs-overview-header { margin: 0 0 10px; color: #111827; }
+.print-cs-overview-header h1 { margin: 0; color: var(--navy); font-size: 19px; }
+.print-cs-overview-header h2 { margin: 3px 0 6px; font-size: 15px; }
+.print-cs-overview-header p { margin: 0; font-size: 11px; }
 
 .customer-picker { position: relative; margin-bottom: 14px; width: 100%; }
 .customer-picker input[type="text"] { width: 100%; min-height: 48px; padding: 11px 14px; font-size: 16px; }
@@ -588,6 +600,25 @@ input[type="password"] {
   table.data-table tr { break-inside: avoid; }
   .report-section { break-inside: avoid; }
   .report-page .print-only { display: block !important; }
+}
+
+@media print {
+  body.cs-overview-printing { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body.cs-overview-printing .top-bar,
+  body.cs-overview-printing .timeline-controls,
+  body.cs-overview-printing .subtitle,
+  body.cs-overview-printing .alert { display: none !important; }
+  body.cs-overview-printing .print-only { display: block !important; }
+  body.cs-overview-printing .page { max-width: none; padding: 0; margin: 0; }
+  body.cs-overview-printing .cs-overview-print-grid { border: 0; padding: 0; margin: 0; }
+  body.cs-overview-printing .timeline-scroll { overflow: visible; }
+  body.cs-overview-printing .timeline-grid { min-width: 0; width: 100%; table-layout: fixed; font-size: 8.5pt; }
+  body.cs-overview-printing .timeline-grid thead { display: table-header-group; }
+  body.cs-overview-printing .timeline-grid tr { break-inside: avoid; }
+  body.cs-overview-printing .timeline-grid th,
+  body.cs-overview-printing .timeline-grid td { padding: 3px 4px; }
+  body.cs-overview-printing .timeline-slot-heading { position: static; width: 44px; }
+  body.cs-overview-printing .timeline-cell { min-width: 0; }
 }
 
 @media print {
