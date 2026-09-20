@@ -16,7 +16,13 @@ export default function MobileView() {
   const [lastUpdated, setLastUpdated] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [retryingPayment, setRetryingPayment] = useState(false);
+  const [canRetryPayment, setCanRetryPayment] = useState(false);
 
+  useEffect(() => {
+    fetch("/api/auth/me").then((response) => response.ok ? response.json() : null).then((result) => {
+      setCanRetryPayment(["Admin", "Field"].includes(result?.user?.role));
+    });
+  }, []);
   useEffect(() => {
     loadData(selectedDate);
     const timer = window.setInterval(() => {
@@ -88,7 +94,7 @@ export default function MobileView() {
             </div>
           </div>
         </div>
-        {loading ? <div className="card"><p className="subtitle">กำลังโหลดสถานะช่องจอด...</p></div> : <>{paymentUpdate?.status !== "READY" && <div className="alert alert-warning">ข้อมูลสำหรับวันที่ {paymentDateLabel} ยังไม่พร้อม<br />โปรดรอหรือกด <button type="button" className="btn btn-secondary refresh-button" disabled={retryingPayment} onClick={retryPaymentSnapshot}>{retryingPayment ? "กำลังอัปเดตข้อมูล..." : "อัปเดตข้อมูลใหม่"}</button></div>}{data.paymentStatus === "UPDATING" ? <div className="card"><p className="subtitle">โปรดรอให้ข้อมูลพร้อมก่อนใช้สถานะช่องจอดตัดสินพื้นที่</p></div> : <><div className="dashboard-current-block">รอบปัจจุบัน: {data.currentBlock?.label || "-"}{lastUpdated ? ` · อัปเดต ${lastUpdated}` : ""}</div><p className="mobile-attention-count">ต้องตรวจ {attentionCount} ช่อง</p><MobileRoundSlotList slots={slotsInLot} bookings={paidBookingsInLot} selectedRound={activeRound} currentBlockStartTime={data.currentBlock?.startTime} isLiveOperationalDate={data.isLiveOperationalDate} /></>}</>}
+        {loading ? <div className="card"><p className="subtitle">กำลังโหลดสถานะช่องจอด...</p></div> : <>{paymentUpdate?.status !== "READY" && <div className="alert alert-warning">ข้อมูลสำหรับวันที่ {paymentDateLabel} ยังไม่พร้อม<br />โปรดรอ{canRetryPayment ? <>หรือกด <button type="button" className="btn btn-secondary refresh-button" disabled={retryingPayment} onClick={retryPaymentSnapshot}>{retryingPayment ? "กำลังอัปเดตข้อมูล..." : "อัปเดตข้อมูลใหม่"}</button></> : "ระบบกำลังอัปเดตข้อมูลอัตโนมัติ"}</div>}{data.paymentStatus === "UPDATING" ? <div className="card"><p className="subtitle">โปรดรอให้ข้อมูลพร้อมก่อนใช้สถานะช่องจอดตัดสินพื้นที่</p></div> : <><div className="dashboard-current-block">รอบปัจจุบัน: {data.currentBlock?.label || "-"}{lastUpdated ? ` · อัปเดต ${lastUpdated}` : ""}</div><p className="mobile-attention-count">ต้องตรวจ {attentionCount} ช่อง</p><MobileRoundSlotList slots={slotsInLot} bookings={paidBookingsInLot} selectedRound={activeRound} currentBlockStartTime={data.currentBlock?.startTime} isLiveOperationalDate={data.isLiveOperationalDate} /></>}</>}
       </div>
     </div>
   );
