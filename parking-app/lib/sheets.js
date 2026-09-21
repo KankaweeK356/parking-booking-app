@@ -1374,9 +1374,8 @@ export async function getDashboardData(dateStr) {
     }
   });
 
-  // สิทธิ์ด่วนมีผลทันทีใน operational day ที่ CS ระบุ
-  const currentBlockStart = getCurrentOperationalBlock().startTime;
-  urgentLogs.filter((log) => log.accessDate === targetDateStr && !(targetDateStr === currentOperationalDate && toOperationalMinutes(log.startTime ? serialToMinutes(log.startTime) : 0) < toOperationalMinutes(serialToMinutes(currentBlockStart)))).forEach((log) => {
+  // สิทธิ์ด่วนมีผลทันทีใน operational day ที่ CS ระบุ (เก็บประวัติตลอดทั้งวันเพื่อใช้ตรวจการหมดเวลาจอดในรอบถัดไป)
+  urgentLogs.filter((log) => log.accessDate === targetDateStr).forEach((log) => {
     const booking = activeBookings.find((b) => b.slot === log.slot && b.startTime === log.startTime && (log.bookingRowNumber ? b.rowNumber === log.bookingRowNumber : true));
     if (!booking || isClosingReason(booking.reason)) return;
     const key = `${booking.slot}::${booking.startTime}`;

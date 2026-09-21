@@ -60,11 +60,12 @@ function dashboardStatus({ slot, bookings, snapshot, selectedRound, currentRound
   if (slot.closed) return "closed";
   const normal = bookings.find((item) => item.slot === slot.code && item.startTime === selectedRound && item.type !== "Urgent" && snapshot.paidByRow.get(item.row));
   if (normal) return "booked";
-  const urgent = urgentLogs.find((item) => item.accessDate === operationalDate && item.slot === slot.code && item.startTime === selectedRound && minuteOf(item.startTime) >= minuteOf(currentRound));
+  const urgent = urgentLogs.find((item) => item.accessDate === operationalDate && item.slot === slot.code && item.startTime === selectedRound);
   if (urgent) return "ticket-check";
   if (live && selectedRound === currentRound) {
-    const prior = bookings.find((item) => item.slot === slot.code && item.startTime === previousRound(selectedRound) && item.type !== "Urgent" && snapshot.paidByRow.get(item.row));
-    if (prior) return "expired";
+    const priorNormal = bookings.find((item) => item.slot === slot.code && item.startTime === previousRound(selectedRound) && item.type !== "Urgent" && snapshot.paidByRow.get(item.row));
+    const priorUrgent = urgentLogs.find((item) => item.accessDate === operationalDate && item.slot === slot.code && item.startTime === previousRound(selectedRound));
+    if (priorNormal || priorUrgent) return "expired";
   }
   return "vacant";
 }
@@ -160,11 +161,12 @@ test("Dashboard แสดงเฉพาะสิทธิ์ที่ Snapshot 
   assert.equal(dashboardStatus({ slot: { code: "S10" }, bookings: rows, snapshot, selectedRound: "11:00", currentRound: "11:00" }), "vacant");
 });
 
-test("สิทธิ์ด่วนแสดงรอตรวจตั๋วเฉพาะรอบที่ยังไม่ผ่าน", () => {
+test("สิทธิ์ด่วนแสดงรอตรวจตั๋วในรอบที่ระบุ และรอบถัดไปขึ้นหมดเวลาจอด", () => {
   const snapshot = { paidByRow: new Map() };
   const urgentLogs = [{ accessDate: "2026-09-18", slot: "S2", startTime: "11:00" }];
   assert.equal(dashboardStatus({ slot: { code: "S2" }, bookings: [], snapshot, urgentLogs, selectedRound: "11:00", currentRound: "11:00" }), "ticket-check");
-  assert.equal(dashboardStatus({ slot: { code: "S2" }, bookings: [], snapshot, urgentLogs, selectedRound: "11:00", currentRound: "15:00" }), "vacant");
+  assert.equal(dashboardStatus({ slot: { code: "S2" }, bookings: [], snapshot, urgentLogs, selectedRound: "15:00", currentRound: "15:00" }), "expired");
+  assert.equal(dashboardStatus({ slot: { code: "S2" }, bookings: [], snapshot, urgentLogs, selectedRound: "19:00", currentRound: "19:00" }), "vacant");
 });
 
 test("หมดเวลาจอดเกิดเฉพาะรอบปัจจุบัน เมื่อรอบก่อนหน้ามีสิทธิ์ที่จ่ายแล้ว", () => {
