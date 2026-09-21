@@ -1276,6 +1276,120 @@ export async function appendPaymentRefreshState({ operationalDate, source, statu
   return { attemptedAt, source, status, message };
 }
 
+// ---------- Customer Summary (สรุปพฤติกรรมลูกค้าอัตโนมัติ) ----------
+export const CUSTOMER_SUMMARY_HEADERS = [
+  "วันที่",
+  "เดือน",
+  "สัปดาห์",
+  "รหัสสัญญา",
+  "ชื่อลูกค้า",
+  "จองตามสัญญา",
+  "จ่ายจริง",
+  "ขาด",
+  "ขอด่วน",
+  "% การจ่ายจริง",
+  "เวลาที่บันทึก",
+];
+
+export async function ensureCustomerSummarySheet() {
+  await ensureSheet("Customer_Summary", CUSTOMER_SUMMARY_HEADERS, 2);
+}
+
+function getWeekNumberString(dateStr) {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  const oneJan = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const numberOfDays = Math.floor((d - oneJan) / 86400000);
+  const weekNum = Math.ceil((d.getUTCDay() + 1 + numberOfDays) / 7);
+  return `สัปดาห์ที่ ${weekNum}`;
+}
+
+export async function recordCustomerDailySummary({ operationalDate, sourceDate, activeByDoc, isPaidByBookingRow, urgentLogs = [], cancelledUrgentKeys = new Set() }) {
+  await ensureCustomerSummarySheet();
+  const sheets = getSheetsClient();
+  const month = String(operationalDate || "").slice(0, 7);
+  const week = getWeekNumberString(operationalDate);
+  const recordedAt = new Intl.DateTimeFormat("th-TH-u-ca-gregory", {
+    timeZone: "Asia/Bangkok",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date());
+
+  const urgentCountByDoc = new Map();
+  const urgentCustomerNameByDoc = new Map();
+  (urgentLogs || [])
+    .filter((log) => log.ticketIssuedDate === sourceDate && log.docId && !cancelledUrgentKeys.has(`${log.slot}::${log.startTime}`))
+    .forEach((log) => {
+      const doc = String(log.docId).trim();
+      urgentCountByDoc.set(doc, (urgentCountByDoc.get(doc) || 0) + (Number(log.ticketCount) || 1));
+      if (log.customer) urgentCustomerNameByDoc.set(doc, String(log.customer).trim());
+    });
+
+  const allDocKeys = new Set([...activeByDoc.keys(), ...urgentCountByDoc.keys()]);
+  const summaryRows = [];
+
+  allDocKeys.forEach((key) => {
+    const bookings = activeByDoc.get(key) || [];
+    const docId = String(bookings[0]?.docId || key).trim();
+    const customerName = String(bookings[0]?.customer || urgentCustomerNameByDoc.get(docId) || key).trim();
+    const booked = bookings.length;
+    const paid = bookings.filter((b) => isPaidByBookingRow.get(b.rowNumber)).length;
+    const shortfall = Math.max(0, booked - paid);
+    const urgent = urgentCountByDoc.get(docId) || 0;
+    const pct = booked > 0 ? Math.round((paid / booked) * 1000) / 1000 : (urgent > 0 ? 1 : 0);
+
+    summaryRows.push([
+      operationalDate,
+      month,
+      week,
+      docId,
+      customerName,
+      booked,
+      paid,
+      shortfall,
+      urgent,
+      pct,
+      recordedAt,
+    ]);
+  });
+
+  if (summaryRows.length === 0) return { count: 0 };
+
+  // เรียงลำดับตามรหัสสัญญา
+  summaryRows.sort((a, b) => String(a[3]).localeCompare(String(b[3]), "th", { numeric: true }));
+
+  // Idempotency Guard: ตรวจสอบแถวเดิมใน Customer_Summary เพื่อป้องกันข้อมูลซ้ำ
+  const existingRes = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: "Customer_Summary!A2:K",
+    valueRenderOption: "UNFORMATTED_VALUE",
+  });
+  const existingRows = existingRes.data.values || [];
+  const filteredRows = existingRows.filter((row) => {
+    const rowDate = isoFromSerial(row[0]);
+    return rowDate && rowDate !== operationalDate;
+  });
+  const newCombined = [...filteredRows, ...summaryRows];
+
+  await sheets.spreadsheets.values.clear({
+    spreadsheetId: SHEET_ID,
+    range: "Customer_Summary!A2:K",
+  });
+
+  if (newCombined.length > 0) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID,
+      range: "Customer_Summary!A2:K",
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: newCombined },
+    });
+  }
+
+  return { count: summaryRows.length };
+}
+
 export async function createPaymentSnapshot(operationalDate) {
   if (!operationalDate || !isoDateToSerial(operationalDate)) throw new Error("วันที่สร้างสิทธิ์ไม่ถูกต้อง");
   await ensurePaymentSnapshotSheets();
@@ -1319,6 +1433,21 @@ export async function createPaymentSnapshot(operationalDate) {
   const sheets = getSheetsClient();
   if (snapshotRows.length > 0) await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: "Payment_Snapshot!A2:H", valueInputOption: "RAW", insertDataOption: "INSERT_ROWS", requestBody: { values: snapshotRows } });
   await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: "Payment_Snapshot_Run!A2:D", valueInputOption: "RAW", insertDataOption: "INSERT_ROWS", requestBody: { values: [[operationalDate, sourceDate, updatedAt, "READY"]] } });
+
+  // Safe Isolation Wrapper: บันทึกสรุปพฤติกรรมลูกค้า (ไม่ขัดขวางระบบหลัก)
+  try {
+    await recordCustomerDailySummary({
+      operationalDate,
+      sourceDate,
+      activeByDoc,
+      isPaidByBookingRow,
+      urgentLogs,
+      cancelledUrgentKeys,
+    });
+  } catch (summaryErr) {
+    console.error("Non-critical customer summary record error:", summaryErr);
+  }
+
   return { operationalDate, sourceDate, updatedAt, count: snapshotRows.length };
 }
 
