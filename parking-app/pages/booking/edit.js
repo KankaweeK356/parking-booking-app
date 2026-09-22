@@ -83,6 +83,14 @@ export default function EditBooking() {
     return periods.map((period) => `พักการจอง: ${formatDate(period.startDate)} ถึง ${formatDate(period.endDate)}`).join(" · ");
   }
 
+  function endNote(booking) {
+    if (!booking) return "";
+    if (booking.reason?.includes("สิ้นสุด")) {
+      return `สิ้นสุดสิทธิ์วันที่ ${formatDate(booking.endDate)}`;
+    }
+    return "";
+  }
+
   // โหลดรายชื่อลูกค้าและข้อมูลช่องจอด
   async function loadReferenceData() {
     try {
@@ -172,7 +180,13 @@ export default function EditBooking() {
 
   async function handleSubmitReduce(e) {
     e.preventDefault();
-    if (selectedReduceRows.length === 0 || !reduceEndDate) return;
+    if (selectedReduceRows.length === 0) return;
+    if (reduceMode === "permanent" && !reduceEndDate) return;
+    if (reduceMode === "pause" && (!pauseStartDate || !pauseEndDate)) return;
+    if (reduceMode === "void") {
+      const confirmText = `ยืนยันยกเลิกรายการคีย์ผิดจำนวน ${selectedReduceRows.length} รายการ หรือไม่?\n(รายการจะหายจากหน้าจอทันที และเปิดช่องว่างทันที)`;
+      if (!window.confirm(confirmText)) return;
+    }
     setSubmittingReduce(true);
     setReduceResults(null);
 
@@ -181,11 +195,17 @@ export default function EditBooking() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          mode: reduceMode,
           rowNumbers: selectedReduceRows,
-          endDate: reduceEndDate,
+          endDate: reduceMode === "permanent" ? reduceEndDate : "",
           pauseStartDate: reduceMode === "pause" ? pauseStartDate : "",
           pauseEndDate: reduceMode === "pause" ? pauseEndDate : "",
-          reason: reduceMode === "pause" ? "พักการจอง" : "ยกเลิกการจอง",
+          reason:
+            reduceMode === "void"
+              ? "ยกเลิก (คีย์ผิด)"
+              : reduceMode === "pause"
+                ? "พักการจอง"
+                : "ยกเลิกการจอง",
         }),
       });
       const data = await res.json();
@@ -197,6 +217,7 @@ export default function EditBooking() {
         return { ...o, slotDesc };
       });
       setReduceResults(outcomes);
+      setSelectedReduceRows([]);
       loadCustomerBookings(customer);
     } catch (err) {
       setReduceResults([{ ok: false, error: err.message, slotDesc: "เกิดข้อผิดพลาด" }]);
@@ -411,9 +432,10 @@ export default function EditBooking() {
                     <div>
                       <div className="slot-code">{slotLabel(b)}</div>
                       <div className="meta">
-                        รอบ {b.startTime || "-"} น. | สิทธิ์เดิม: {b.startDate} ถึง {b.endDate || "ไม่มีกำหนด"}
+                        รอบ {b.startTime || "-"} น. | สิทธิ์เดิม: {formatDate(b.startDate)} ถึง {b.endDate ? formatDate(b.endDate) : "ไม่มีกำหนด"}
                       </div>
                       {pauseNote(b) && <div className="booking-pause-note">{pauseNote(b)}</div>}
+                      {endNote(b) && <div className="booking-end-note">{endNote(b)}</div>}
                     </div>
                     <input
                       type="checkbox"
@@ -426,8 +448,80 @@ export default function EditBooking() {
               </div>
 
               <label>เลือกวิธีดำเนินการ</label>
-              <div className="type-grid"><button type="button" className={`type-btn ${reduceMode === "permanent" ? "active" : ""}`} onClick={() => setReduceMode("permanent")}><strong>ยกเลิกการจอง</strong><small>กำหนดวันสุดท้ายที่ลูกค้ายังใช้ช่องได้ หลังจากวันนั้นสิทธิ์จะสิ้นสุดถาวร</small></button><button type="button" className={`type-btn ${reduceMode === "pause" ? "active" : ""}`} onClick={() => setReduceMode("pause")}><strong>พักการจองชั่วคราว</strong><small>ระบุช่วงวันที่ลูกค้าไม่ใช้ช่องนี้ เมื่อครบกำหนดจะกลับมาใช้สิทธิ์เดิมต่อ</small></button></div>
-              {reduceMode === "permanent" ? <><label>วันสุดท้ายที่ยังใช้ช่องได้</label><input type="date" min={today()} value={reduceEndDate} onChange={(e) => setReduceEndDate(e.target.value)} /></> : <><label>เริ่มพักวันที่</label><input type="date" min={getNextDay(today())} value={pauseStartDate} required onChange={(e) => { const nextStartDate = e.target.value; setPauseStartDate(nextStartDate); setPauseEndDate((current) => current < nextStartDate ? nextStartDate : current); }} /><label>สิ้นสุดพักวันที่</label><input type="date" min={pauseStartDate} value={pauseEndDate} required onChange={(e) => setPauseEndDate(e.target.value)} /><p className="alert alert-warning">ระหว่างวันที่พัก ช่องนี้เปิดให้ลูกค้าคนอื่นจองได้ และจะกลับมาเป็นสิทธิ์เดิมหลังวันสิ้นสุดพัก</p></>}
+              <div className="type-grid">
+                <button
+                  type="button"
+                  className={`type-btn ${reduceMode === "void" ? "active" : ""}`}
+                  onClick={() => setReduceMode("void")}
+                >
+                  <strong>ยกเลิก (คีย์ผิด)</strong>
+                  <small>ยกเลิกทันที รายการหายจากหน้าจอ (ใช้เมื่อคีย์ผิด / ยังไม่เริ่มใช้)</small>
+                </button>
+                <button
+                  type="button"
+                  className={`type-btn ${reduceMode === "permanent" ? "active" : ""}`}
+                  onClick={() => setReduceMode("permanent")}
+                >
+                  <strong>ยกเลิกการจอง</strong>
+                  <small>กำหนดวันสุดท้ายที่ลูกค้าจะใช้ช่องจอดได้</small>
+                </button>
+                <button
+                  type="button"
+                  className={`type-btn ${reduceMode === "pause" ? "active" : ""}`}
+                  onClick={() => setReduceMode("pause")}
+                >
+                  <strong>พักการจองชั่วคราว</strong>
+                  <small>ระบุช่วงวันที่ลูกค้าไม่ใช้ช่อง (เมื่อครบกำหนดจะกลับมาใช้ต่อ)</small>
+                </button>
+              </div>
+
+              {reduceMode === "void" && (
+                <div className="alert alert-warning" style={{ marginTop: 12 }}>
+                  <strong>คำเตือน:</strong> รายการที่เลือกจะถูกยกเลิกทันทีและหายจากหน้าจอรายการจองของลูกค้า ช่องจอดจะเปิดว่างทันที
+                </div>
+              )}
+              {reduceMode === "permanent" && (
+                <>
+                  <label style={{ marginTop: 12 }}>วันสุดท้ายที่ลูกค้าจะใช้ช่องได้</label>
+                  <input
+                    type="date"
+                    min={today()}
+                    value={reduceEndDate}
+                    onChange={(e) => setReduceEndDate(e.target.value)}
+                    required
+                  />
+                  <p className="subtitle" style={{ fontSize: 13, marginTop: 4 }}>
+                    ลูกค้าจะยังใช้ช่องนี้ได้จนถึงสิ้นสุดวันที่เลือก หลังจากวันนั้นสิทธิ์จะสิ้นสุดถาวร
+                  </p>
+                </>
+              )}
+              {reduceMode === "pause" && (
+                <>
+                  <label style={{ marginTop: 12 }}>เริ่มพักวันที่</label>
+                  <input
+                    type="date"
+                    min={getNextDay(today())}
+                    value={pauseStartDate}
+                    required
+                    onChange={(e) => {
+                      const nextStartDate = e.target.value;
+                      setPauseStartDate(nextStartDate);
+                      setPauseEndDate((current) => (current < nextStartDate ? nextStartDate : current));
+                    }}
+                  />
+                  <label>สิ้นสุดพักวันที่</label>
+                  <input
+                    type="date"
+                    min={pauseStartDate}
+                    value={pauseEndDate}
+                    required
+                    onChange={(e) => setPauseEndDate(e.target.value)}
+                  />
+                  <p className="alert alert-warning">
+                    ระหว่างวันที่พัก ช่องนี้เปิดให้ลูกค้าคนอื่นจองได้ และจะกลับมาเป็นสิทธิ์เดิมหลังวันสิ้นสุดพัก
+                  </p>
+                </>
+              )}
 
               <div className="btn-row">
                 <button
@@ -435,7 +529,15 @@ export default function EditBooking() {
                   className="btn btn-danger"
                   disabled={submittingReduce || selectedReduceRows.length === 0}
                 >
-                  {submittingReduce ? "กำลังบันทึก..." : `ยืนยัน${reduceMode === "pause" ? "พักการจอง" : "ยกเลิกการจอง"} (${selectedReduceRows.length} รายการ)`}
+                  {submittingReduce
+                    ? "กำลังบันทึก..."
+                    : `ยืนยัน${
+                        reduceMode === "void"
+                          ? "ยกเลิกคีย์ผิด"
+                          : reduceMode === "pause"
+                            ? "พักการจอง"
+                            : "ยกเลิกการจอง"
+                      } (${selectedReduceRows.length} รายการ)`}
                 </button>
               </div>
             </div>
@@ -444,7 +546,15 @@ export default function EditBooking() {
               <div className="card">
                 {reduceResults.map((r, i) => (
                   <div key={i} className={`alert ${r.ok ? "alert-success" : "alert-error"}`}>
-                    {r.ok ? `✓ ${reduceMode === "pause" ? "พักการจองสำเร็จ" : "บันทึกวันสิ้นสุดสิทธิ์สำเร็จ"} (${r.slotDesc})` : `✗ ไม่สำเร็จ (${r.slotDesc}): ${r.error}`}
+                    {r.ok
+                      ? `✓ ${
+                          reduceMode === "void"
+                            ? "ยกเลิกรายการคีย์ผิดสำเร็จ"
+                            : reduceMode === "pause"
+                              ? "พักการจองสำเร็จ"
+                              : "บันทึกวันสิ้นสุดสิทธิ์สำเร็จ"
+                        } (${r.slotDesc})`
+                      : `✗ ไม่สำเร็จ (${r.slotDesc}): ${r.error}`}
                   </div>
                 ))}
                 {reduceResults.some((result) => result.ok) && <Link className="btn btn-secondary" href={`/required-summary?customer=${encodeURIComponent(customer)}`}>พิมพ์สรุปให้ลูกค้า</Link>}
@@ -469,9 +579,10 @@ export default function EditBooking() {
                     <div>
                       <div className="slot-code">{slotLabel(b)}</div>
                       <div className="meta">
-                        รอบ {b.startTime || "-"} น. | สิทธิ์เดิม: {b.startDate} ถึง {b.endDate || "ไม่มีกำหนด"}
+                        รอบ {b.startTime || "-"} น. | สิทธิ์เดิม: {formatDate(b.startDate)} ถึง {b.endDate ? formatDate(b.endDate) : "ไม่มีกำหนด"}
                       </div>
                       {pauseNote(b) && <div className="booking-pause-note">{pauseNote(b)}</div>}
+                      {endNote(b) && <div className="booking-end-note">{endNote(b)}</div>}
                     </div>
                     <input
                       type="radio"

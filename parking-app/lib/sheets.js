@@ -700,8 +700,8 @@ export async function findConflict({ slot, startDate, endDate, startTime, exclud
     if (r.rowNumber === excludeRowNumber) continue;
     if (String(r.slot) !== String(slot)) continue;
     if (!r.startSerial) continue;
-    // สิทธิ์ด่วนที่ถูกยกเลิกแล้ว ไม่นำมาตัดสิน conflict เพื่อให้สามารถจัดสรรช่องเดิมใหม่ได้
-    if (r.bookingType === "Urgent" && isClosingReason(r.reason)) continue;
+    // รายการที่ถูกยกเลิก/ปิดแล้ว ไม่นำมาตัดสิน conflict เพื่อให้สามารถจัดสรรช่องเดิมใหม่ได้
+    if (isClosingReason(r.reason)) continue;
 
     const rStart = r.startSerial;
     const rEnd = r.endEffectiveSerial !== null && r.endEffectiveSerial !== undefined ? r.endEffectiveSerial : FAR_FUTURE_SERIAL;
@@ -830,16 +830,24 @@ export async function createBooking(params) {
 export async function closeBookingRow({ rowNumber, endDate, reason, actor }) {
   const sheets = getSheetsClient();
   const oldRow = await getBookingRow(rowNumber);
+  const isVoid = String(reason || "").includes("คีย์ผิด");
   // กำหนดวันสิ้นสุดล่วงหน้าและย้ายช่องต้องยังคงสิทธิ์เดิมไว้จนถึงวันสิ้นสุดจริง
   // จึงไม่ใช้ closing reason ที่ทำให้ Dashboard ซ่อนรายการทันที
-  const bookingReason = String(reason || "").includes("ยกเลิก")
-    ? "กำหนดวันสิ้นสุดสิทธิ์"
-    : String(reason || "").includes("ย้ายออก")
-      ? "สิทธิ์สิ้นสุดเนื่องจากย้ายช่อง"
-      : reason;
+  // ส่วนกรณี "ยกเลิก (คีย์ผิด)" ให้ใช้เป็น closing reason เพื่อให้ซ่อนทันที
+  const bookingReason = isVoid
+    ? "ยกเลิก (คีย์ผิด)"
+    : String(reason || "").includes("ยกเลิก")
+      ? "กำหนดวันสิ้นสุดสิทธิ์"
+      : String(reason || "").includes("ย้ายออก")
+        ? "สิทธิ์สิ้นสุดเนื่องจากย้ายช่อง"
+        : reason;
+
+  const targetEndDate = isVoid
+    ? (endDate || addDaysIso(getBangkokCalendarDateIso(), -1))
+    : endDate;
 
   await appendBookingChangeLog({
-    action: reason || "ปิด/ยกเลิก",
+    action: isVoid ? "ยกเลิก (คีย์ผิด)" : (reason || "ปิด/ยกเลิก"),
     customer: oldRow?.customer || "",
     lot: oldRow?.lot || "",
     slot: oldRow?.slot || "",
@@ -848,7 +856,7 @@ export async function closeBookingRow({ rowNumber, endDate, reason, actor }) {
     oldEndDate: oldRow?.endDate || "",
     oldStartTime: oldRow?.startTime || "",
     newStartDate: oldRow?.startDate || "",
-    newEndDate: endDate,
+    newEndDate: targetEndDate,
     newStartTime: oldRow?.startTime || "",
     actor,
   });
@@ -858,7 +866,7 @@ export async function closeBookingRow({ rowNumber, endDate, reason, actor }) {
     requestBody: {
       valueInputOption: "USER_ENTERED",
       data: [
-        { range: `Booking_Input!F${rowNumber}:G${rowNumber}`, values: [[endDate, endDate]] },
+        { range: `Booking_Input!F${rowNumber}:G${rowNumber}`, values: [[targetEndDate, targetEndDate]] },
         { range: `Booking_Input!J${rowNumber}`, values: [[bookingReason]] },
       ],
     },
@@ -1266,7 +1274,7 @@ export async function getSlotAvailability({ lot, startDate, endDate, startTimes 
       const startMin = toOperationalMinutes(serialToMinutes(startTime));
       const conflict = all.find((booking) => {
         if (String(booking.slot) !== String(slot.slotCode) || !booking.startSerial) return false;
-        if (booking.bookingType === "Urgent" && isClosingReason(booking.reason)) return false;
+        if (isClosingReason(booking.reason)) return false;
         const bookingEnd = booking.endEffectiveSerial ?? FAR_FUTURE_SERIAL;
         const datesOverlap = booking.startSerial <= requestedEnd && bookingEnd >= requestedStart;
         const timesOverlap = (booking.startMinutes ?? 0) < startMin + 240 && startMin < (booking.endMinutes ?? ((booking.startMinutes ?? 0) + 240));
@@ -1439,7 +1447,7 @@ export async function createPaymentSnapshot(operationalDate) {
   ]);
   const activeBookings = allBookings.filter((booking) => {
     const endEff = booking.endEffectiveSerial ?? FAR_FUTURE_SERIAL;
-    return booking.bookingType !== "Urgent" && booking.startSerial && !adjustedRows.has(booking.rowNumber) && booking.startSerial <= targetSerial && targetSerial <= endEff;
+    return booking.bookingType !== "Urgent" && booking.startSerial && !isClosingReason(booking.reason) && !adjustedRows.has(booking.rowNumber) && booking.startSerial <= targetSerial && targetSerial <= endEff;
   });
   const ticketCountByDocId = new Map();
   transectionRows.filter((ticket) => ticket.dateSerial === sourceSerial && ticket.boothCode).forEach((ticket) => {
@@ -1614,8 +1622,8 @@ export async function getDashboardData(dateStr) {
   // หา bookings ที่ active ในวันเป้าหมาย
   const activeBookings = allBookings.filter((b) => {
     if (!b.startSerial) return false;
-    // สิทธิ์ด่วนที่ถูกยกเลิก ไม่นำมาแสดงบน Dashboard
-    if (b.bookingType === "Urgent" && isClosingReason(b.reason)) return false;
+    // รายการที่ถูกยกเลิกหรือปิดแล้ว ไม่นำมาแสดงบน Dashboard
+    if (isClosingReason(b.reason)) return false;
     const endEff = b.endEffectiveSerial !== null && b.endEffectiveSerial !== undefined ? b.endEffectiveSerial : FAR_FUTURE_SERIAL;
     return !adjustedRows.has(b.rowNumber) && b.startSerial <= targetSerial && targetSerial <= endEff;
   });

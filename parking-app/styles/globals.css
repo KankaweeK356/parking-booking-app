@@ -200,6 +200,13 @@ select:focus, input:focus {
   font-weight: 700;
 }
 
+.booking-end-note {
+  margin-top: 6px;
+  color: #c2410c;
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .table-container {
   width: 100%;
   overflow-x: auto;
@@ -271,7 +278,7 @@ table.data-table tr:hover td {
 
 .type-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 12px;
   margin-top: 8px;
 }
