@@ -23,6 +23,7 @@ export default function Dashboard() {
   const [paymentMessage, setPaymentMessage] = useState("");
   const [retryingPayment, setRetryingPayment] = useState(false);
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
+  const [refreshCooldown, setRefreshCooldown] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [printing, setPrinting] = useState(false);
   const [printedAt, setPrintedAt] = useState("");
@@ -56,6 +57,23 @@ export default function Dashboard() {
     window.addEventListener("afterprint", finishPrinting);
     return () => { document.body.classList.remove("dashboard-printing"); window.removeEventListener("afterprint", finishPrinting); };
   }, [printing]);
+  // ตรวจสอบและนับถอยหลัง Cooldown 30 วินาที สำหรับปุ่ม [↻ รีเฟรชข้อมูล]
+  useEffect(() => {
+    function checkRefreshCooldown() {
+      const stored = Number(localStorage.getItem("dashboard_refresh_cooldown_until") || 0);
+      const remaining = Math.ceil((stored - Date.now()) / 1000);
+      if (remaining > 0) {
+        setRefreshCooldown(remaining);
+      } else {
+        setRefreshCooldown(0);
+        localStorage.removeItem("dashboard_refresh_cooldown_until");
+      }
+    }
+    checkRefreshCooldown();
+    const interval = window.setInterval(checkRefreshCooldown, 1000);
+    return () => window.clearInterval(interval);
+  }, []);
+
   useEffect(() => {
     loadDashboard(selectedDate);
     const timer = window.setInterval(() => {
@@ -63,6 +81,14 @@ export default function Dashboard() {
     }, 60 * 1000);
     return () => window.clearInterval(timer);
   }, [selectedDate]);
+
+  async function handleManualRefresh() {
+    if (loading || refreshing || refreshCooldown > 0) return;
+    const until = Date.now() + 30 * 1000;
+    localStorage.setItem("dashboard_refresh_cooldown_until", String(until));
+    setRefreshCooldown(30);
+    await loadDashboard(selectedDate, { force: true });
+  }
 
   async function readApiJson(response, fallbackMessage) {
     const raw = await response.text();
@@ -155,10 +181,10 @@ export default function Dashboard() {
               <button
                 type="button"
                 className="btn btn-secondary refresh-button"
-                disabled={loading || refreshing}
-                onClick={() => loadDashboard(selectedDate, { force: true })}
+                disabled={loading || refreshing || refreshCooldown > 0}
+                onClick={handleManualRefresh}
               >
-                {refreshing ? "กำลังรีเฟรช..." : "↻ รีเฟรชข้อมูล"}
+                {refreshing ? "กำลังรีเฟรช..." : refreshCooldown > 0 ? `ข้อมูลล่าสุดแล้ว (รอ ${refreshCooldown} วิ)` : "↻ รีเฟรชข้อมูล"}
               </button>
               {canPrint && <button type="button" className="btn btn-secondary" disabled={!canPrintDashboard} onClick={printDashboard}>🖨 พิมพ์ตารางสถานะลาน</button>}
             </div>

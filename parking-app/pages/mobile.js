@@ -17,6 +17,7 @@ export default function MobileView() {
   const [refreshing, setRefreshing] = useState(false);
   const [retryingPayment, setRetryingPayment] = useState(false);
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
+  const [refreshCooldown, setRefreshCooldown] = useState(0);
   const [canRetryPayment, setCanRetryPayment] = useState(false);
 
   useEffect(() => {
@@ -45,6 +46,23 @@ export default function MobileView() {
     return () => window.clearInterval(interval);
   }, [data.paymentUpdate]);
 
+  // นับถอยหลัง Cooldown 30 วินาที สำหรับปุ่ม [↻ อัปเดตสถานะล่าสุด]
+  useEffect(() => {
+    function checkRefreshCooldown() {
+      const stored = Number(localStorage.getItem("mobile_refresh_cooldown_until") || 0);
+      const remaining = Math.ceil((stored - Date.now()) / 1000);
+      if (remaining > 0) {
+        setRefreshCooldown(remaining);
+      } else {
+        setRefreshCooldown(0);
+        localStorage.removeItem("mobile_refresh_cooldown_until");
+      }
+    }
+    checkRefreshCooldown();
+    const interval = window.setInterval(checkRefreshCooldown, 1000);
+    return () => window.clearInterval(interval);
+  }, []);
+
   useEffect(() => {
     loadData(selectedDate);
     const timer = window.setInterval(() => {
@@ -55,6 +73,15 @@ export default function MobileView() {
     }, 60 * 1000);
     return () => window.clearInterval(timer);
   }, [selectedDate]);
+
+  async function handleManualRefresh() {
+    if (loading || refreshing || refreshCooldown > 0) return;
+    const until = Date.now() + 30 * 1000;
+    localStorage.setItem("mobile_refresh_cooldown_until", String(until));
+    setRefreshCooldown(30);
+    await loadData(selectedDate, { force: true });
+  }
+
   async function loadData(date, { silent = false, force = false } = {}) {
     if (!silent && !force) { setLoading(true); setError(""); }
     if (force) { setRefreshing(true); setError(""); }
@@ -119,10 +146,10 @@ export default function MobileView() {
               <button
                 type="button"
                 className="btn btn-secondary refresh-button"
-                disabled={loading || refreshing}
-                onClick={() => loadData(selectedDate, { force: true })}
+                disabled={loading || refreshing || refreshCooldown > 0}
+                onClick={handleManualRefresh}
               >
-                {refreshing ? "กำลังอัปเดต..." : "↻ อัปเดตสถานะล่าสุด"}
+                {refreshing ? "กำลังอัปเดต..." : refreshCooldown > 0 ? `ข้อมูลล่าสุดแล้ว (รอ ${refreshCooldown} วิ)` : "↻ อัปเดตสถานะล่าสุด"}
               </button>
             </div>
           </div>

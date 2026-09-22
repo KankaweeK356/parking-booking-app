@@ -56,6 +56,27 @@ function getSheetsClient() {
   return google.sheets({ version: "v4", auth });
 }
 
+export async function executeWithRetry(apiFn, { maxRetries = 3, baseDelayMs = 1500 } = {}) {
+  let attempt = 0;
+  while (true) {
+    try {
+      return await apiFn();
+    } catch (err) {
+      attempt++;
+      const msg = String(err?.message || "").toLowerCase();
+      const isRateLimit = err?.status === 429 || err?.code === 429 || msg.includes("quota exceeded") || msg.includes("ratelimitexceeded");
+      const isTransient = err?.status === 503 || err?.code === 503 || err?.status === 500 || err?.code === 500;
+      if ((isRateLimit || isTransient) && attempt <= maxRetries) {
+        const delay = baseDelayMs * Math.pow(2, attempt - 1) + Math.random() * 500;
+        console.warn(`[Google Sheets API] Rate limit or transient error on attempt ${attempt}/${maxRetries}. Retrying in ${Math.round(delay)}ms... (${err.message})`);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
 // ---------- Helper Functions สำหรับคำนวณ Serial Number ของ Google Sheet ----------
 
 export function serialToDateOnly(serial) {
@@ -133,13 +154,18 @@ export function isClosingReason(reason) {
 
 // ---------- Tbt_ServiceCharge (รายชื่อลูกค้าที่ MIS อนุญาตให้จอง) ----------
 
+let masterListCache = { data: null, expiresAt: 0 };
 export async function getMasterList() {
+  const now = Date.now();
+  if (masterListCache.data && masterListCache.expiresAt > now) {
+    return masterListCache.data;
+  }
   const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({
+  const res = await executeWithRetry(() => sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
     range: "Tbt_ServiceCharge!A1:Z",
     valueRenderOption: "UNFORMATTED_VALUE",
-  });
+  }));
   const rows = res.data.values || [];
   if (rows.length < 2) throw new Error("ข้อมูลลูกค้าจาก MIS กำลังอัปเดต กรุณากด Refresh อีกครั้ง");
   const headers = rows[0].map((value) => String(value || "").trim().toLowerCase());
@@ -150,6 +176,7 @@ export async function getMasterList() {
     .filter((r) => r[docIdIdx] && r[nameIdx])
     .map((r) => ({ docId: String(r[docIdIdx]).trim(), name: String(r[nameIdx]).trim(), status: "Normal" }));
   if (customers.length === 0) throw new Error("ข้อมูลลูกค้าจาก MIS กำลังอัปเดต กรุณากด Refresh อีกครั้ง");
+  masterListCache = { data: customers, expiresAt: now + 60 * 1000 };
   return customers;
 }
 
@@ -281,15 +308,22 @@ export async function appendPasswordResetLog({ employeeId, resetBy }) {
 
 // ---------- Slot_Master (A:E) + Slot_Status_Log ----------
 // A: Slot_Code, B: ลาน, C: หมายเลขช่อง, D: ตำแหน่ง, E: สถานะพื้นฐาน
+let slotListCache = { data: null, expiresAt: 0 };
+export function invalidateSlotListCache() { slotListCache = { data: null, expiresAt: 0 }; }
+
 export async function getSlotList() {
+  const now = Date.now();
+  if (slotListCache.data && slotListCache.expiresAt > now) {
+    return slotListCache.data;
+  }
   const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({
+  const res = await executeWithRetry(() => sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
     range: `Slot_Master!A${SLOT_FIRST_ROW}:E`,
     valueRenderOption: "UNFORMATTED_VALUE",
-  });
+  }));
   const rows = res.data.values || [];
-  return rows
+  const slots = rows
     .filter((r) => r[0])
     .map((r) => ({
       slotCode: String(r[0]).trim(),
@@ -298,6 +332,8 @@ export async function getSlotList() {
       position: String(r[3] || "").trim(),
       baseStatus: String(r[4] || "เปิด").trim(),
     }));
+  slotListCache = { data: slots, expiresAt: now + 60 * 1000 };
+  return slots;
 }
 
 export async function getLots() {
@@ -307,11 +343,11 @@ export async function getLots() {
 
 export async function getSlotStatusMap() {
   const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({
+  const res = await executeWithRetry(() => sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
     range: `Slot_Status_Log!A${SLOT_LOG_FIRST_ROW}:D`,
     valueRenderOption: "UNFORMATTED_VALUE",
-  });
+  }));
   const rows = res.data.values || [];
   const latestBySlot = {};
   for (const r of rows) {
@@ -539,13 +575,61 @@ export async function appendUrgentAccessLogs({ customer, accessDate, entries, re
 
 // ---------- Booking_Input ----------
 
+export function parseBookingRow(r, idx, masterMap) {
+  const rawStart = r[4];
+  const rawEnd = r[5];
+  const rawEndEff = r[6];
+  const rawStartTime = r[7];
+  const rawEndTime = r[8];
+
+  const startSerial = typeof rawStart === "number" ? serialToDateOnly(rawStart) : (rawStart ? isoDateToSerial(rawStart) : null);
+  const endSerial = typeof rawEnd === "number" ? serialToDateOnly(rawEnd) : (rawEnd ? isoDateToSerial(rawEnd) : null);
+  const endEffectiveSerial = typeof rawEndEff === "number" ? serialToDateOnly(rawEndEff) : (rawEndEff ? isoDateToSerial(rawEndEff) : (endSerial || FAR_FUTURE_SERIAL));
+
+  const startStr = typeof rawStart === "number" ? isoFromSerial(rawStart) : (rawStart ? String(rawStart).trim() : "");
+  const endStr = typeof rawEnd === "number" ? isoFromSerial(rawEnd) : (rawEnd ? String(rawEnd).trim() : "");
+  const endEffectiveStr = typeof rawEndEff === "number" ? isoFromSerial(rawEndEff) : (rawEndEff ? String(rawEndEff).trim() : (endStr || ""));
+
+  const rawStartMinutes = rawStartTime !== undefined && rawStartTime !== null && rawStartTime !== "" ? serialToMinutes(rawStartTime) : null;
+  // Operational day runs from 07:00 to 07:00 next calendar day. 00:00–06:59 belong at its end.
+  const startMinutes = rawStartMinutes !== null ? toOperationalMinutes(rawStartMinutes) : null;
+  const endMinutes = startMinutes !== null ? startMinutes + 240 : null;
+
+  const startTimeStr = startMinutes !== null ? minutesToTimeStr(startMinutes) : (rawStartTime ? String(rawStartTime).trim() : "");
+  const endTimeStr = endMinutes !== null ? minutesToTimeStr(endMinutes) : (rawEndTime ? String(rawEndTime).trim() : "");
+
+  const customer = r[0] ? String(r[0]).trim() : "";
+  const rawDocId = r[1] !== undefined && r[1] !== null ? String(r[1]).trim() : "";
+  const docId = rawDocId || (masterMap && customer ? (masterMap.get(customer) || "") : "");
+
+  return {
+    rowNumber: BOOKING_FIRST_ROW + idx,
+    customer,
+    docId,
+    lot: r[2] ? String(r[2]).trim() : "",
+    slot: r[3] ? String(r[3]).trim() : "",
+    startDate: startStr,
+    endDate: endStr,
+    endDateEffective: endEffectiveStr,
+    startTime: startTimeStr,
+    endTime: endTimeStr,
+    reason: r[9] ? String(r[9]).trim() : "",
+    bookingType: r[12] ? String(r[12]).trim() : "Normal",
+    startSerial,
+    endSerial,
+    endEffectiveSerial,
+    startMinutes,
+    endMinutes,
+  };
+}
+
 export async function getAllBookingRows() {
   const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({
+  const res = await executeWithRetry(() => sheets.spreadsheets.values.get({
     spreadsheetId: SHEET_ID,
     range: `Booking_Input!A${BOOKING_FIRST_ROW}:M`,
     valueRenderOption: "UNFORMATTED_VALUE",
-  });
+  }));
   const rows = res.data.values || [];
 
   let masterMap = null;
@@ -558,53 +642,7 @@ export async function getAllBookingRows() {
     });
   }
 
-  return rows.map((r, idx) => {
-    const rawStart = r[4];
-    const rawEnd = r[5];
-    const rawEndEff = r[6];
-    const rawStartTime = r[7];
-    const rawEndTime = r[8];
-
-    const startSerial = typeof rawStart === "number" ? serialToDateOnly(rawStart) : (rawStart ? isoDateToSerial(rawStart) : null);
-    const endSerial = typeof rawEnd === "number" ? serialToDateOnly(rawEnd) : (rawEnd ? isoDateToSerial(rawEnd) : null);
-    const endEffectiveSerial = typeof rawEndEff === "number" ? serialToDateOnly(rawEndEff) : (rawEndEff ? isoDateToSerial(rawEndEff) : (endSerial || FAR_FUTURE_SERIAL));
-
-    const startStr = typeof rawStart === "number" ? isoFromSerial(rawStart) : (rawStart ? String(rawStart).trim() : "");
-    const endStr = typeof rawEnd === "number" ? isoFromSerial(rawEnd) : (rawEnd ? String(rawEnd).trim() : "");
-    const endEffectiveStr = typeof rawEndEff === "number" ? isoFromSerial(rawEndEff) : (rawEndEff ? String(rawEndEff).trim() : (endStr || ""));
-
-    const rawStartMinutes = rawStartTime !== undefined && rawStartTime !== null && rawStartTime !== "" ? serialToMinutes(rawStartTime) : null;
-    // Operational day runs from 07:00 to 07:00 next calendar day. 00:00–06:59 belong at its end.
-    const startMinutes = rawStartMinutes !== null ? toOperationalMinutes(rawStartMinutes) : null;
-    const endMinutes = startMinutes !== null ? startMinutes + 240 : null;
-
-    const startTimeStr = startMinutes !== null ? minutesToTimeStr(startMinutes) : (rawStartTime ? String(rawStartTime).trim() : "");
-    const endTimeStr = endMinutes !== null ? minutesToTimeStr(endMinutes) : (rawEndTime ? String(rawEndTime).trim() : "");
-
-    const customer = r[0] ? String(r[0]).trim() : "";
-    const rawDocId = r[1] !== undefined && r[1] !== null ? String(r[1]).trim() : "";
-    const docId = rawDocId || (masterMap && customer ? (masterMap.get(customer) || "") : "");
-
-    return {
-      rowNumber: BOOKING_FIRST_ROW + idx,
-      customer,
-      docId,
-      lot: r[2] ? String(r[2]).trim() : "",
-      slot: r[3] ? String(r[3]).trim() : "",
-      startDate: startStr,
-      endDate: endStr,
-      endDateEffective: endEffectiveStr,
-      startTime: startTimeStr,
-      endTime: endTimeStr,
-      reason: r[9] ? String(r[9]).trim() : "",
-      bookingType: r[12] ? String(r[12]).trim() : "Normal",
-      startSerial,
-      endSerial,
-      endEffectiveSerial,
-      startMinutes,
-      endMinutes,
-    };
-  });
+  return rows.map((r, idx) => parseBookingRow(r, idx, masterMap));
 }
 
 export async function getBookingRow(rowNumber) {
@@ -1246,8 +1284,8 @@ export async function getPaymentSnapshot(operationalDate) {
   await ensurePaymentSnapshotSheets();
   const sheets = getSheetsClient();
   const [runsRes, rowsRes] = await Promise.all([
-    sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "Payment_Snapshot_Run!A2:D", valueRenderOption: "UNFORMATTED_VALUE" }),
-    sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "Payment_Snapshot!A2:H", valueRenderOption: "UNFORMATTED_VALUE" }),
+    executeWithRetry(() => sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "Payment_Snapshot_Run!A2:D", valueRenderOption: "UNFORMATTED_VALUE" })),
+    executeWithRetry(() => sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "Payment_Snapshot!A2:H", valueRenderOption: "UNFORMATTED_VALUE" })),
   ]);
   const matchingRuns = (runsRes.data.values || []).filter((row) => String(row[0] || "") === operationalDate && String(row[3] || "") === "READY");
   const run = matchingRuns.sort((a, b) => String(b[2] || "").localeCompare(String(a[2] || "")))[0];
@@ -1263,7 +1301,7 @@ export async function getPaymentSnapshot(operationalDate) {
 export async function getPaymentRefreshState(operationalDate) {
   await ensurePaymentSnapshotSheets();
   const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "Payment_Refresh_Log!A2:E", valueRenderOption: "UNFORMATTED_VALUE" });
+  const res = await executeWithRetry(() => sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "Payment_Refresh_Log!A2:E", valueRenderOption: "UNFORMATTED_VALUE" }));
   const latest = (res.data.values || []).filter((row) => String(row[0] || "") === operationalDate).sort((a, b) => String(b[1] || "").localeCompare(String(a[1] || "")))[0];
   return latest ? { attemptedAt: String(latest[1] || ""), source: String(latest[2] || ""), status: String(latest[3] || ""), message: String(latest[4] || "") } : null;
 }
@@ -1462,13 +1500,116 @@ export async function getDashboardData(dateStr) {
   const dayBeforeSerial = targetSerial - 1;
   const dayBeforeStr = isoFromSerial(dayBeforeSerial);
 
-  const [allBookings, slotsWithStatus, urgentLogs, adjustedRows, paymentSnapshot] = await Promise.all([
-    getAllBookingRows(),
-    getSlotsWithStatus(),
-    getUrgentAccessLogs(),
-    getAdjustedBookingRows(targetDateStr),
-    getPaymentSnapshot(targetDateStr),
-  ]);
+  const sheets = getSheetsClient();
+  const batchRes = await executeWithRetry(() => sheets.spreadsheets.values.batchGet({
+    spreadsheetId: SHEET_ID,
+    ranges: [
+      `Booking_Input!A${BOOKING_FIRST_ROW}:M`,
+      `Slot_Master!A${SLOT_FIRST_ROW}:E`,
+      `Slot_Status_Log!A${SLOT_LOG_FIRST_ROW}:D`,
+      "Urgent_Access_Log!A2:P",
+      "Booking_Adjustment_Log!A2:H",
+      "Payment_Snapshot_Run!A2:D",
+      "Payment_Snapshot!A2:H",
+    ],
+    valueRenderOption: "UNFORMATTED_VALUE",
+  }));
+
+  const valueRanges = batchRes.data.valueRanges || [];
+  const rawBookings = valueRanges[0]?.values || [];
+  const rawSlots = valueRanges[1]?.values || [];
+  const rawStatusLogs = valueRanges[2]?.values || [];
+  const rawUrgentLogs = valueRanges[3]?.values || [];
+  const rawAdjustments = valueRanges[4]?.values || [];
+  const rawRuns = valueRanges[5]?.values || [];
+  const rawSnapshots = valueRanges[6]?.values || [];
+
+  let masterMap = null;
+  const hasEmptyDocId = rawBookings.some((r) => r[0] && (!r[1] || !String(r[1]).trim()));
+  if (hasEmptyDocId) {
+    const masterList = await getMasterList();
+    masterMap = new Map();
+    masterList.forEach((m) => masterMap.set(m.name, m.docId));
+  }
+  const allBookings = rawBookings.map((r, idx) => parseBookingRow(r, idx, masterMap));
+
+  const statusMap = {};
+  for (const r of rawStatusLogs) {
+    const [slotCodeRaw, actionRaw, reasonRaw, tsRaw] = r;
+    const slotCode = slotCodeRaw ? String(slotCodeRaw).trim() : "";
+    if (!slotCode) continue;
+    const action = actionRaw ? String(actionRaw).trim() : "";
+    const reason = reasonRaw ? String(reasonRaw).trim() : "";
+    let tsNum = 0;
+    if (typeof tsRaw === "number") tsNum = tsRaw;
+    else if (typeof tsRaw === "string" && tsRaw) {
+      const parsed = Date.parse(tsRaw);
+      tsNum = isNaN(parsed) ? 0 : parsed;
+    }
+    if (!statusMap[slotCode] || tsNum > statusMap[slotCode].timestamp) {
+      statusMap[slotCode] = { action, reason, timestamp: tsNum };
+    }
+  }
+
+  const slotsWithStatus = rawSlots.filter((r) => r[0]).map((s) => {
+    const slotCode = String(s[0]).trim();
+    const lot = String(s[1] || "").trim();
+    const number = String(s[2] || "").trim();
+    const position = String(s[3] || "").trim();
+    const baseStatus = String(s[4] || "เปิด").trim();
+    const st = statusMap[slotCode];
+    let currentStatus = baseStatus;
+    let currentReason = "";
+    if (st) {
+      currentStatus = st.action;
+      currentReason = st.reason;
+    }
+    const isRoad = baseStatus === "ปิด" && (!st || st.action !== "เปิด");
+    return { slotCode, lot, number, position, baseStatus, status: currentStatus, reason: currentReason, isRoad };
+  });
+
+  const urgentLogs = rawUrgentLogs.map((r) => ({
+    createdAt: String(r[0] || ""),
+    ticketIssuedDate: typeof r[1] === "number" ? isoFromSerial(r[1]) : String(r[1] || ""),
+    accessDate: typeof r[2] === "number" ? isoFromSerial(r[2]) : String(r[2] || ""),
+    actionType: String(r[3] || ""),
+    customer: String(r[4] || ""),
+    docId: String(r[5] || ""),
+    bookingRowNumber: Number(r[6] || 0),
+    lot: String(r[7] || ""),
+    slot: String(r[8] || ""),
+    number: String(r[9] || ""),
+    startTime: typeof r[10] === "number" ? minutesToTimeStr(serialToMinutes(r[10])) : String(r[10] || ""),
+    ticketCount: Number(r[11] || 1),
+    reason: String(r[12] || ""),
+    note: String(r[13] || ""),
+    createdByEmployeeId: String(r[14] || ""),
+    createdByName: String(r[15] || ""),
+  }));
+
+  const adjustments = rawAdjustments.map((row) => ({
+    startDate: isoFromSerial(row[1]) || String(row[1] || ""),
+    endDate: isoFromSerial(row[7]) || String(row[7] || "") || isoFromSerial(row[1]) || String(row[1] || ""),
+    action: String(row[2] || ""),
+    rowNumber: Number(row[3] || 0),
+  })).filter((row) => row.rowNumber && row.startDate);
+  const adjustedRows = new Set(
+    adjustments
+      .filter((row) => (row.action.includes("ลด") || row.action.includes("พัก")) && isoDateToSerial(row.startDate) <= targetSerial && targetSerial <= isoDateToSerial(row.endDate))
+      .map((row) => row.rowNumber)
+  );
+
+  const matchingRuns = rawRuns.filter((row) => String(row[0] || "") === targetDateStr && String(row[3] || "") === "READY");
+  const run = matchingRuns.sort((a, b) => String(b[2] || "").localeCompare(String(a[2] || "")))[0];
+  let paymentSnapshot = null;
+  if (run) {
+    const updatedAt = String(run[2] || "");
+    const byBookingRow = new Map();
+    rawSnapshots.filter((row) => String(row[0] || "") === targetDateStr && String(row[7] || "") === updatedAt).forEach((row) => {
+      byBookingRow.set(snapshotKey(row[2]), String(row[6] || "").toLowerCase() === "true");
+    });
+    paymentSnapshot = { operationalDate: targetDateStr, sourceDate: String(run[1] || ""), updatedAt, byBookingRow };
+  }
 
   // หา bookings ที่ active ในวันเป้าหมาย
   const activeBookings = allBookings.filter((b) => {
