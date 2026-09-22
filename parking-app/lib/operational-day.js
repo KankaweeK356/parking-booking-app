@@ -44,6 +44,24 @@ export function getNextOperationalDateIso(now = new Date()) {
   return addDaysToIso(getCurrentOperationalDateIso(now), 1);
 }
 
+export function formatBangkokDateTime(value = new Date()) {
+  if (!value) return "";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const get = (type) => parts.find((p) => p.type === type)?.value;
+  return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}:${get("second")}`;
+}
+
 export function formatBangkokTime(value) {
   if (!value) return "";
   const date = new Date(value);

@@ -12,7 +12,7 @@
 //   Transection       : Header แถว 1, ข้อมูลแถว 2+   [BoothCode, DocDate]
 
 import { google } from "googleapis";
-import { getBangkokCalendarDateIso, getCurrentOperationalBlock, getCurrentOperationalDateIso, getUrgentAccessDefaultDateIso, isBeforeOperationalBlockStart, isOperationalTimeBlock } from "./operational-day";
+import { formatBangkokDateTime, getBangkokCalendarDateIso, getCurrentOperationalBlock, getCurrentOperationalDateIso, getUrgentAccessDefaultDateIso, isBeforeOperationalBlockStart, isOperationalTimeBlock } from "./operational-day";
 import { calculateTicketAmount, TICKET_PRICE_PER_UNIT } from "./ticket-pricing";
 
 const SHEET_ID = process.env.GOOGLE_SHEET_ID;
@@ -26,6 +26,8 @@ let loadingSheetNames = null;
 const pendingSheetEnsures = new Map();
 let adjustmentLogHeadersReady = false;
 let urgentLogHeadersReady = false;
+let changeLogFormattingReady = false;
+let adjustmentLogFormattingReady = false;
 
 const GOOGLE_SHEETS_EPOCH = Date.UTC(1899, 11, 30); // 1899-12-30
 const MS_PER_DAY = 86400000;
@@ -129,6 +131,41 @@ export function minutesToTimeStr(minutes) {
   const h = Math.floor(total / 60);
   const m = total % 60;
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+export function normalizeLogDate(val) {
+  if (!val) return "";
+  if (typeof val === "number") return isoFromSerial(val);
+  const s = String(val).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(s)) {
+    const [d, m, y] = s.split("/");
+    return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  }
+  const num = Number(s);
+  if (!isNaN(num) && num > 30000 && num < 80000) {
+    return isoFromSerial(num);
+  }
+  return s;
+}
+
+export function normalizeLogTime(val) {
+  if (val === null || val === undefined || val === "") return "";
+  if (typeof val === "number") {
+    if (val < 1) return minutesToTimeStr(serialToMinutes(val));
+    return minutesToTimeStr(val);
+  }
+  const s = String(val).trim();
+  if (/^\d{1,2}:\d{2}$/.test(s)) {
+    const [h, m] = s.split(":");
+    return `${h.padStart(2, "0")}:${m}`;
+  }
+  const num = Number(s);
+  if (!isNaN(num)) {
+    if (num < 1) return minutesToTimeStr(serialToMinutes(num));
+    if (num <= 1440) return minutesToTimeStr(num);
+  }
+  return s;
 }
 
 export function getTodaySerial() {
@@ -429,9 +466,10 @@ export async function appendSlotStatusLog({ slotCode, action, reason, actor }) {
 export async function ensureChangeLogSheet() {
   const sheets = getSheetsClient();
   const meta = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID });
-  const sheetNames = (meta.data.sheets || []).map((s) => s.properties?.title);
-  if (!sheetNames.includes("Booking_Change_Log")) {
-    await sheets.spreadsheets.batchUpdate({
+  const allSheets = meta.data.sheets || [];
+  let changeLogSheet = allSheets.find((s) => s.properties?.title === "Booking_Change_Log");
+  if (!changeLogSheet) {
+    const addRes = await sheets.spreadsheets.batchUpdate({
       spreadsheetId: SHEET_ID,
       requestBody: {
         requests: [
@@ -445,6 +483,7 @@ export async function ensureChangeLogSheet() {
         ],
       },
     });
+    changeLogSheet = addRes.data.replies?.[0]?.addSheet;
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID,
       range: "Booking_Change_Log!A1:L1",
@@ -459,6 +498,70 @@ export async function ensureChangeLogSheet() {
     });
   }
   await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: "Booking_Change_Log!M1:N1", valueInputOption: "USER_ENTERED", requestBody: { values: [["Created_By_Employee_Id", "Created_By_Name"]] } });
+
+  const sheetId = changeLogSheet?.properties?.sheetId;
+  if (sheetId !== undefined && !changeLogFormattingReady) {
+    try {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: SHEET_ID,
+        requestBody: {
+          requests: [
+            // คอลัมน์ A (เวลาที่แก้ไข): DATE_TIME
+            {
+              repeatCell: {
+                range: { sheetId, startRowIndex: 1, startColumnIndex: 0, endColumnIndex: 1 },
+                cell: { userEnteredFormat: { numberFormat: { type: "DATE_TIME", pattern: "yyyy-mm-dd hh:mm:ss" } } },
+                fields: "userEnteredFormat.numberFormat",
+              },
+            },
+            // คอลัมน์ F (RowNumber): NUMBER
+            {
+              repeatCell: {
+                range: { sheetId, startRowIndex: 1, startColumnIndex: 5, endColumnIndex: 6 },
+                cell: { userEnteredFormat: { numberFormat: { type: "NUMBER", pattern: "0" } } },
+                fields: "userEnteredFormat.numberFormat",
+              },
+            },
+            // คอลัมน์ G, H (วันเริ่มเดิม, วันสิ้นสุดเดิม): DATE dd/mm/yyyy
+            {
+              repeatCell: {
+                range: { sheetId, startRowIndex: 1, startColumnIndex: 6, endColumnIndex: 8 },
+                cell: { userEnteredFormat: { numberFormat: { type: "DATE", pattern: "dd/mm/yyyy" } } },
+                fields: "userEnteredFormat.numberFormat",
+              },
+            },
+            // คอลัมน์ I (เวลาเริ่มเดิม): TIME hh:mm
+            {
+              repeatCell: {
+                range: { sheetId, startRowIndex: 1, startColumnIndex: 8, endColumnIndex: 9 },
+                cell: { userEnteredFormat: { numberFormat: { type: "TIME", pattern: "hh:mm" } } },
+                fields: "userEnteredFormat.numberFormat",
+              },
+            },
+            // คอลัมน์ J, K (วันเริ่มใหม่, วันสิ้นสุดใหม่): DATE dd/mm/yyyy
+            {
+              repeatCell: {
+                range: { sheetId, startRowIndex: 1, startColumnIndex: 9, endColumnIndex: 11 },
+                cell: { userEnteredFormat: { numberFormat: { type: "DATE", pattern: "dd/mm/yyyy" } } },
+                fields: "userEnteredFormat.numberFormat",
+              },
+            },
+            // คอลัมน์ L (เวลาเริ่มใหม่): TIME hh:mm
+            {
+              repeatCell: {
+                range: { sheetId, startRowIndex: 1, startColumnIndex: 11, endColumnIndex: 12 },
+                cell: { userEnteredFormat: { numberFormat: { type: "TIME", pattern: "hh:mm" } } },
+                fields: "userEnteredFormat.numberFormat",
+              },
+            },
+          ],
+        },
+      });
+      changeLogFormattingReady = true;
+    } catch (e) {
+      console.warn("Could not apply change log column formatting:", e.message);
+    }
+  }
 }
 
 export async function appendBookingChangeLog({
@@ -477,7 +580,7 @@ export async function appendBookingChangeLog({
 }) {
   await ensureChangeLogSheet();
   const sheets = getSheetsClient();
-  const timestamp = new Date().toISOString();
+  const timestamp = formatBangkokDateTime(new Date());
   await sheets.spreadsheets.values.append({
     spreadsheetId: SHEET_ID,
     range: "Booking_Change_Log!A:N",
@@ -485,9 +588,20 @@ export async function appendBookingChangeLog({
     insertDataOption: "INSERT_ROWS",
     requestBody: {
       values: [[
-        timestamp, action, customer, lot, slot, rowNumber,
-        oldStartDate, oldEndDate, oldStartTime,
-        newStartDate, newEndDate, newStartTime, actor?.employeeId || "", actor?.name || "",
+        timestamp,
+        action,
+        customer,
+        lot,
+        slot,
+        Number(rowNumber) || rowNumber,
+        normalizeLogDate(oldStartDate),
+        normalizeLogDate(oldEndDate),
+        normalizeLogTime(oldStartTime),
+        normalizeLogDate(newStartDate),
+        normalizeLogDate(newEndDate),
+        normalizeLogTime(newStartTime),
+        actor?.employeeId || "",
+        actor?.name || "",
       ]],
     },
   });
@@ -501,12 +615,62 @@ export async function ensureAdjustmentLogSheet() {
     await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: "Booking_Adjustment_Log!F1:H1", valueInputOption: "USER_ENTERED", requestBody: { values: [["Created_By_Employee_Id", "Created_By_Name", "End_Date"]] } });
     adjustmentLogHeadersReady = true;
   }
+  if (!adjustmentLogFormattingReady) {
+    try {
+      const sheets = getSheetsClient();
+      const meta = await sheets.spreadsheets.get({ spreadsheetId: SHEET_ID });
+      const sheet = (meta.data.sheets || []).find((s) => s.properties?.title === "Booking_Adjustment_Log");
+      const sheetId = sheet?.properties?.sheetId;
+      if (sheetId !== undefined) {
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId: SHEET_ID,
+          requestBody: {
+            requests: [
+              {
+                repeatCell: {
+                  range: { sheetId, startRowIndex: 1, startColumnIndex: 0, endColumnIndex: 1 },
+                  cell: { userEnteredFormat: { numberFormat: { type: "DATE_TIME", pattern: "yyyy-mm-dd hh:mm:ss" } } },
+                  fields: "userEnteredFormat.numberFormat",
+                },
+              },
+              {
+                repeatCell: {
+                  range: { sheetId, startRowIndex: 1, startColumnIndex: 1, endColumnIndex: 2 },
+                  cell: { userEnteredFormat: { numberFormat: { type: "DATE", pattern: "dd/mm/yyyy" } } },
+                  fields: "userEnteredFormat.numberFormat",
+                },
+              },
+              {
+                repeatCell: {
+                  range: { sheetId, startRowIndex: 1, startColumnIndex: 3, endColumnIndex: 4 },
+                  cell: { userEnteredFormat: { numberFormat: { type: "NUMBER", pattern: "0" } } },
+                  fields: "userEnteredFormat.numberFormat",
+                },
+              },
+              {
+                repeatCell: {
+                  range: { sheetId, startRowIndex: 1, startColumnIndex: 7, endColumnIndex: 8 },
+                  cell: { userEnteredFormat: { numberFormat: { type: "DATE", pattern: "dd/mm/yyyy" } } },
+                  fields: "userEnteredFormat.numberFormat",
+                },
+              },
+            ],
+          },
+        });
+        adjustmentLogFormattingReady = true;
+      }
+    } catch (e) {
+      console.warn("Could not apply adjustment log column formatting:", e.message);
+    }
+  }
 }
 
 export async function appendDailyAdjustments({ rowNumbers, effectiveDate, reason = "ลดสิทธิ์เฉพาะวัน", actor }) {
   await ensureAdjustmentLogSheet();
   const sheets = getSheetsClient();
-  const rows = rowNumbers.map((rowNumber) => [new Date().toISOString(), effectiveDate, "ลดเฉพาะวัน", rowNumber, reason, actor?.employeeId || "", actor?.name || "", effectiveDate]);
+  const timestamp = formatBangkokDateTime(new Date());
+  const normDate = normalizeLogDate(effectiveDate);
+  const rows = rowNumbers.map((rowNumber) => [timestamp, normDate, "ลดเฉพาะวัน", Number(rowNumber) || rowNumber, reason, actor?.employeeId || "", actor?.name || "", normDate]);
   await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: "Booking_Adjustment_Log!A2:H", valueInputOption: "USER_ENTERED", insertDataOption: "INSERT_ROWS", requestBody: { values: rows } });
 }
 
@@ -514,7 +678,10 @@ export async function appendPauseAdjustments({ rowNumbers, startDate, endDate, r
   if (!startDate || !endDate || isoDateToSerial(endDate) < isoDateToSerial(startDate)) throw new Error("ช่วงวันพักการจองไม่ถูกต้อง");
   await ensureAdjustmentLogSheet();
   const sheets = getSheetsClient();
-  const rows = rowNumbers.map((rowNumber) => [new Date().toISOString(), startDate, "พักการจอง", rowNumber, reason, actor?.employeeId || "", actor?.name || "", endDate]);
+  const timestamp = formatBangkokDateTime(new Date());
+  const normStart = normalizeLogDate(startDate);
+  const normEnd = normalizeLogDate(endDate);
+  const rows = rowNumbers.map((rowNumber) => [timestamp, normStart, "พักการจอง", Number(rowNumber) || rowNumber, reason, actor?.employeeId || "", actor?.name || "", normEnd]);
   await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: "Booking_Adjustment_Log!A2:H", valueInputOption: "USER_ENTERED", insertDataOption: "INSERT_ROWS", requestBody: { values: rows } });
 }
 
