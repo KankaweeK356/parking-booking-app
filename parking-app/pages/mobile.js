@@ -16,6 +16,7 @@ export default function MobileView() {
   const [lastUpdated, setLastUpdated] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [retryingPayment, setRetryingPayment] = useState(false);
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
   const [canRetryPayment, setCanRetryPayment] = useState(false);
 
   useEffect(() => {
@@ -23,6 +24,27 @@ export default function MobileView() {
       setCanRetryPayment(["Admin", "Field"].includes(result?.user?.role));
     });
   }, []);
+
+  // ตรวจสอบและนับถอยหลัง Cooldown 2 นาที (ซิงค์ทั้งจาก server และ localStorage)
+  useEffect(() => {
+    function checkCooldown() {
+      const storedUntil = Number(localStorage.getItem("payment_cooldown_until") || 0);
+      const serverAttemptTime = Date.parse(data.paymentUpdate?.refresh?.attemptedAt || 0);
+      const serverUntil = data.paymentUpdate?.refresh?.status === "READY" ? serverAttemptTime + 120 * 1000 : 0;
+      const effectiveUntil = Math.max(storedUntil, serverUntil);
+      const remaining = Math.ceil((effectiveUntil - Date.now()) / 1000);
+      if (remaining > 0) {
+        setCooldownSeconds(remaining);
+      } else {
+        setCooldownSeconds(0);
+        localStorage.removeItem("payment_cooldown_until");
+      }
+    }
+    checkCooldown();
+    const interval = window.setInterval(checkCooldown, 1000);
+    return () => window.clearInterval(interval);
+  }, [data.paymentUpdate]);
+
   useEffect(() => {
     loadData(selectedDate);
     const timer = window.setInterval(() => {
@@ -51,6 +73,7 @@ export default function MobileView() {
   }
 
   async function retryPaymentSnapshot() {
+    if (cooldownSeconds > 0) return;
     setRetryingPayment(true);
     setError("");
     try {
@@ -58,7 +81,17 @@ export default function MobileView() {
       const raw = await response.text();
       let result;
       try { result = JSON.parse(raw); } catch { throw new Error("อัปเดตข้อมูลใหม่ไม่สำเร็จ กรุณารอสักครู่"); }
-      if (!response.ok) throw new Error(result.error || "อัปเดตข้อมูลใหม่ไม่สำเร็จ");
+      if (!response.ok) {
+        if (response.status === 429 && result.remainingSeconds) {
+          const until = Date.now() + result.remainingSeconds * 1000;
+          localStorage.setItem("payment_cooldown_until", String(until));
+          setCooldownSeconds(result.remainingSeconds);
+        }
+        throw new Error(result.error || "อัปเดตข้อมูลใหม่ไม่สำเร็จ");
+      }
+      const until = Date.now() + 120 * 1000;
+      localStorage.setItem("payment_cooldown_until", String(until));
+      setCooldownSeconds(120);
       await loadData(selectedDate, { force: true });
     } catch (err) { setError(err.message); } finally { setRetryingPayment(false); }
   }
@@ -94,7 +127,7 @@ export default function MobileView() {
             </div>
           </div>
         </div>
-        {loading ? <div className="card"><p className="subtitle">กำลังโหลดสถานะช่องจอด...</p></div> : <>{paymentUpdate?.status !== "READY" && <div className="alert alert-warning">ข้อมูลสำหรับวันที่ {paymentDateLabel} ยังไม่พร้อม<br />โปรดรอ{canRetryPayment ? <>หรือกด <button type="button" className="btn btn-secondary refresh-button" disabled={retryingPayment} onClick={retryPaymentSnapshot}>{retryingPayment ? "กำลังอัปเดตข้อมูล..." : "อัปเดตข้อมูลใหม่"}</button></> : "ระบบกำลังอัปเดตข้อมูลอัตโนมัติ"}</div>}{data.paymentStatus === "UPDATING" ? <div className="card"><p className="subtitle">โปรดรอให้ข้อมูลพร้อมก่อนใช้สถานะช่องจอดตัดสินพื้นที่</p></div> : <><div className="dashboard-current-block">รอบปัจจุบัน: {data.currentBlock?.label || "-"}{lastUpdated ? ` · อัปเดต ${lastUpdated}` : ""}</div><p className="mobile-attention-count">ต้องตรวจ {attentionCount} ช่อง</p><MobileRoundSlotList slots={slotsInLot} bookings={paidBookingsInLot} selectedRound={activeRound} currentBlockStartTime={data.currentBlock?.startTime} isLiveOperationalDate={data.isLiveOperationalDate} /></>}</>}
+        {loading ? <div className="card"><p className="subtitle">กำลังโหลดสถานะช่องจอด...</p></div> : <>{paymentUpdate?.status !== "READY" && <div className="alert alert-warning">ข้อมูลสำหรับวันที่ {paymentDateLabel} ยังไม่พร้อม<br />โปรดรอ{canRetryPayment ? <>หรือกด <button type="button" className="btn btn-secondary refresh-button" disabled={retryingPayment || cooldownSeconds > 0} onClick={retryPaymentSnapshot}>{retryingPayment ? "กำลังอัปเดตข้อมูล..." : cooldownSeconds > 0 ? `ข้อมูลล่าสุดแล้ว (รอ ${Math.floor(cooldownSeconds / 60)}:${String(cooldownSeconds % 60).padStart(2, "0")})` : "อัปเดตข้อมูลใหม่"}</button></> : "ระบบกำลังอัปเดตข้อมูลอัตโนมัติ"}</div>}{data.paymentStatus === "UPDATING" ? <div className="card"><p className="subtitle">โปรดรอให้ข้อมูลพร้อมก่อนใช้สถานะช่องจอดตัดสินพื้นที่</p></div> : <><div className="dashboard-current-block">รอบปัจจุบัน: {data.currentBlock?.label || "-"}{lastUpdated ? ` · อัปเดต ${lastUpdated}` : ""}</div><p className="mobile-attention-count">ต้องตรวจ {attentionCount} ช่อง</p><MobileRoundSlotList slots={slotsInLot} bookings={paidBookingsInLot} selectedRound={activeRound} currentBlockStartTime={data.currentBlock?.startTime} isLiveOperationalDate={data.isLiveOperationalDate} /></>}</>}
       </div>
     </div>
   );

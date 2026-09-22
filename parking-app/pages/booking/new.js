@@ -19,8 +19,11 @@ export default function NewBooking() {
   const [availabilityMessage, setAvailabilityMessage] = useState(""); const [availabilityVersion, setAvailabilityVersion] = useState(0);
   const [submitting, setSubmitting] = useState(false); const [result, setResult] = useState(null); const [loadError, setLoadError] = useState("");
   const [existingBookings, setExistingBookings] = useState([]); const [showExistingBookings, setShowExistingBookings] = useState(false); const [refreshMessage, setRefreshMessage] = useState("");
+  const [refreshingSlots, setRefreshingSlots] = useState(false);
 
   async function loadFormData() {
+    if (refreshingSlots) return;
+    setRefreshingSlots(true);
     setLoadError(""); setRefreshMessage("");
     try {
       const [m, s] = await Promise.all([fetch("/api/master").then((r) => r.json()), fetch("/api/slots").then((r) => r.json())]);
@@ -28,6 +31,7 @@ export default function NewBooking() {
       const slotList = Array.isArray(s) ? s : (s.slots || []); const lotList = s.lots || Array.from(new Set(slotList.map((item) => item.lot).filter(Boolean))).sort();
       setCustomers(Array.isArray(m) ? m : []); setSlots(slotList); setLots(lotList); setLot((old) => lotList.includes(old) ? old : (lotList[0] || "")); setAvailabilityVersion((current) => current + 1); setRefreshMessage("อัปเดตสถานะช่องแล้ว");
     } catch (error) { setLoadError(error.message); }
+    finally { setRefreshingSlots(false); }
   }
   useEffect(() => { loadFormData(); }, []);
   useEffect(() => { setExistingBookings([]); setShowExistingBookings(false); if (customer) fetch(`/api/bookings?customer=${encodeURIComponent(customer)}`).then((r) => r.ok ? r.json() : []).then((rows) => setExistingBookings(Array.isArray(rows) ? rows : [])); }, [customer]);
@@ -50,7 +54,7 @@ export default function NewBooking() {
   }
   return <div><div className="top-bar"><div className="inner"><h1>จองใหม่ / เพิ่มช่อง</h1><Link href="/" className="back">← กลับหน้าหลัก</Link></div></div><div className="page">
     {loadError && <div className="alert alert-error">โหลดข้อมูลไม่สำเร็จ: {loadError}</div>}
-    <form onSubmit={handleSubmit}><div className="card"><div className="section-heading-row"><label>ข้อมูลการจอง</label><button type="button" className="btn btn-secondary" onClick={loadFormData}>↻ อัปเดตสถานะช่อง</button></div>{refreshMessage && <p className="subtitle">{refreshMessage}</p>}
+    <form onSubmit={handleSubmit}><div className="card"><div className="section-heading-row"><label>ข้อมูลการจอง</label><button type="button" className="btn btn-secondary" onClick={loadFormData} disabled={refreshingSlots || availabilityLoading}>{refreshingSlots ? "กำลังอัปเดต..." : "↻ อัปเดตสถานะช่อง"}</button></div>{refreshMessage && <p className="subtitle">{refreshMessage}</p>}
       <CustomerPicker customers={customers} value={customer} onChange={chooseCustomer} required />
       {existingBookings.length > 0 && <p className="booking-count-note">มีรายการจองอยู่ {existingBookings.length} รายการ</p>}
       <label>เลือกลานจอด</label><select value={lot} onChange={(event) => { setLot(event.target.value); setSelectedSlots([]); }}>{lots.map((item) => <option key={item} value={item}>{displayLotName(item)}</option>)}</select>

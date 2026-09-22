@@ -64,6 +64,8 @@ export default function EditBooking() {
   const [extendStartTime, setExtendStartTime] = useState("07:00");
   const [extendMessage, setExtendMessage] = useState(null);
   const [submittingExtend, setSubmittingExtend] = useState(false);
+  const [refreshingStatus, setRefreshingStatus] = useState(false);
+  const [refreshMessage, setRefreshMessage] = useState("");
 
   function slotLabel(booking) {
     const number = allSlots.find((slot) => slot.slotCode === booking.slot)?.number || "-";
@@ -82,27 +84,54 @@ export default function EditBooking() {
   }
 
   // โหลดรายชื่อลูกค้าและข้อมูลช่องจอด
-  function loadReferenceData() {
-    fetch("/api/master").then((r) => r.json()).then(setCustomers);
-    fetch("/api/slots")
-      .then((r) => r.json())
-      .then((data) => {
-        const slotList = Array.isArray(data) ? data : (data.slots || []);
-        const lotList = data.lots || Array.from(new Set(slotList.map((item) => item.lot).filter(Boolean))).sort();
-        setAllSlots(slotList);
-        setLots(lotList);
-        if (lotList.length > 0) setNewLot((current) => current || lotList[0]);
-      });
+  async function loadReferenceData() {
+    try {
+      const [m, s] = await Promise.all([
+        fetch("/api/master").then((r) => r.json()),
+        fetch("/api/slots").then((r) => r.json()),
+      ]);
+      if (Array.isArray(m)) setCustomers(m);
+      const slotList = Array.isArray(s) ? s : (s.slots || []);
+      const lotList = s.lots || Array.from(new Set(slotList.map((item) => item.lot).filter(Boolean))).sort();
+      setAllSlots(slotList);
+      setLots(lotList);
+      if (lotList.length > 0) setNewLot((current) => current || lotList[0]);
+    } catch (err) {
+      console.error("Failed to load reference data", err);
+    }
   }
   useEffect(() => { loadReferenceData(); }, []);
 
-  function refreshBookingStatus() {
-    loadReferenceData();
-    if (customer) loadCustomerBookings(customer);
+  async function refreshBookingStatus() {
+    if (refreshingStatus) return;
+    setRefreshingStatus(true);
+    setRefreshMessage("");
+    try {
+      const promises = [loadReferenceData()];
+      if (customer) {
+        promises.push(
+          fetch(`/api/bookings?customer=${encodeURIComponent(customer)}`)
+            .then((r) => r.json())
+            .then((data) => {
+              const rows = Array.isArray(data) ? data : [];
+              setBookings(rows);
+              setSelectedReduceRows((prev) => prev.filter((id) => rows.some((b) => b.rowNumber === id)));
+              setSelectedChangeRow((prev) => (prev ? rows.find((b) => b.rowNumber === prev.rowNumber) || null : null));
+              setSelectedExtendRow((prev) => (prev ? rows.find((b) => b.rowNumber === prev.rowNumber) || null : null));
+            })
+            .catch((err) => console.error(err))
+        );
+      }
+      await Promise.all(promises);
+      setRefreshMessage("อัปเดตสถานะช่องแล้ว");
+    } finally {
+      setRefreshingStatus(false);
+    }
   }
 
   // โหลดรายการจองเมื่อเปลี่ยนลูกค้า
   useEffect(() => {
+    setRefreshMessage("");
     if (!customer) {
       setBookings([]);
       setSelectedReduceRows([]);
@@ -322,8 +351,16 @@ export default function EditBooking() {
         <div className="card">
           <div className="section-heading-row">
             <label>ข้อมูลการจอง</label>
-            <button type="button" className="btn btn-secondary" onClick={refreshBookingStatus}>↻ อัปเดตสถานะช่อง</button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={refreshBookingStatus}
+              disabled={refreshingStatus || loadingBookings || moveAvailabilityLoading}
+            >
+              {refreshingStatus || loadingBookings ? "กำลังอัปเดต..." : "↻ อัปเดตสถานะช่อง"}
+            </button>
           </div>
+          {refreshMessage && <p className="subtitle">{refreshMessage}</p>}
           <CustomerPicker customers={customers} value={customer} onChange={setCustomer} />
         </div>
 

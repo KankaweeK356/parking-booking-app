@@ -15,6 +15,7 @@ export default function UrgentBooking() {
   const [mode, setMode] = useState(""); const [lot, setLot] = useState(""); const [newSlots, setNewSlots] = useState([]); const [startTime, setStartTime] = useState("");
   const [message, setMessage] = useState(""); const [error, setError] = useState(""); const [timeNotice, setTimeNotice] = useState(""); const [loading, setLoading] = useState(true); const [submitting, setSubmitting] = useState(false);
   const [availability, setAvailability] = useState({}); const [availabilityLoading, setAvailabilityLoading] = useState(false); const [availabilityError, setAvailabilityError] = useState("");
+  const [refreshing, setRefreshing] = useState(false); const [refreshMessage, setRefreshMessage] = useState("");
   const accessDate = getUrgentAccessDefaultDateIso();
 
   async function loadReferenceData() {
@@ -39,8 +40,19 @@ export default function UrgentBooking() {
     } catch (err) { setData(null); setMode(""); setError(err.message); }
   }
 
+  async function handleRefresh() {
+    if (refreshing || loading) return;
+    setRefreshing(true); setRefreshMessage("");
+    try {
+      const promises = [loadReferenceData()];
+      if (customer) promises.push(loadCustomer());
+      await Promise.all(promises);
+      setRefreshMessage("อัปเดตสถานะช่องแล้ว");
+    } finally { setRefreshing(false); }
+  }
+
   useEffect(() => { loadReferenceData(); }, []);
-  useEffect(() => { if (customer) loadCustomer(); else { setData(null); setMode(""); } }, [customer, accessDate]);
+  useEffect(() => { setRefreshMessage(""); if (customer) loadCustomer(); else { setData(null); setMode(""); } }, [customer, accessDate]);
 
   const allowedStartTimes = useMemo(() => ["07:00", "11:00", "15:00", "19:00", "23:00", "03:00"].filter((time) => isBeforeOperationalBlockStart(accessDate, time)), [accessDate]);
   const lotSlots = useMemo(() => slots.filter((s) => s.lot === lot), [slots, lot]);
@@ -69,7 +81,7 @@ export default function UrgentBooking() {
 
   const cannotSubmit = submitting || !customer || !mode || data?.paymentStatus !== "READY" || newSlots.length === 0 || !startTime;
   return <div><div className="top-bar"><div className="inner"><h1>จองรายวัน</h1><Link href="/" className="back">← กลับหน้าหลัก</Link></div></div><div className="page">
-    <div className="card"><div className="section-heading-row"><label>ข้อมูลการจอง</label><button type="button" className="btn btn-secondary" onClick={loadReferenceData} disabled={loading}>↻ อัปเดตสถานะช่อง</button></div><CustomerPicker customers={customers} value={customer} onChange={setCustomer} required /><p className="subtitle">วันที่ใช้สิทธิ์: {accessDate} · บันทึกได้เฉพาะก่อนเวลาเริ่มรอบ</p></div>
+    <div className="card"><div className="section-heading-row"><label>ข้อมูลการจอง</label><button type="button" className="btn btn-secondary" onClick={handleRefresh} disabled={refreshing || loading || availabilityLoading}>{refreshing || loading ? "กำลังอัปเดต..." : "↻ อัปเดตสถานะช่อง"}</button></div>{refreshMessage && <p className="subtitle">{refreshMessage}</p>}<CustomerPicker customers={customers} value={customer} onChange={setCustomer} required /><p className="subtitle">วันที่ใช้สิทธิ์: {accessDate} · บันทึกได้เฉพาะก่อนเวลาเริ่มรอบ</p></div>
     {error && <div className="alert alert-error">{error}</div>}
     {message && <div className="alert alert-success">{message} <Link href={`/required-summary?customer=${encodeURIComponent(customer)}`}>พิมพ์สรุปให้ลูกค้า</Link></div>}
     {data && <>

@@ -22,11 +22,33 @@ export default function Dashboard() {
   const [canPrint, setCanPrint] = useState(false);
   const [paymentMessage, setPaymentMessage] = useState("");
   const [retryingPayment, setRetryingPayment] = useState(false);
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [printing, setPrinting] = useState(false);
   const [printedAt, setPrintedAt] = useState("");
 
   useEffect(() => { fetch("/api/auth/me").then((response) => response.ok ? response.json() : null).then((result) => { const allowed = ["Admin", "Field"].includes(result?.user?.role); setCanRetryPayment(allowed); setCanPrint(allowed); }); }, []);
+
+  // ตรวจสอบและนับถอยหลัง Cooldown 2 นาที (ซิงค์ทั้งจาก server และ localStorage)
+  useEffect(() => {
+    function checkCooldown() {
+      const storedUntil = Number(localStorage.getItem("payment_cooldown_until") || 0);
+      const serverAttemptTime = Date.parse(data.paymentUpdate?.refresh?.attemptedAt || 0);
+      const serverUntil = data.paymentUpdate?.refresh?.status === "READY" ? serverAttemptTime + 120 * 1000 : 0;
+      const effectiveUntil = Math.max(storedUntil, serverUntil);
+      const remaining = Math.ceil((effectiveUntil - Date.now()) / 1000);
+      if (remaining > 0) {
+        setCooldownSeconds(remaining);
+      } else {
+        setCooldownSeconds(0);
+        localStorage.removeItem("payment_cooldown_until");
+      }
+    }
+    checkCooldown();
+    const interval = window.setInterval(checkCooldown, 1000);
+    return () => window.clearInterval(interval);
+  }, [data.paymentUpdate]);
+
   useEffect(() => {
     if (!printing) return undefined;
     document.body.classList.add("dashboard-printing");
@@ -68,16 +90,31 @@ export default function Dashboard() {
   }
 
   async function retryPaymentSnapshot() {
+    if (cooldownSeconds > 0) return;
     setPaymentMessage("");
     setRetryingPayment(true);
     const date = data.paymentUpdate?.date || getBangkokCalendarDateIso();
     try {
       const response = await fetch(`/api/payment-snapshot?date=${encodeURIComponent(date)}`, { method: "POST" });
       const result = await readApiJson(response, "อัปเดตข้อมูลใหม่ไม่สำเร็จ กรุณารอสักครู่");
-      if (!response.ok) throw new Error(result.error || "อัปเดตสถานะชำระเงินไม่สำเร็จ");
+      if (!response.ok) {
+        if (response.status === 429 && result.remainingSeconds) {
+          const until = Date.now() + result.remainingSeconds * 1000;
+          localStorage.setItem("payment_cooldown_until", String(until));
+          setCooldownSeconds(result.remainingSeconds);
+        }
+        throw new Error(result.error || "อัปเดตสถานะชำระเงินไม่สำเร็จ");
+      }
+      const until = Date.now() + 120 * 1000;
+      localStorage.setItem("payment_cooldown_until", String(until));
+      setCooldownSeconds(120);
       setPaymentMessage(`ระบบอัปเดตข้อมูลสำหรับวันที่ ${date} เรียบร้อยแล้ว`);
       await loadDashboard(selectedDate);
-    } catch (err) { setPaymentMessage(err.message); } finally { setRetryingPayment(false); }
+    } catch (err) {
+      setPaymentMessage(err.message);
+    } finally {
+      setRetryingPayment(false);
+    }
   }
 
   function printDashboard() {
@@ -128,8 +165,8 @@ export default function Dashboard() {
           </div>
         </div>
         {paymentMessage && <div className={`alert ${paymentMessage.includes("สำเร็จ") ? "alert-success" : "alert-error"}`}>{paymentMessage}</div>}
-        {!loading && paymentUpdate?.status === "UPDATING" && <div className="alert alert-warning">ข้อมูลสำหรับวันที่ {paymentDateLabel} ยังไม่พร้อม{canShowRetry && <><br />โปรดรอหรือกด <button type="button" className="btn btn-secondary refresh-button" disabled={retryingPayment} onClick={retryPaymentSnapshot}>{retryingPayment ? "กำลังอัปเดตข้อมูล..." : "อัปเดตข้อมูลใหม่"}</button></>}</div>}
-        {!loading && paymentUpdate?.status === "FAILED" && <div className="alert alert-error">ข้อมูลสำหรับวันที่ {paymentDateLabel} ยังไม่พร้อม{canShowRetry && <><br />โปรดรอหรือกด <button type="button" className="btn btn-secondary refresh-button" disabled={retryingPayment} onClick={retryPaymentSnapshot}>{retryingPayment ? "กำลังอัปเดตข้อมูล..." : "อัปเดตข้อมูลใหม่"}</button></>}</div>}
+        {!loading && paymentUpdate?.status === "UPDATING" && <div className="alert alert-warning">ข้อมูลสำหรับวันที่ {paymentDateLabel} ยังไม่พร้อม{canShowRetry && <><br />โปรดรอหรือกด <button type="button" className="btn btn-secondary refresh-button" disabled={retryingPayment || cooldownSeconds > 0} onClick={retryPaymentSnapshot}>{retryingPayment ? "กำลังอัปเดตข้อมูล..." : cooldownSeconds > 0 ? `ข้อมูลล่าสุดแล้ว (รอ ${Math.floor(cooldownSeconds / 60)}:${String(cooldownSeconds % 60).padStart(2, "0")})` : "อัปเดตข้อมูลใหม่"}</button></>}</div>}
+        {!loading && paymentUpdate?.status === "FAILED" && <div className="alert alert-error">ข้อมูลสำหรับวันที่ {paymentDateLabel} ยังไม่พร้อม{canShowRetry && <><br />โปรดรอหรือกด <button type="button" className="btn btn-secondary refresh-button" disabled={retryingPayment || cooldownSeconds > 0} onClick={retryPaymentSnapshot}>{retryingPayment ? "กำลังอัปเดตข้อมูล..." : cooldownSeconds > 0 ? `ข้อมูลล่าสุดแล้ว (รอ ${Math.floor(cooldownSeconds / 60)}:${String(cooldownSeconds % 60).padStart(2, "0")})` : "อัปเดตข้อมูลใหม่"}</button></>}</div>}
         {!loading && paymentUpdate?.status === "READY" && <div className="alert alert-success">สิทธิ์วันที่ {paymentDateLabel} พร้อมแล้ว<br />ตรวจสอบการชำระเงินเมื่อ {paymentUpdatedAt} · ใช้ตั๋ววันที่ {formatPaymentDate(paymentUpdate.snapshot.sourceDate)}</div>}
         {!loading && data.paymentStatus === "READY" && data.isLiveOperationalDate && <><div className="dashboard-current-block">สรุปสถานะรอบปัจจุบัน: {data.currentBlock?.label || "-"}{lastUpdated ? ` · ข้อมูลสถานะช่องล่าสุด ${lastUpdated}` : ""}</div><div className="summary-stat"><div className="stat-box"><div className="stat-label">มีการจอง</div><div className="stat-value">{stats.booked}</div></div><div className="stat-box"><div className="stat-label">ว่าง</div><div className="stat-value">{stats.vacant}</div></div><div className="stat-box stat-ticket-check"><div className="stat-label">รอตรวจตั๋ว</div><div className="stat-value">{stats["ticket-check"]}</div></div><div className="stat-box stat-expired"><div className="stat-label">หมดเวลาจอด</div><div className="stat-value">{stats.expired}</div></div><div className="stat-box"><div className="stat-label">ปิดใช้งาน</div><div className="stat-value">{stats.closed}</div></div></div></>}
         {!loading && data.paymentStatus === "READY" && !data.isLiveOperationalDate && <div className="alert alert-warning">กำลังดูข้อมูลย้อนหลัง/ล่วงหน้า จึงไม่แสดงสถานะ “หมดเวลาจอด” ตามเวลาจริง</div>}
