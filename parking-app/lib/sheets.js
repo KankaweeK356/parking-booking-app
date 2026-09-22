@@ -739,8 +739,8 @@ export async function createBookingBatch({ customer, lot, slots, startDate, endD
   if (isoDateToSerial(endDate) < isoDateToSerial(startDate)) {
     throw new Error("วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่ม");
   }
-  if (bookingType === "Normal" && isoDateToSerial(startDate) < isoDateToSerial(addDaysIso(getCurrentOperationalDateIso(), 1))) {
-    throw new Error("การจองใหม่เริ่มใช้ได้เร็วสุดวันปฏิบัติการถัดไป");
+  if (bookingType === "Normal" && isoDateToSerial(startDate) < isoDateToSerial(addDaysIso(getBangkokCalendarDateIso(), 1))) {
+    throw new Error("การจองใหม่เริ่มใช้ได้เร็วสุดวันถัดไปของวันปฏิทินปัจจุบัน");
   }
   if (timeList.some((time) => !isOperationalTimeBlock(time))) {
     throw new Error("รอบเวลาต้องเป็นหนึ่งใน 6 รอบของ operational day (เริ่ม 07:00)");

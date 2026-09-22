@@ -3,10 +3,10 @@ import Link from "next/link";
 import OperationalTimePicker from "../../components/OperationalTimePicker";
 import EndDateField from "../../components/EndDateField";
 import CustomerPicker from "../../components/CustomerPicker";
-import { getCurrentOperationalDateIso } from "../../lib/operational-day";
+import { addDaysToIso, getBangkokCalendarDateIso } from "../../lib/operational-day";
 import { displayLotName } from "../../lib/display";
 
-function nextOperationalDate() { const d = new Date(`${getCurrentOperationalDateIso()}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + 1); return d.toISOString().slice(0, 10); }
+function nextOperationalDate() { return addDaysToIso(getBangkokCalendarDateIso(), 1); }
 function bookingText(booking, slots) { return `${displayLotName(booking.lot)} / ช่อง ${slots.find((item) => item.slotCode === booking.slot)?.number || "-"} / รอบ ${booking.startTime}`; }
 function formatDate(value) { return String(value || "").split("-").reverse().join("/"); }
 function bookingOrder(left, right, slots) { const lot = String(left.lot || "").localeCompare(String(right.lot || ""), "th"); if (lot) return lot; const leftNumber = Number(slots.find((slot) => slot.slotCode === left.slot)?.number || 0); const rightNumber = Number(slots.find((slot) => slot.slotCode === right.slot)?.number || 0); if (leftNumber !== rightNumber) return leftNumber - rightNumber; return ["07:00", "11:00", "15:00", "19:00", "23:00", "03:00"].indexOf(left.startTime) - ["07:00", "11:00", "15:00", "19:00", "23:00", "03:00"].indexOf(right.startTime); }
