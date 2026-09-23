@@ -1,7 +1,7 @@
 import { useMemo } from "react";
-import { formatBangkokTime, OPERATIONAL_TIME_BLOCKS } from "../lib/operational-day";
+import { formatBangkokTime, OPERATIONAL_TIME_BLOCKS, getPreviousOperationalBlock } from "../lib/operational-day";
 import { displayCustomerName, formatFieldCustomerName } from "../lib/display";
-import { getDashboardCellStatus } from "../lib/timeline-status";
+import { getDashboardCellStatus, bookingForBlock } from "../lib/timeline-status";
 
 function operationalMinute(time) {
   const [hour, minute] = String(time || "00:00").split(":").map(Number);
@@ -65,7 +65,18 @@ export default function ParkingTimelineGrid({ slots, bookings, mode, currentBloc
                   );
                 }
                 if (mode === "dashboard" && getDashboardCellStatus({ slot, bookings, blockStartTime: block.startTime, currentBlockStartTime, isLiveOperationalDate }) === "expired") {
-                  return <td key={block.startTime} className="timeline-cell timeline-expired" title="สิทธิ์รอบก่อนหน้าสิ้นสุดแล้ว ต้องตรวจพื้นที่">หมดเวลาจอด</td>;
+                  const previousBlock = getPreviousOperationalBlock(block.startTime);
+                  const prevBooking = bookingForBlock(bookings, slot.code, previousBlock?.startTime);
+                  const prevCustomer = prevBooking ? formatFieldCustomerName(prevBooking.customer) : "";
+                  const title = prevBooking
+                    ? `${prevBooking.customer || ""} — หมดเวลาจอด`
+                    : "สิทธิ์รอบก่อนหน้าสิ้นสุดแล้ว ต้องตรวจพื้นที่";
+                  return (
+                    <td key={block.startTime} className="timeline-cell timeline-expired" title={title}>
+                      <span>{prevCustomer || "หมดเวลาจอด"}</span>
+                      {prevCustomer && <small>หมดเวลาจอด</small>}
+                    </td>
+                  );
                 }
                 return <td key={block.startTime} className="timeline-cell timeline-vacant">ว่าง</td>;
               })}
