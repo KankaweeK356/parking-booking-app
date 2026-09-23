@@ -1,4 +1,5 @@
-import { formatBangkokTime, getPreviousOperationalBlock } from "../lib/operational-day";
+import { formatBangkokTime } from "../lib/operational-day";
+import { formatFieldCustomerName } from "../lib/display";
 import { bookingForBlock, getDashboardCellStatus } from "../lib/timeline-status";
 
 const STATUS_LABELS = {
@@ -10,22 +11,27 @@ const STATUS_LABELS = {
 };
 
 export default function MobileRoundSlotList({ slots, bookings, selectedRound, currentBlockStartTime, isLiveOperationalDate }) {
-  const previousRound = getPreviousOperationalBlock(selectedRound);
   return <section className="card mobile-round-slots">
     <h2>สถานะช่องรอบ {selectedRound}</h2>
     <div className="mobile-slot-grid">
       {(slots || []).map((slot) => {
         const status = getDashboardCellStatus({ slot, bookings, blockStartTime: selectedRound, currentBlockStartTime, isLiveOperationalDate });
         const booking = bookingForBlock(bookings, slot.code, selectedRound);
+        const fieldName = booking ? formatFieldCustomerName(booking.customer) : "";
         const savedAt = status === "ticket-check" ? formatBangkokTime(booking?.createdAt) : "";
+
+        let mainLabel = STATUS_LABELS[status];
+        if (status === "booked" || status === "ticket-check") {
+          mainLabel = fieldName || STATUS_LABELS[status];
+        }
+
         const detail = status === "ticket-check"
-          ? `${savedAt ? `บันทึก ${savedAt}` : "ต้องตรวจตั๋ว"}`
-          : status === "expired"
-            ? `สิทธิ์รอบ ${previousRound.startTime} สิ้นสุดแล้ว`
-            : "";
-        return <div key={slot.code} className={`mobile-slot-card mobile-slot-${status}`}>
+          ? `รอตรวจตั๋ว${savedAt ? ` (${savedAt})` : ""}`
+          : "";
+
+        return <div key={slot.code} className={`mobile-slot-card mobile-slot-${status}`} title={booking?.customer || ""}>
           <strong>ช่อง {slot.number || "-"}</strong>
-          <span>{STATUS_LABELS[status]}</span>
+          <span className="mobile-slot-label">{mainLabel}</span>
           {detail && <small>{detail}</small>}
         </div>;
       })}
