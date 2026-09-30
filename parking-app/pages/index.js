@@ -40,6 +40,7 @@ export default function Home() {
             <div className="desc">ปิดหรือเปิดช่องจอด กรณีช่องจอดไม่สามารถใช้งานได้</div>
           </Link>
           {canAdmin && <Link href="/admin/users" className="nav-card"><div className="title">👤 จัดการผู้ใช้</div><div className="desc">จัดการบัญชีพนักงานและรีเซ็ตรหัสผ่าน</div></Link>}
+          {canAdmin && <Link href="/admin/payment-summary" className="nav-card"><div className="title">💰 สรุปยอดการชำระเงิน</div><div className="desc">สรุปยอดจอง, จ่ายจริง, อัตราการใช้สิทธิ์ และส่งออก Excel</div></Link>}
         </div>}
         {tab === "booking" && user && !canManage && <div className="card"><p className="subtitle">บัญชีทีมตรวจพื้นที่มีสิทธิ์ดูเฉพาะการตรวจสอบพื้นที่</p></div>}
         {tab === "field" && <div className="nav-grid">

@@ -1856,3 +1856,121 @@ export async function getDashboardData(dateStr) {
     unpaidBookings,        // ส่งไปเพื่อข้อมูลอ้างอิง แต่ไม่นับเป็น occupied
   };
 }
+
+export async function getCustomerSummaryData({ date, startDate, endDate, mode = "day" } = {}) {
+  await ensureCustomerSummarySheet();
+  const sheets = getSheetsClient();
+  const res = await executeWithRetry(() =>
+    sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: "Customer_Summary!A2:K",
+      valueRenderOption: "UNFORMATTED_VALUE",
+    })
+  );
+  const rows = res.data.values || [];
+
+  const parsedRows = rows
+    .map((r) => {
+      const rowDate = isoFromSerial(r[0]) || String(r[0] || "").trim();
+      return {
+        date: rowDate,
+        month: String(r[1] || "").trim(),
+        week: String(r[2] || "").trim(),
+        docId: String(r[3] || "").trim(),
+        customerName: String(r[4] || "").trim(),
+        booked: Number(r[5]) || 0,
+        paid: Number(r[6]) || 0,
+        shortfall: Number(r[7]) || 0,
+        urgent: Number(r[8]) || 0,
+        pct: Number(r[9]) || 0,
+        recordedAt: String(r[10] || "").trim(),
+      };
+    })
+    .filter((r) => Boolean(r.date && (r.docId || r.customerName)));
+
+  if (mode === "range") {
+    const from = startDate || "0000-00-00";
+    const to = endDate || "9999-99-99";
+    const matchingRows = parsedRows.filter((r) => r.date >= from && r.date <= to);
+
+    const customerMap = new Map();
+    matchingRows.forEach((r) => {
+      const key = r.docId || r.customerName;
+      if (!customerMap.has(key)) {
+        customerMap.set(key, {
+          docId: r.docId,
+          customerName: r.customerName,
+          booked: 0,
+          paid: 0,
+          shortfall: 0,
+          urgent: 0,
+          daysCount: 0,
+        });
+      }
+      const entry = customerMap.get(key);
+      if (!entry.customerName && r.customerName) entry.customerName = r.customerName;
+      entry.booked += r.booked;
+      entry.paid += r.paid;
+      entry.shortfall += r.shortfall;
+      entry.urgent += r.urgent;
+      entry.daysCount += 1;
+    });
+
+    const summaryRows = Array.from(customerMap.values()).map((c) => ({
+      ...c,
+      pct: c.booked > 0 ? Math.round((c.paid / c.booked) * 1000) / 1000 : (c.urgent > 0 ? 1 : 0),
+    }));
+    summaryRows.sort((a, b) => a.docId.localeCompare(b.docId, "th", { numeric: true }));
+
+    const totals = {
+      totalBooked: summaryRows.reduce((acc, c) => acc + c.booked, 0),
+      totalPaid: summaryRows.reduce((acc, c) => acc + c.paid, 0),
+      totalShortfall: summaryRows.reduce((acc, c) => acc + c.shortfall, 0),
+      totalUrgent: summaryRows.reduce((acc, c) => acc + c.urgent, 0),
+      customerCount: summaryRows.length,
+      daysInRange: new Set(matchingRows.map((r) => r.date)).size,
+    };
+    totals.overallPct = totals.totalBooked > 0 ? Math.round((totals.totalPaid / totals.totalBooked) * 1000) / 1000 : 0;
+
+    const dailyBreakdown = [...matchingRows].sort(
+      (a, b) => a.date.localeCompare(b.date) || a.docId.localeCompare(b.docId, "th", { numeric: true })
+    );
+
+    return {
+      mode: "range",
+      startDate: from,
+      endDate: to,
+      totals,
+      summaryRows,
+      dailyBreakdown,
+      latestRecordedAt: matchingRows[matchingRows.length - 1]?.recordedAt || "",
+    };
+  }
+
+  const targetDate = date || getBangkokCalendarDateIso();
+  const matchingRows = parsedRows.filter((r) => r.date === targetDate);
+  matchingRows.sort((a, b) => a.docId.localeCompare(b.docId, "th", { numeric: true }));
+
+  const totals = {
+    totalBooked: matchingRows.reduce((acc, c) => acc + c.booked, 0),
+    totalPaid: matchingRows.reduce((acc, c) => acc + c.paid, 0),
+    totalShortfall: matchingRows.reduce((acc, c) => acc + c.shortfall, 0),
+    totalUrgent: matchingRows.reduce((acc, c) => acc + c.urgent, 0),
+    customerCount: matchingRows.length,
+  };
+  totals.overallPct = totals.totalBooked > 0 ? Math.round((totals.totalPaid / totals.totalBooked) * 1000) / 1000 : 0;
+
+  const targetSerial = isoDateToSerial(targetDate);
+  const sourceDate = targetSerial ? isoFromSerial(targetSerial - 1) : "";
+
+  return {
+    mode: "day",
+    date: targetDate,
+    sourceDate,
+    totals,
+    summaryRows: matchingRows,
+    dailyBreakdown: matchingRows,
+    latestRecordedAt: matchingRows[0]?.recordedAt || "",
+  };
+}
+
