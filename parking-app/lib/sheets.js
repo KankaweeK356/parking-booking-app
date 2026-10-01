@@ -9,7 +9,7 @@
 //   Slot_Status_Log   : Header แถว 1, ข้อมูลแถว 2+   [ลาน+ช่อง, การกระทำ, เหตุผล, Timestamp]
 //   Required_Summary  : ดูจากรายงาน (คำนวณสดในแอป ไม่เขียนค่าทับชีต)
 //   Booking_Change_Log: Header แถว 1, ข้อมูลแถว 2+   [เวลาที่แก้ไข, การกระทำ, ลูกค้า, ลาน, ช่อง, RowNumber, วันเริ่มเดิม, วันสิ้นสุดเดิม, เวลาเริ่มเดิม, วันเริ่มใหม่, วันสิ้นสุดใหม่, เวลาเริ่มใหม่]
-//   Transection       : Header แถว 1, ข้อมูลแถว 2+   [BoothCode, DocDate]
+//   tbt_DailyFee (Transection): Header แถว 1, ข้อมูลแถว 2+ [BoothCode, Docdate, Quantity, CreateDate]
 
 import { google } from "googleapis";
 import { formatBangkokDateTime, getBangkokCalendarDateIso, getCurrentOperationalBlock, getCurrentOperationalDateIso, getUrgentAccessDefaultDateIso, isBeforeOperationalBlockStart, isOperationalTimeBlock } from "./operational-day";
@@ -180,6 +180,36 @@ export function addDaysIso(isoStr, days) {
   const serial = isoDateToSerial(isoStr);
   if (!serial) return "";
   return isoFromSerial(serial + days);
+}
+
+export function parseTransactionDateSerial(val) {
+  if (val === null || val === undefined || val === "") return null;
+  if (typeof val === "number") return serialToDateOnly(val);
+  const s = String(val).trim();
+  if (!s) return null;
+  const num = Number(s);
+  if (!isNaN(num) && num > 30000 && num < 80000 && !s.includes("-") && !s.includes("/")) {
+    return Math.floor(num);
+  }
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+    return isoDateToSerial(s.slice(0, 10));
+  }
+  const firstPart = s.split(/[\sT]+/)[0];
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(firstPart)) {
+    const [d, m, y] = firstPart.split("/");
+    return isoDateToSerial(`${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`);
+  }
+  return isoDateToSerial(firstPart);
+}
+
+export function parseTransactionQuantity(val) {
+  if (val === undefined || val === null || String(val).trim() === "") return 1;
+  const num = Math.floor(Number(val));
+  if (!isNaN(num) && num > 0) return num;
+  const cleaned = String(val).replace(/[^\d.]/g, "").trim();
+  const fallbackNum = Math.floor(Number(cleaned));
+  if (!isNaN(fallbackNum) && fallbackNum > 0 && !String(val).includes("-")) return fallbackNum;
+  return 1;
 }
 
 // ตรวจสอบว่าข้อความในคอลัมน์เหตุผลถือเป็น Closing reason (ปิด/ยกเลิก/ย้ายออกไปแล้ว) หรือไม่
@@ -1320,7 +1350,11 @@ export async function getTicketReport(dateStr, customerName = "") {
 }
 
 // ---------- tbt_DailyFee (รายการตั๋วจาก MIS) ----------
-// อ่านตามชื่อหัวคอลัมน์ BoothCode และ Docdate โดยไม่สนตัวพิมพ์เล็ก/ใหญ่
+// อ่านตามชื่อหัวคอลัมน์ BoothCode, CreateDate, Quantity และ Docdate โดยไม่สนตัวพิมพ์เล็ก/ใหญ่
+// กฎธุรกิจ:
+// 1. วันที่ยึดตาม CreateDate (เวลาชำระเงินจริง 00:00:00 - 23:59:59 ของวันก่อนหน้าวันปฏิบัติการ)
+//    หาก CreateDate ว่าง ให้ fallback เป็น Docdate
+// 2. จำนวนสิทธิ์นับตาม Quantity หากไม่มีหรือระบุผิด ให้ fallback เป็น 1 สิทธิ์
 // ต้อง throw error เมื่อ header หายหรือ API fail ห้ามคืน []
 export async function getTransectionRows() {
   const sheets = getSheetsClient();
@@ -1334,19 +1368,36 @@ export async function getTransectionRows() {
   const headers = rows[0].map((h) => String(h || "").trim().toLowerCase());
   const boothCodeIdx = headers.indexOf("boothcode");
   const docDateIdx = headers.indexOf("docdate");
-  if (boothCodeIdx === -1 || docDateIdx === -1) {
-    throw new Error('ไม่พบคอลัมน์ "BoothCode" หรือ "Docdate" ในหัวตารางแท็บ tbt_DailyFee กรุณาตรวจสอบชื่อหัวตาราง');
+  const quantityIdx = headers.indexOf("quantity") !== -1 ? headers.indexOf("quantity") : headers.indexOf("qty");
+  const createDateIdx = headers.indexOf("createdate") !== -1 ? headers.indexOf("createdate") : headers.indexOf("timestamp");
+
+  if (boothCodeIdx === -1 || (docDateIdx === -1 && createDateIdx === -1)) {
+    throw new Error('ไม่พบคอลัมน์ "BoothCode" หรือ "Docdate" / "CreateDate" ในหัวตารางแท็บ tbt_DailyFee กรุณาตรวจสอบชื่อหัวตาราง');
   }
 
-  return rows.slice(1).filter((r) => r[boothCodeIdx] && r[docDateIdx]).map((r) => {
-    const rawDate = r[docDateIdx];
-    const dateSerial = typeof rawDate === "number" ? serialToDateOnly(rawDate) : (rawDate ? isoDateToSerial(rawDate) : null);
-    return {
-      boothCode: String(r[boothCodeIdx]).trim(),
-      dateSerial,
-      dateStr: isoFromSerial(dateSerial),
-    };
-  });
+  return rows
+    .slice(1)
+    .filter((r) => r[boothCodeIdx] && ((createDateIdx !== -1 && r[createDateIdx]) || (docDateIdx !== -1 && r[docDateIdx])))
+    .map((r) => {
+      const rawCreateDate = createDateIdx !== -1 ? r[createDateIdx] : null;
+      const rawDocDate = docDateIdx !== -1 ? r[docDateIdx] : null;
+
+      // ลำดับการเลือกวันที่: CreateDate ก่อน -> Fallback เป็น Docdate
+      let dateSerial = parseTransactionDateSerial(rawCreateDate);
+      if (dateSerial === null) {
+        dateSerial = parseTransactionDateSerial(rawDocDate);
+      }
+
+      const quantity = parseTransactionQuantity(quantityIdx !== -1 ? r[quantityIdx] : null);
+
+      return {
+        boothCode: String(r[boothCodeIdx]).trim(),
+        dateSerial,
+        dateStr: isoFromSerial(dateSerial),
+        quantity,
+        createDate: String(rawCreateDate || ""),
+      };
+    });
 }
 
 // ---------- CS Overview ----------
@@ -1618,7 +1669,7 @@ export async function createPaymentSnapshot(operationalDate) {
   });
   const ticketCountByDocId = new Map();
   transectionRows.filter((ticket) => ticket.dateSerial === sourceSerial && ticket.boothCode).forEach((ticket) => {
-    ticketCountByDocId.set(ticket.boothCode, (ticketCountByDocId.get(ticket.boothCode) || 0) + 1);
+    ticketCountByDocId.set(ticket.boothCode, (ticketCountByDocId.get(ticket.boothCode) || 0) + (Number(ticket.quantity) || 1));
   });
   const cancelledUrgentKeys = new Set(
     allBookings

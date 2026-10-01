@@ -31,7 +31,9 @@ function allocatePaymentSnapshot({ operationalDate, bookings, tickets, urgentLog
   const sourceDate = sourceDateOf(operationalDate);
   const active = bookings.filter((item) => item.type !== "Urgent" && !item.adjusted && item.startDate <= operationalDate && operationalDate <= item.endDate);
   const ticketCount = new Map();
-  tickets.filter((ticket) => ticket.date === sourceDate && ticket.docId).forEach((ticket) => ticketCount.set(ticket.docId, (ticketCount.get(ticket.docId) || 0) + 1));
+  tickets.filter((ticket) => ticket.date === sourceDate && ticket.docId).forEach((ticket) => {
+    ticketCount.set(ticket.docId, (ticketCount.get(ticket.docId) || 0) + (Number(ticket.quantity) || 1));
+  });
   urgentLogs.filter((log) => log.ticketIssuedDate === sourceDate && log.docId && !cancelledUrgentKeys.has(`${log.slot}::${log.startTime}`)).forEach((log) => {
     ticketCount.set(log.docId, Math.max(0, (ticketCount.get(log.docId) || 0) - (log.ticketCount || 1)));
   });
@@ -70,7 +72,7 @@ function dashboardStatus({ slot, bookings, snapshot, selectedRound, currentRound
   return "vacant";
 }
 
-const ticket = (docId, date = "2026-09-17") => ({ docId, date });
+const ticket = (docId, date = "2026-09-17", quantity = 1) => ({ docId, date, quantity });
 const slots = { S2: 2, S10: 10, S25: 25 };
 const tests = [];
 const knownRisks = [];
@@ -192,6 +194,116 @@ test("รอบข้ามวัน 23:00 และ 03:00 เรียงหล
   const rows = [booking({ row: 1, slot: "S2", startTime: "03:00" }), booking({ row: 2, slot: "S2", startTime: "23:00" }), booking({ row: 3, slot: "S2", startTime: "19:00" })];
   const result = allocatePaymentSnapshot({ operationalDate: "2026-09-18", bookings: rows, tickets: [ticket("DOC-A"), ticket("DOC-A")], slotNumbers: slots });
   assert.deepEqual(rows.map((row) => result.paidByRow.get(row.row)), [false, true, true]);
+});
+
+// ---------- Multi-ticket Quantity & Midnight Cutoff Tests ----------
+
+test("บิลใบเดียวนับจำนวนตั๋วตาม Quantity (เช่น ซื้อ 13 ใบ ได้ 13 สิทธิ์)", () => {
+  // จำลองกรณี BoothCode 124 จองไว้ 13 ช่อง/รอบ แล้วชำระเงิน 1 แถวด้วย Quantity = 13
+  const rows = Array.from({ length: 13 }, (_, i) =>
+    booking({ row: i + 1, docId: "DOC-124", slot: `S${i + 1}`, startTime: "07:00" })
+  );
+  const tickets = [ticket("DOC-124", "2026-09-17", 13)];
+  const result = allocatePaymentSnapshot({ operationalDate: "2026-09-18", bookings: rows, tickets, slotNumbers: slots });
+  assert.equal(result.active.length, 13);
+  assert.deepEqual(rows.map((r) => result.paidByRow.get(r.row)), Array(13).fill(true));
+});
+
+test("กรณีชำระ Quantity น้อยกว่าจำนวนจอง จัดสิทธิ์ให้ตามจำนวนจริงที่ชำระ", () => {
+  const rows = [
+    booking({ row: 1, docId: "DOC-A", slot: "S2", startTime: "07:00" }),
+    booking({ row: 2, docId: "DOC-A", slot: "S2", startTime: "11:00" }),
+    booking({ row: 3, docId: "DOC-A", slot: "S10", startTime: "07:00" }),
+  ];
+  // ชำระมา 1 แถว แต่ระบุ Quantity = 2
+  const tickets = [ticket("DOC-A", "2026-09-17", 2)];
+  const result = allocatePaymentSnapshot({ operationalDate: "2026-09-18", bookings: rows, tickets, slotNumbers: slots });
+  // ตามลำดับ: S2 (07:00, 11:00) ได้รับสิทธิ์ครบ, S10 (07:00) ไม่ได้รับสิทธิ์
+  assert.deepEqual(rows.map((r) => result.paidByRow.get(r.row)), [true, true, false]);
+});
+
+test("หากไม่มี Quantity หรือระบุผิด ให้ fallback เป็น 1 ใบ", () => {
+  const rows = [
+    booking({ row: 1, docId: "DOC-A", slot: "S2", startTime: "07:00" }),
+    booking({ row: 2, docId: "DOC-A", slot: "S10", startTime: "07:00" }),
+  ];
+  // แถวแรกไม่มี quantity (null), แถวสอง quantity เป็นข้อความไม่ถูกต้อง
+  const tickets = [
+    ticket("DOC-A", "2026-09-17", null),
+    ticket("DOC-A", "2026-09-17", "invalid"),
+  ];
+  const result = allocatePaymentSnapshot({ operationalDate: "2026-09-18", bookings: rows, tickets, slotNumbers: slots });
+  // ได้รับสิทธิ์ 1 + 1 = 2 ช่อง
+  assert.deepEqual(rows.map((r) => result.paidByRow.get(r.row)), [true, true]);
+});
+
+test("ตั๋วชำระหลังเที่ยงคืน (CreateDate ข้ามเป็นวันปฏิบัติการ) ไม่ได้รับสิทธิ์ของวันปฏิบัติการ", () => {
+  const rows = [booking({ row: 1, docId: "DOC-A", slot: "S2", startTime: "07:00" })];
+  // วันปฏิบัติการ 2026-09-18 ต้องการตั๋วที่ CreateDate อยู่ใน 2026-09-17
+  // ลูกค้าชำระเงินวันที่ 2026-09-18 เวลา 00:15:00 น.
+  const lateTicket = ticket("DOC-A", "2026-09-18", 1);
+  const result = allocatePaymentSnapshot({ operationalDate: "2026-09-18", bookings: rows, tickets: [lateTicket], slotNumbers: slots });
+  assert.equal(result.paidByRow.get(1), false);
+});
+
+test("ฟังก์ชัน parseTransactionDateSerial และ parseTransactionQuantity ตรวจสอบความถูกต้องทุกเคส", () => {
+  const GOOGLE_SHEETS_EPOCH = Date.UTC(1899, 11, 30);
+  const MS_PER_DAY = 86400000;
+  function isoDateToSerialLocal(isoStr) {
+    if (!isoStr) return null;
+    const parts = String(isoStr).trim().split("-");
+    if (parts.length < 3) return null;
+    const [y, m, d] = parts.map(Number);
+    if (!y || !m || !d) return null;
+    return Math.round((Date.UTC(y, m - 1, d) - GOOGLE_SHEETS_EPOCH) / MS_PER_DAY);
+  }
+  function parseTransactionDateSerialLocal(val) {
+    if (val === null || val === undefined || val === "") return null;
+    if (typeof val === "number") return Math.floor(val);
+    const s = String(val).trim();
+    if (!s) return null;
+    const num = Number(s);
+    if (!isNaN(num) && num > 30000 && num < 80000 && !s.includes("-") && !s.includes("/")) {
+      return Math.floor(num);
+    }
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
+      return isoDateToSerialLocal(s.slice(0, 10));
+    }
+    const firstPart = s.split(/[\sT]+/)[0];
+    if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(firstPart)) {
+      const [d, m, y] = firstPart.split("/");
+      return isoDateToSerialLocal(`${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`);
+    }
+    return isoDateToSerialLocal(firstPart);
+  }
+  function parseTransactionQuantityLocal(val) {
+    if (val === undefined || val === null || String(val).trim() === "") return 1;
+    const num = Math.floor(Number(val));
+    if (!isNaN(num) && num > 0) return num;
+    const cleaned = String(val).replace(/[^\d.]/g, "").trim();
+    const fallbackNum = Math.floor(Number(cleaned));
+    if (!isNaN(fallbackNum) && fallbackNum > 0 && !String(val).includes("-")) return fallbackNum;
+    return 1;
+  }
+
+  const expectedSerial = isoDateToSerialLocal("2026-09-29");
+  assert.equal(parseTransactionDateSerialLocal("2026-09-29 17:53:55"), expectedSerial);
+  assert.equal(parseTransactionDateSerialLocal("2026-09-29T17:53:55"), expectedSerial);
+  assert.equal(parseTransactionDateSerialLocal("2026-09-29"), expectedSerial);
+  assert.equal(parseTransactionDateSerialLocal("29/09/2026 17:53:55"), expectedSerial);
+  assert.equal(parseTransactionDateSerialLocal(46294.745775463), expectedSerial);
+  assert.equal(parseTransactionDateSerialLocal(""), null);
+  assert.equal(parseTransactionDateSerialLocal(null), null);
+
+  assert.equal(parseTransactionQuantityLocal(13), 13);
+  assert.equal(parseTransactionQuantityLocal("13"), 13);
+  assert.equal(parseTransactionQuantityLocal(" 13 "), 13);
+  assert.equal(parseTransactionQuantityLocal("13.0"), 13);
+  assert.equal(parseTransactionQuantityLocal(0), 1);
+  assert.equal(parseTransactionQuantityLocal("-5"), 1);
+  assert.equal(parseTransactionQuantityLocal(""), 1);
+  assert.equal(parseTransactionQuantityLocal(null), 1);
+  assert.equal(parseTransactionQuantityLocal("abc"), 1);
 });
 
 // กรณีข้อมูลต้นทางตอบกลับแบบครบรูปแบบแต่มีจำนวนรายการน้อยลงเป็นความเสี่ยงเชิงทฤษฎี
