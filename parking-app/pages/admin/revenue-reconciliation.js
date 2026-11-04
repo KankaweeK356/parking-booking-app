@@ -264,54 +264,30 @@ export default function RevenueReconciliationPage() {
             <span style={{ fontWeight: 700, fontSize: 15, color: "#1e293b" }}>
               📅 เลือกช่วงวันที่ในตั๋วรายวัน
             </span>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            <div style={{ display: "flex", gap: 6 }}>
               <button
                 type="button"
                 className="btn btn-secondary"
-                style={{ padding: "5px 11px", fontSize: 12.5, background: "#f8fafc", borderColor: "#cbd5e1" }}
+                style={{ padding: "5px 14px", fontSize: 13, background: "#f8fafc", borderColor: "#cbd5e1", color: "#334155" }}
                 onClick={setPresetYesterday}
               >
-                เมื่อวาน (ปิดกะแล้ว)
+                เมื่อวาน
               </button>
               <button
                 type="button"
                 className="btn btn-secondary"
-                style={{ padding: "5px 11px", fontSize: 12.5, background: "#f8fafc", borderColor: "#cbd5e1" }}
+                style={{ padding: "5px 14px", fontSize: 13, background: "#f8fafc", borderColor: "#cbd5e1", color: "#334155" }}
                 onClick={setPresetToday}
               >
-                วันนี้ (ระหว่างวัน)
+                วันนี้
               </button>
               <button
                 type="button"
                 className="btn btn-secondary"
-                style={{ padding: "5px 11px", fontSize: 12.5, background: "#f8fafc", borderColor: "#cbd5e1" }}
-                onClick={setPresetThisWeek}
-              >
-                สัปดาห์นี้
-              </button>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                style={{ padding: "5px 11px", fontSize: 12.5, background: "#f8fafc", borderColor: "#cbd5e1" }}
-                onClick={setPresetLastWeek}
-              >
-                สัปดาห์ก่อน
-              </button>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                style={{ padding: "5px 11px", fontSize: 12.5, background: "#f8fafc", borderColor: "#cbd5e1" }}
+                style={{ padding: "5px 14px", fontSize: 13, background: "#f8fafc", borderColor: "#cbd5e1", color: "#334155" }}
                 onClick={setPresetThisMonth}
               >
-                เดือนนี้ (MTD)
-              </button>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                style={{ padding: "5px 11px", fontSize: 12.5, background: "#f8fafc", borderColor: "#cbd5e1" }}
-                onClick={setPresetLastMonth}
-              >
-                เดือนก่อน
+                เดือนนี้
               </button>
             </div>
           </div>
