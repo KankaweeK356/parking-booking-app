@@ -589,6 +589,7 @@ export default function RevenueReconciliationPage() {
                     <th style={{ padding: "8px 10px", textAlign: "center" }}>วันที่ในตั๋ว</th>
                     <th style={{ padding: "8px 10px", textAlign: "center" }}>รหัสลูกค้า</th>
                     <th style={{ padding: "8px 10px", textAlign: "left" }}>ชื่อลูกค้า</th>
+                    <th style={{ padding: "8px 10px", textAlign: "right" }}>จอง (ใบ)</th>
                     <th style={{ padding: "8px 10px", textAlign: "right" }}>ชำระ (ใบ)</th>
                     <th style={{ padding: "8px 10px", textAlign: "right" }}>เงินรับจริง (฿)</th>
                     <th style={{ padding: "8px 10px", textAlign: "right" }}>รายได้รอบวัน (฿)</th>
@@ -601,7 +602,7 @@ export default function RevenueReconciliationPage() {
                 <tbody>
                   {filteredCustomers.length === 0 ? (
                     <tr>
-                      <td colSpan={11} style={{ textAlign: "center", padding: 24, color: "#94a3b8" }}>
+                      <td colSpan={12} style={{ textAlign: "center", padding: 24, color: "#94a3b8" }}>
                         ไม่พบข้อมูลที่ตรงกับเงื่อนไขการค้นหา
                       </td>
                     </tr>
@@ -622,6 +623,9 @@ export default function RevenueReconciliationPage() {
                           {c.boothCode}
                         </td>
                         <td style={{ padding: "8px 10px", textAlign: "left" }}>{c.customerName}</td>
+                        <td style={{ padding: "8px 10px", textAlign: "right", color: "#475569" }}>
+                          {c.bookedTickets || 0}
+                        </td>
                         <td style={{ padding: "8px 10px", textAlign: "right" }}>{c.paidTickets}</td>
                         <td style={{ padding: "8px 10px", textAlign: "right", fontWeight: 600 }}>
                           {formatCurrency(c.totalPaid)}

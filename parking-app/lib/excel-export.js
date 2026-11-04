@@ -127,6 +127,7 @@ export async function exportRevenueReconciliationExcel(data) {
     "วันที่ในตั๋ว",
     "รหัสลูกค้า",
     "ชื่อลูกค้า",
+    "สิทธิ์ที่จอง (ใบ)",
     "สิทธิ์ที่ชำระ (ใบ)",
     "ยอดเงินสดรับจริง (บาท)",
     "รายได้รอบวัน-จอดวันนั้น (บาท)",
@@ -155,6 +156,7 @@ export async function exportRevenueReconciliationExcel(data) {
       c.date,
       c.boothCode,
       c.customerName,
+      c.bookedTickets || 0,
       c.paidTickets,
       c.totalPaid,
       c.earnedToday,
@@ -178,30 +180,32 @@ export async function exportRevenueReconciliationExcel(data) {
     r.getCell(8).alignment = { horizontal: "right", vertical: "middle" };
     r.getCell(9).alignment = { horizontal: "right", vertical: "middle" };
     r.getCell(10).alignment = { horizontal: "right", vertical: "middle" };
-    r.getCell(11).alignment = { horizontal: "center", vertical: "middle" };
+    r.getCell(11).alignment = { horizontal: "right", vertical: "middle" };
+    r.getCell(12).alignment = { horizontal: "center", vertical: "middle" };
 
     // Format ตัวเลข
     r.getCell(5).numFmt = "#,##0";
-    r.getCell(6).numFmt = "#,##0.00";
+    r.getCell(6).numFmt = "#,##0";
     r.getCell(7).numFmt = "#,##0.00";
     r.getCell(8).numFmt = "#,##0.00";
     r.getCell(9).numFmt = "#,##0.00";
     r.getCell(10).numFmt = "#,##0.00";
+    r.getCell(11).numFmt = "#,##0.00";
 
     // สีข้อความสถานะ
     if (c.statusKey === "shortfall") {
-      r.getCell(10).font = { ...boldFont, color: { argb: "FFDC2626" } };
       r.getCell(11).font = { ...boldFont, color: { argb: "FFDC2626" } };
+      r.getCell(12).font = { ...boldFont, color: { argb: "FFDC2626" } };
     } else if (c.statusKey === "surplus") {
-      r.getCell(9).font = { ...boldFont, color: { argb: "FF0284C7" } };
-      r.getCell(11).font = { ...boldFont, color: { argb: "FF0284C7" } };
+      r.getCell(10).font = { ...boldFont, color: { argb: "FF0284C7" } };
+      r.getCell(12).font = { ...boldFont, color: { argb: "FF0284C7" } };
     } else {
-      r.getCell(11).font = { ...boldFont, color: { argb: "FF059669" } };
+      r.getCell(12).font = { ...boldFont, color: { argb: "FF059669" } };
     }
 
     r.eachCell((cell) => {
       cell.border = thinBorder;
-      if (rowFill && cell.col !== 11) cell.fill = rowFill;
+      if (rowFill && cell.col !== 12) cell.fill = rowFill;
     });
   });
 
@@ -211,6 +215,7 @@ export async function exportRevenueReconciliationExcel(data) {
     "",
     "",
     `${customerSummary.length} รายการ`,
+    totals.totalBooked || 0,
     totals.totalTickets,
     totals.totalCash,
     totals.earnedToday,
@@ -231,13 +236,15 @@ export async function exportRevenueReconciliationExcel(data) {
   totalRow1.getCell(8).alignment = { horizontal: "right", vertical: "middle" };
   totalRow1.getCell(9).alignment = { horizontal: "right", vertical: "middle" };
   totalRow1.getCell(10).alignment = { horizontal: "right", vertical: "middle" };
+  totalRow1.getCell(11).alignment = { horizontal: "right", vertical: "middle" };
 
   totalRow1.getCell(5).numFmt = "#,##0";
-  totalRow1.getCell(6).numFmt = "#,##0.00";
+  totalRow1.getCell(6).numFmt = "#,##0";
   totalRow1.getCell(7).numFmt = "#,##0.00";
   totalRow1.getCell(8).numFmt = "#,##0.00";
   totalRow1.getCell(9).numFmt = "#,##0.00";
   totalRow1.getCell(10).numFmt = "#,##0.00";
+  totalRow1.getCell(11).numFmt = "#,##0.00";
 
   totalRow1.eachCell((cell) => {
     cell.fill = totalRowFill;

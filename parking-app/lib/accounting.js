@@ -99,6 +99,7 @@ export async function getRevenueReconciliationData({ startDate, endDate } = {}) 
   let grandSurplus = 0;
   let grandShortfall = 0;
   let grandPaidTickets = 0;
+  let grandBookedTickets = 0;
   const uniqueCustomers = new Set();
 
   // วนลูปแต่ละวันใน Date Range
@@ -229,10 +230,13 @@ export async function getRevenueReconciliationData({ startDate, endDate } = {}) 
       }
 
       // บันทึกลง customerSummary
+      const totalBookedSlots = urgentSlotsCount + advanceSlotsCount;
       customerSummary.push({
         date: dIso,
         boothCode: docId,
         customerName: custName,
+        bookedTickets: totalBookedSlots,
+        paidTickets: totalPaidTickets,
         totalPaid: totalPaidAmount,
         earnedToday: earnedTodayAmount,
         advanceTomorrow: advanceTomorrowAmount,
@@ -240,7 +244,6 @@ export async function getRevenueReconciliationData({ startDate, endDate } = {}) 
         shortfall: shortfallAmount,
         status,
         statusKey,
-        paidTickets: totalPaidTickets,
         urgentCount: urgentSlotsCount,
         advanceCount: advanceSlotsCount,
         surplusTickets: surplusSlots,
@@ -254,6 +257,7 @@ export async function getRevenueReconciliationData({ startDate, endDate } = {}) 
       grandSurplus += surplusAmount;
       grandShortfall += shortfallAmount;
       grandPaidTickets += totalPaidTickets;
+      grandBookedTickets += totalBookedSlots;
 
       // 5. บันทึกลง rawTransactions (Sheet 2) แยกตามแถวตั๋ว POS
       let remUrgentToAssign = earnedTodaySlots;
@@ -314,6 +318,7 @@ export async function getRevenueReconciliationData({ startDate, endDate } = {}) 
       days: endSerial - startSerial + 1,
     },
     totals: {
+      totalBooked: grandBookedTickets,
       totalCash: grandTotalCash,
       earnedToday: grandEarnedToday,
       advanceTomorrow: grandAdvanceTomorrow,
