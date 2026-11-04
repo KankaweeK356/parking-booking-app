@@ -125,7 +125,7 @@ export default function Home() {
             <Link href="/admin/revenue-reconciliation" className="nav-card">
               <div className="title">📊 สรุปการชำระเงิน</div>
               <div className="desc">
-                กระทบยอดเงินสด POS รายได้สิทธิ์ด่วน รายได้รับล่วงหน้า และส่งออก Excel สำหรับฝ่ายบัญชี
+                กระทบยอดเงินสดตั๋วรายวัน รายได้รอบวัน รายได้รับล่วงหน้า และส่งออก Excel สำหรับฝ่ายบัญชี
               </div>
             </Link>
           </div>

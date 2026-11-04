@@ -270,7 +270,7 @@ export async function getRevenueReconciliationData({ startDate, endDate } = {}) 
 
           if (remUrgentToAssign > 0) {
             remUrgentToAssign--;
-            attribution = "รายได้ค่าบริการวันนี้ (สิทธิ์ด่วน)";
+            attribution = "รายได้ค่าบริการรอบวัน (จอดวันนั้น)";
             serviceDate = dIso;
             const uItem = urgentQueue.shift();
             if (uItem) {

@@ -5,35 +5,33 @@ import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { exportRevenueReconciliationExcel } from "../../lib/excel-export";
 
-function getYesterdayIso() {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Bangkok",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(d);
-}
-
-function getTodayIso() {
-  return new Intl.DateTimeFormat("en-CA", {
+function getBangkokDateObj() {
+  const str = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Bangkok",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
+  return new Date(`${str}T12:00:00Z`);
 }
 
-function getDaysAgoIso(days) {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
+function formatDate(d) {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Bangkok",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
   }).format(d);
+}
+
+function getYesterdayIso() {
+  const d = getBangkokDateObj();
+  d.setUTCDate(d.getUTCDate() - 1);
+  return formatDate(d);
+}
+
+function getTodayIso() {
+  return formatDate(getBangkokDateObj());
 }
 
 function formatCurrency(val) {
@@ -120,7 +118,7 @@ export default function RevenueReconciliationPage() {
     }
   }
 
-  // Quick Preset Handlers
+  // Preset Handlers สำหรับรอบการทำงานบัญชี
   function setPresetYesterday() {
     const y = getYesterdayIso();
     setStartDate(y);
@@ -133,21 +131,47 @@ export default function RevenueReconciliationPage() {
     setEndDate(t);
   }
 
-  function setPreset7Days() {
-    setStartDate(getDaysAgoIso(7));
-    setEndDate(getYesterdayIso());
+  function setPresetThisWeek() {
+    const d = getBangkokDateObj();
+    const day = d.getUTCDay() || 7; // 1 = จันทร์, 7 = อาทิตย์
+    const mon = new Date(d);
+    mon.setUTCDate(d.getUTCDate() - (day - 1));
+    const yesterday = new Date(d);
+    yesterday.setUTCDate(d.getUTCDate() - 1);
+
+    setStartDate(formatDate(mon));
+    setEndDate(day === 1 ? formatDate(d) : formatDate(yesterday));
   }
 
-  function setPresetMonth() {
-    const now = new Date();
-    const firstDay = new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Asia/Bangkok",
-      year: "numeric",
-      month: "2-digit",
-      day: "01",
-    }).format(now);
-    setStartDate(firstDay);
-    setEndDate(getYesterdayIso());
+  function setPresetLastWeek() {
+    const d = getBangkokDateObj();
+    const day = d.getUTCDay() || 7;
+    const mon = new Date(d);
+    mon.setUTCDate(d.getUTCDate() - (day - 1) - 7);
+    const sun = new Date(d);
+    sun.setUTCDate(d.getUTCDate() - (day - 1) - 1);
+
+    setStartDate(formatDate(mon));
+    setEndDate(formatDate(sun));
+  }
+
+  function setPresetThisMonth() {
+    const d = getBangkokDateObj();
+    const firstDay = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1, 12));
+    const yesterday = new Date(d);
+    yesterday.setUTCDate(d.getUTCDate() - 1);
+
+    setStartDate(formatDate(firstDay));
+    setEndDate(d.getUTCDate() === 1 ? formatDate(d) : formatDate(yesterday));
+  }
+
+  function setPresetLastMonth() {
+    const d = getBangkokDateObj();
+    const firstDay = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - 1, 1, 12));
+    const lastDay = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 0, 12));
+
+    setStartDate(formatDate(firstDay));
+    setEndDate(formatDate(lastDay));
   }
 
   // กรองรายการลูกค้าในตารางตรวจสอบด่วน
@@ -220,65 +244,81 @@ export default function RevenueReconciliationPage() {
               <span>📊 สรุปการชำระเงิน (ฝ่ายบัญชีและการเงิน)</span>
             </h1>
             <span style={{ fontSize: 13, color: "#94a3b8" }}>
-              กระทบยอดเงินสด POS • รับรู้รายได้สิทธิ์ด่วน • บันทึกเงินรับล่วงหน้า
+              กระทบยอดเงินสดตั๋วรายวัน • รับรู้รายได้รอบวัน • บันทึกเงินรับล่วงหน้า
             </span>
           </div>
           <Link href="/" className="back" style={{ color: "#cbd5e1" }}>← กลับหน้าหลัก</Link>
         </div>
       </div>
 
-      <div className="page" style={{ maxWidth: 1040, paddingBottom: 80 }}>
+      <div className="page" style={{ maxWidth: 1040, paddingBottom: 60 }}>
         {error && (
           <div className="alert alert-error" style={{ marginBottom: 16 }}>
             {error}
           </div>
         )}
 
-        {/* กล่องเลือกช่วงวันที่ */}
+        {/* กล่องเลือกช่วงวันที่ และปุ่มสั่งการ */}
         <div className="card" style={{ marginBottom: 20, boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12, marginBottom: 14 }}>
-            <span style={{ fontWeight: 700, fontSize: 16, color: "#1e293b" }}>
-              📅 เลือกช่วงวันที่ทำรายการ POS
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
+            <span style={{ fontWeight: 700, fontSize: 15, color: "#1e293b" }}>
+              📅 เลือกช่วงวันที่ในตั๋วรายวัน
             </span>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               <button
                 type="button"
                 className="btn btn-secondary"
-                style={{ padding: "6px 12px", fontSize: 13, background: "#f8fafc", borderColor: "#cbd5e1" }}
+                style={{ padding: "5px 11px", fontSize: 12.5, background: "#f8fafc", borderColor: "#cbd5e1" }}
                 onClick={setPresetYesterday}
               >
-                เมื่อวาน (D-1)
+                เมื่อวาน (ปิดกะแล้ว)
               </button>
               <button
                 type="button"
                 className="btn btn-secondary"
-                style={{ padding: "6px 12px", fontSize: 13, background: "#f8fafc", borderColor: "#cbd5e1" }}
+                style={{ padding: "5px 11px", fontSize: 12.5, background: "#f8fafc", borderColor: "#cbd5e1" }}
                 onClick={setPresetToday}
               >
-                วันนี้
+                วันนี้ (ระหว่างวัน)
               </button>
               <button
                 type="button"
                 className="btn btn-secondary"
-                style={{ padding: "6px 12px", fontSize: 13, background: "#f8fafc", borderColor: "#cbd5e1" }}
-                onClick={setPreset7Days}
+                style={{ padding: "5px 11px", fontSize: 12.5, background: "#f8fafc", borderColor: "#cbd5e1" }}
+                onClick={setPresetThisWeek}
               >
-                7 วันย้อนหลัง
+                สัปดาห์นี้
               </button>
               <button
                 type="button"
                 className="btn btn-secondary"
-                style={{ padding: "6px 12px", fontSize: 13, background: "#f8fafc", borderColor: "#cbd5e1" }}
-                onClick={setPresetMonth}
+                style={{ padding: "5px 11px", fontSize: 12.5, background: "#f8fafc", borderColor: "#cbd5e1" }}
+                onClick={setPresetLastWeek}
               >
-                ต้นเดือนถึงเมื่อวาน
+                สัปดาห์ก่อน
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ padding: "5px 11px", fontSize: 12.5, background: "#f8fafc", borderColor: "#cbd5e1" }}
+                onClick={setPresetThisMonth}
+              >
+                เดือนนี้ (MTD)
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ padding: "5px 11px", fontSize: 12.5, background: "#f8fafc", borderColor: "#cbd5e1" }}
+                onClick={setPresetLastMonth}
+              >
+                เดือนก่อน
               </button>
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14, alignItems: "flex-end" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 14, alignItems: "flex-end" }}>
             <div>
-              <label style={{ fontSize: 13, color: "#475569", marginBottom: 4 }}>วันที่เริ่มต้น (POS Date)</label>
+              <label style={{ fontSize: 13, color: "#475569", marginBottom: 4 }}>วันที่เริ่มต้น (วันที่ในตั๋ว)</label>
               <input
                 type="date"
                 value={startDate}
@@ -286,22 +326,59 @@ export default function RevenueReconciliationPage() {
               />
             </div>
             <div>
-              <label style={{ fontSize: 13, color: "#475569", marginBottom: 4 }}>วันที่สิ้นสุด (POS Date)</label>
+              <label style={{ fontSize: 13, color: "#475569", marginBottom: 4 }}>วันที่สิ้นสุด (วันที่ในตั๋ว)</label>
               <input
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
               />
             </div>
-            <div>
+            {/* แถวปุ่มคำนวณและปุ่มส่งออก Excel อยู่เคียงข้างกันอย่างลงตัว */}
+            <div style={{ display: "flex", gap: 8 }}>
               <button
                 type="button"
                 className="btn btn-primary"
-                style={{ width: "100%", padding: "10px 18px", background: "#1e293b" }}
+                style={{
+                  flex: 1,
+                  padding: "10px 14px",
+                  background: "#1e293b",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6,
+                  fontSize: 14,
+                  whiteSpace: "nowrap",
+                }}
                 onClick={loadData}
                 disabled={loading}
               >
-                {loading ? "กำลังคำนวณ..." : "🔍 คำนวณกระทบยอด"}
+                <span>🔍</span>
+                <span>{loading ? "กำลังคำนวณ..." : "คำนวณกระทบยอด"}</span>
+              </button>
+
+              <button
+                type="button"
+                className="btn"
+                style={{
+                  flex: 1,
+                  padding: "10px 14px",
+                  background: "#107c41",
+                  color: "white",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6,
+                  fontSize: 14,
+                  whiteSpace: "nowrap",
+                  cursor: exporting || loading || !reconData ? "not-allowed" : "pointer",
+                  opacity: exporting || loading || !reconData ? 0.65 : 1,
+                }}
+                onClick={handleExportExcel}
+                disabled={exporting || loading || !reconData}
+                title="ส่งออกไฟล์ Excel 2 แท็บ (สรุปภาพรวม + รายละเอียดตั๋วรายวัน)"
+              >
+                <span>📥</span>
+                <span>{exporting ? "กำลังส่งออก..." : "ส่งออก Excel"}</span>
               </button>
             </div>
           </div>
@@ -328,7 +405,7 @@ export default function RevenueReconciliationPage() {
             }}
           >
             <div style={{ fontSize: 13, fontWeight: 700, color: "#64748b", marginBottom: 4 }}>
-              1. ยอดเงินสดรับจริง (POS)
+              1. ยอดเงินสดจากตั๋วรายวัน
             </div>
             <div
               style={{
@@ -342,11 +419,11 @@ export default function RevenueReconciliationPage() {
               ฿{formatCurrency(totals.totalCash)}
             </div>
             <div style={{ fontSize: 12, color: "#64748b", marginTop: 6 }}>
-              {formatNumber(totals.totalTickets)} สิทธิ์ ({formatNumber(totals.transactionCount)} สลิป)
+              {formatNumber(totals.totalTickets)} สิทธิ์ ({formatNumber(totals.transactionCount)} รายการตั๋ว)
             </div>
           </div>
 
-          {/* Card 2: รายได้วันนี้ (สิทธิ์ด่วน) */}
+          {/* Card 2: รายได้รอบวัน (จอดวันนั้น) */}
           <div
             className="card"
             style={{
@@ -358,7 +435,7 @@ export default function RevenueReconciliationPage() {
             }}
           >
             <div style={{ fontSize: 13, fontWeight: 700, color: "#059669", marginBottom: 4 }}>
-              2. รายได้ค่าบริการวันนี้ (สิทธิ์ด่วน)
+              2. รายได้ค่าบริการรอบวัน (จอดวันนั้น)
             </div>
             <div
               style={{
@@ -372,7 +449,7 @@ export default function RevenueReconciliationPage() {
               ฿{formatCurrency(totals.earnedToday)}
             </div>
             <div style={{ fontSize: 12, color: "#64748b", marginTop: 6 }}>
-              {formatNumber(totals.earnedToday / 100)} สิทธิ์ (รับรู้รายได้ทันที)
+              {formatNumber(totals.earnedToday / 100)} สิทธิ์ (รับรู้รายได้ทันทีตามสิทธิ์ที่จองในรอบวัน)
             </div>
           </div>
 
@@ -458,7 +535,7 @@ export default function RevenueReconciliationPage() {
             <div>
               <strong>⚠️ รอตรวจยอดชำระ:</strong> พบยอดขาดชำระรวม{" "}
               <strong>฿{formatCurrency(totals.shortfall)}</strong> (
-              {formatNumber(totals.shortfall / 100)} สิทธิ์) — CS ทำการจองแต่ตั๋ว POS ไม่เพียงพอ
+              {formatNumber(totals.shortfall / 100)} สิทธิ์) — CS ทำการจองแต่ตั๋วรายวันไม่เพียงพอ
             </div>
             <button
               type="button"
@@ -477,47 +554,7 @@ export default function RevenueReconciliationPage() {
           </div>
         )}
 
-        {/* ปุ่มส่งออก Excel หลักเพียงปุ่มเดียว */}
-        <div
-          className="card"
-          style={{
-            marginBottom: 24,
-            padding: 24,
-            textAlign: "center",
-            background: "#f8fafc",
-            border: "1px dashed #cbd5e1",
-          }}
-        >
-          <button
-            type="button"
-            className="btn"
-            style={{
-              background: "#107c41",
-              color: "white",
-              fontSize: 17,
-              fontWeight: 700,
-              padding: "14px 32px",
-              borderRadius: 8,
-              boxShadow: "0 2px 6px rgba(16, 124, 65, 0.25)",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 10,
-              cursor: exporting || loading ? "not-allowed" : "pointer",
-            }}
-            onClick={handleExportExcel}
-            disabled={exporting || loading || !reconData}
-          >
-            <span style={{ fontSize: 20 }}>📥</span>
-            <span>
-              {exporting ? "กำลังสร้างไฟล์ Excel..." : "ส่งออกไฟล์ Excel สรุปการชำระเงิน (.xlsx)"}
-            </span>
-          </button>
-          <div style={{ fontSize: 13, color: "#64748b", marginTop: 8 }}>
-            ไฟล์ Excel สมบูรณ์ 2 แท็บ (แท็บ 1: สรุปภาพรวมรายลูกค้า • แท็บ 2: รายละเอียดสลิป POS พร้อมแถวอ้างอิง)
-          </div>
-        </div>
-
-        {/* ตารางตรวจสอบรายการหน้าเว็บ (Lightweight Sanity Check) */}
+        {/* ตารางตรวจสอบรายการรายลูกค้า (Lightweight Sanity Check) */}
         {reconData && (
           <div className="card" style={{ padding: 20 }}>
             <div
@@ -535,7 +572,7 @@ export default function RevenueReconciliationPage() {
                   📋 ตรวจสอบรายการรายลูกค้า ({filteredCustomers.length} ราย)
                 </h3>
                 <span style={{ fontSize: 12, color: "#64748b" }}>
-                  คลิกกรองหรือค้นหาเพื่อตรวจสอบความถูกต้องเบื้องต้นก่อนนำไฟล์ไปใช้
+                  สามารถกรองหรือค้นหาเพื่อตรวจสอบความถูกต้องบนหน้าเว็บ หรือกดปุ่ม <strong>ส่งออก Excel</strong> ด้านบนเพื่อดาวน์โหลดรายงาน 2 แท็บ
                 </span>
               </div>
 
@@ -573,12 +610,12 @@ export default function RevenueReconciliationPage() {
                 <thead>
                   <tr style={{ background: "#f1f5f9", borderBottom: "2px solid #cbd5e1", color: "#334155" }}>
                     <th style={{ padding: "8px 10px", textAlign: "center" }}>#</th>
-                    <th style={{ padding: "8px 10px", textAlign: "center" }}>วันที่ POS</th>
+                    <th style={{ padding: "8px 10px", textAlign: "center" }}>วันที่ในตั๋ว</th>
                     <th style={{ padding: "8px 10px", textAlign: "center" }}>รหัสลูกค้า</th>
                     <th style={{ padding: "8px 10px", textAlign: "left" }}>ชื่อลูกค้า</th>
                     <th style={{ padding: "8px 10px", textAlign: "right" }}>ชำระ (ใบ)</th>
                     <th style={{ padding: "8px 10px", textAlign: "right" }}>เงินรับจริง (฿)</th>
-                    <th style={{ padding: "8px 10px", textAlign: "right" }}>รายได้วันนี้ (฿)</th>
+                    <th style={{ padding: "8px 10px", textAlign: "right" }}>รายได้รอบวัน (฿)</th>
                     <th style={{ padding: "8px 10px", textAlign: "right" }}>รับล่วงหน้า (฿)</th>
                     <th style={{ padding: "8px 10px", textAlign: "right" }}>ส่วนเกิน (฿)</th>
                     <th style={{ padding: "8px 10px", textAlign: "right" }}>รอตรวจ (฿)</th>

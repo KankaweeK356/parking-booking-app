@@ -1,5 +1,5 @@
 // lib/excel-export.js
-// ตัวช่วยสร้างไฟล์ Excel สรุปการชำระเงินและกระทบยอดรายได้แบบ 2 แท็บ (Sheet 1: สรุปภาพรวม, Sheet 2: รายละเอียดสลิป POS)
+// ตัวช่วยสร้างไฟล์ Excel สรุปการชำระเงินและกระทบยอดรายได้แบบ 2 แท็บ (Sheet 1: สรุปภาพรวม, Sheet 2: รายละเอียดตั๋วรายวัน)
 
 export async function exportRevenueReconciliationExcel(data) {
   const ExcelJS = (await import("exceljs/dist/exceljs.min.js")).default || (await import("exceljs/dist/exceljs.min.js"));
@@ -19,12 +19,6 @@ export async function exportRevenueReconciliationExcel(data) {
     type: "pattern",
     pattern: "solid",
     fgColor: { argb: "FF1E293B" }, // #1e293b
-  };
-
-  const navySubFill = {
-    type: "pattern",
-    pattern: "solid",
-    fgColor: { argb: "FF334155" }, // #334155
   };
 
   const kpiBoxFill = {
@@ -88,7 +82,7 @@ export async function exportRevenueReconciliationExcel(data) {
   ws1.addRow(["รายงานสรุปการชำระเงินและกระทบยอดรายได้ (Revenue & Payment Reconciliation)"]);
   ws1.getRow(1).font = { name: "Sarabun", size: 16, bold: true, color: { argb: "FF0F172A" } };
 
-  ws1.addRow([`ช่วงวันที่ทำรายการ POS: ${dateRange.startDate} ถึง ${dateRange.endDate} (รวม ${dateRange.days} วัน)`]);
+  ws1.addRow([`ช่วงวันที่ในตั๋ว: ${dateRange.startDate} ถึง ${dateRange.endDate} (รวม ${dateRange.days} วัน)`]);
   ws1.getRow(2).font = { name: "Sarabun", size: 11, color: { argb: "FF475569" } };
 
   const printedAtStr = new Intl.DateTimeFormat("th-TH-u-ca-gregory", {
@@ -100,14 +94,14 @@ export async function exportRevenueReconciliationExcel(data) {
     second: "2-digit",
   }).format(new Date());
 
-  ws1.addRow([`พิมพ์รายงานเมื่อ: ${printedAtStr} | จำนวนลูกค้า: ${totals.customerCount} ราย | รวมสลิป POS: ${totals.transactionCount} รายการ`]);
+  ws1.addRow([`พิมพ์รายงานเมื่อ: ${printedAtStr} | จำนวนลูกค้า: ${totals.customerCount} ราย | รวมตั๋ว: ${totals.totalTickets} ใบ`]);
   ws1.getRow(3).font = { name: "Sarabun", size: 9, color: { argb: "FF64748B" } };
   ws1.addRow([]); // Blank row 4
 
   // บล็อกสรุปยอด KPI 5 รายการ (แถว 5-9)
   const kpiData = [
-    ["1. ยอดเงินสดรับจริงจากระบบ POS (Total POS Cash)", totals.totalCash, "บาท"],
-    ["2. รับรู้เป็นรายได้ค่าบริการวันนี้ - สิทธิ์ด่วน (Earned Revenue Today)", totals.earnedToday, "บาท"],
+    ["1. ยอดเงินสดรับจริงจากตั๋วรายวัน (Total Ticket Cash)", totals.totalCash, "บาท"],
+    ["2. รับรู้เป็นรายได้ค่าบริการรอบวัน (จอดวันนั้น) (Earned Revenue)", totals.earnedToday, "บาท"],
     ["3. บันทึกเป็นเงินรับล่วงหน้า - จอดพรุ่งนี้ (Unearned Revenue / Advance)", totals.advanceTomorrow, "บาท"],
     ["4. เงินรับส่วนเกิน - ตั๋วเกิน/ตีตั๋วแมนนวล (Surplus Cash)", totals.surplus, "บาท"],
     ["5. ยอดรอตรวจชำระ - CS ทำรายการแต่ตั๋วไม่พอ (Underfunded / Shortfall)", totals.shortfall, "บาท"],
@@ -130,12 +124,12 @@ export async function exportRevenueReconciliationExcel(data) {
   // หัวตารางรายละเอียดรายลูกค้า (แถว 11)
   const tableHeaders1 = [
     "ลำดับ",
-    "วันที่ POS",
+    "วันที่ในตั๋ว",
     "รหัสลูกค้า",
     "ชื่อลูกค้า",
     "สิทธิ์ที่ชำระ (ใบ)",
-    "ยอดเงินรับจริง POS (บาท)",
-    "รายได้วันนี้-สิทธิ์ด่วน (บาท)",
+    "ยอดเงินสดรับจริง (บาท)",
+    "รายได้รอบวัน-จอดวันนั้น (บาท)",
     "เงินรับล่วงหน้า-พรุ่งนี้ (บาท)",
     "เงินรับส่วนเกิน (บาท)",
     "รอตรวจยอดชำระ (บาท)",
@@ -267,26 +261,26 @@ export async function exportRevenueReconciliationExcel(data) {
   ws1.getColumn(4).width = 28;
 
   // ----------------------------------------------------
-  // SHEET 2: รายละเอียดสลิป POS (Raw Slip Audit Trail)
+  // SHEET 2: รายละเอียดตั๋วรายวัน (Transaction-level Audit Trail)
   // ----------------------------------------------------
-  const ws2 = workbook.addWorksheet("รายละเอียดสลิป POS", {
+  const ws2 = workbook.addWorksheet("รายละเอียดตั๋วรายวัน", {
     views: [{ showGridLines: true }],
     pageSetup: { orientation: "landscape", paperSize: 9 },
   });
 
   // หัวรายงาน Sheet 2
-  ws2.addRow(["รายละเอียดตั๋ว POS รายบรรทัด (Transaction-level Audit Trail)"]);
+  ws2.addRow(["รายละเอียดตั๋วรายวัน (Transaction-level Audit Trail)"]);
   ws2.getRow(1).font = { name: "Sarabun", size: 16, bold: true, color: { argb: "FF0F172A" } };
 
-  ws2.addRow([`ช่วงวันที่ทำรายการ: ${dateRange.startDate} ถึง ${dateRange.endDate} | อ้างอิงแท็บ tbt_DailyFee ใน Google Sheets`]);
+  ws2.addRow([`ช่วงวันที่ในตั๋ว: ${dateRange.startDate} ถึง ${dateRange.endDate} | อ้างอิงแท็บ tbt_DailyFee ใน Google Sheets`]);
   ws2.getRow(2).font = { name: "Sarabun", size: 11, color: { argb: "FF475569" } };
   ws2.addRow([]); // Blank row 3
 
   const tableHeaders2 = [
     "ลำดับ",
     "แถวใน Google Sheet",
-    "วันที่ตั๋ว POS",
-    "เวลาทำรายการ POS",
+    "วันที่ในตั๋ว",
+    "เวลาที่บันทึก",
     "รหัสลูกค้า (BoothCode)",
     "ชื่อลูกค้า",
     "จำนวนตั๋ว (ใบ)",
@@ -342,7 +336,7 @@ export async function exportRevenueReconciliationExcel(data) {
     r.getCell(8).numFmt = "#,##0.00";
 
     // ไฮไลต์สีข้อความตามการจัดสรร
-    if (tx.attribution.includes("ด่วน")) {
+    if (tx.attribution.includes("จอดวันนั้น") || tx.attribution.includes("ด่วน")) {
       r.getCell(9).font = { ...boldFont, color: { argb: "FF059669" } };
     } else if (tx.attribution.includes("ล่วงหน้า")) {
       r.getCell(9).font = { ...boldFont, color: { argb: "FF2563EB" } };
