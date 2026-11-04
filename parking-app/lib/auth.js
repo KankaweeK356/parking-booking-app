@@ -118,4 +118,4 @@ export async function requireRole(req, res, roles) {
   return effectiveSession;
 }
 
-export const ROLE = { ADMIN: "Admin", CS: "CS", FIELD: "Field" };
+export const ROLE = { ADMIN: "Admin", CS: "CS", FIELD: "Field", ACCOUNTING: "Accounting", ACCOUNT: "Account" };

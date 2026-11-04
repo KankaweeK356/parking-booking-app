@@ -297,7 +297,7 @@ export default function PaymentSummaryPage() {
       <div>
         <div className="top-bar">
           <div className="inner">
-            <h1>💰 สรุปยอดการชำระเงิน</h1>
+            <h1>👥 สรุปพฤติกรรมลูกค้า</h1>
             <Link href="/" className="back">← กลับหน้าหลัก</Link>
           </div>
         </div>
@@ -315,7 +315,7 @@ export default function PaymentSummaryPage() {
       <div className="top-bar">
         <div className="inner top-bar-wide">
           <div>
-            <h1>💰 สรุปยอดการชำระเงิน</h1>
+            <h1>👥 สรุปพฤติกรรมลูกค้า</h1>
             <span className="top-bar-sub">Customer Payment & Utilization Summary</span>
           </div>
           <Link href="/" className="back">← กลับหน้าหลัก</Link>

@@ -31,7 +31,7 @@ let adjustmentLogFormattingReady = false;
 
 const GOOGLE_SHEETS_EPOCH = Date.UTC(1899, 11, 30); // 1899-12-30
 const MS_PER_DAY = 86400000;
-const FAR_FUTURE_SERIAL = 73050; // 2099-12-31
+export const FAR_FUTURE_SERIAL = 73050; // 2099-12-31
 const OPERATIONAL_DAY_START_MINUTES = 7 * 60;
 
 function toOperationalMinutes(clockMinutes) {
@@ -715,7 +715,7 @@ export async function appendPauseAdjustments({ rowNumbers, startDate, endDate, r
   await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: "Booking_Adjustment_Log!A2:H", valueInputOption: "USER_ENTERED", insertDataOption: "INSERT_ROWS", requestBody: { values: rows } });
 }
 
-async function getBookingAdjustments() {
+export async function getBookingAdjustments() {
   await ensureAdjustmentLogSheet();
   const sheets = getSheetsClient();
   const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "Booking_Adjustment_Log!A2:H", valueRenderOption: "UNFORMATTED_VALUE" });
@@ -1377,8 +1377,7 @@ export async function getTransectionRows() {
 
   return rows
     .slice(1)
-    .filter((r) => r[boothCodeIdx] && ((createDateIdx !== -1 && r[createDateIdx]) || (docDateIdx !== -1 && r[docDateIdx])))
-    .map((r) => {
+    .map((r, idx) => {
       const rawCreateDate = createDateIdx !== -1 ? r[createDateIdx] : null;
       const rawDocDate = docDateIdx !== -1 ? r[docDateIdx] : null;
 
@@ -1391,13 +1390,16 @@ export async function getTransectionRows() {
       const quantity = parseTransactionQuantity(quantityIdx !== -1 ? r[quantityIdx] : null);
 
       return {
-        boothCode: String(r[boothCodeIdx]).trim(),
+        sheetRow: idx + 2,
+        boothCode: String(r[boothCodeIdx] || "").trim(),
         dateSerial,
         dateStr: isoFromSerial(dateSerial),
         quantity,
         createDate: String(rawCreateDate || ""),
+        docDate: String(rawDocDate || ""),
       };
-    });
+    })
+    .filter((t) => t.boothCode && (t.createDate || t.docDate));
 }
 
 // ---------- CS Overview ----------
