@@ -12,8 +12,8 @@
 //   tbt_DailyFee (Transection): Header แถว 1, ข้อมูลแถว 2+ [BoothCode, Docdate, Quantity, CreateDate]
 
 import { google } from "googleapis";
-import { formatBangkokDateTime, getBangkokCalendarDateIso, getCurrentOperationalBlock, getCurrentOperationalDateIso, getUrgentAccessDefaultDateIso, isBeforeOperationalBlockStart, isOperationalTimeBlock } from "./operational-day";
-import { calculateTicketAmount, TICKET_PRICE_PER_UNIT } from "./ticket-pricing";
+import { formatBangkokDateTime, getBangkokCalendarDateIso, getCurrentOperationalBlock, getCurrentOperationalDateIso, getUrgentAccessDefaultDateIso, isBeforeOperationalBlockStart, isOperationalTimeBlock } from "./operational-day.js";
+import { calculateTicketAmount, TICKET_PRICE_PER_UNIT } from "./ticket-pricing.js";
 
 const SHEET_ID = process.env.GOOGLE_SHEET_ID;
 

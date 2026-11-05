@@ -15,8 +15,8 @@ import {
   getTodaySerial,
   isClosingReason,
   FAR_FUTURE_SERIAL,
-} from "./sheets";
-import { TICKET_PRICE_PER_UNIT } from "./ticket-pricing";
+} from "./sheets.js";
+import { TICKET_PRICE_PER_UNIT } from "./ticket-pricing.js";
 
 export const RECON_STATUS = {
   BALANCED: "กระทบยอดลงตัว",
