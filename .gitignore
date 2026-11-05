@@ -1,0 +1,10 @@
+node_modules/
+.next/
+parking-app/node_modules/
+parking-app/.next/
+*.log
+.env
+.env*.local
+parking-app/.env*.local
+.vercel/
+parking-app/.vercel/

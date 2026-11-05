@@ -79,12 +79,14 @@ export default function RevenueReconciliationPage() {
     user?.role === "Account";
 
   // ฟังก์ชันโหลดข้อมูล
-  async function loadData() {
+  async function loadData(customStart, customEnd) {
     if (!canAccess) return;
+    const s = customStart !== undefined ? customStart : startDate;
+    const e = customEnd !== undefined ? customEnd : endDate;
     setLoading(true);
     setError("");
     try {
-      const params = new URLSearchParams({ startDate, endDate });
+      const params = new URLSearchParams({ startDate: s, endDate: e });
       const res = await fetch(`/api/admin/revenue-reconciliation?${params.toString()}`);
       const json = await res.json();
       if (!res.ok) {
@@ -118,51 +120,29 @@ export default function RevenueReconciliationPage() {
     }
   }
 
-  // Preset Handlers สำหรับรอบการทำงานบัญชี
+  // Preset Handlers สำหรับรอบการทำงานบัญชี (เปลี่ยนวันที่และโหลดข้อมูลทันที)
   function setPresetYesterday() {
     const y = getYesterdayIso();
     setStartDate(y);
     setEndDate(y);
+    loadData(y, y);
   }
 
   function setPresetToday() {
     const t = getTodayIso();
     setStartDate(t);
     setEndDate(t);
-  }
-
-  function setPresetThisWeek() {
-    const d = getBangkokDateObj();
-    const day = d.getUTCDay() || 7; // 1 = จันทร์, 7 = อาทิตย์
-    const mon = new Date(d);
-    mon.setUTCDate(d.getUTCDate() - (day - 1));
-    const yesterday = new Date(d);
-    yesterday.setUTCDate(d.getUTCDate() - 1);
-
-    setStartDate(formatDate(mon));
-    setEndDate(day === 1 ? formatDate(d) : formatDate(yesterday));
-  }
-
-  function setPresetLastWeek() {
-    const d = getBangkokDateObj();
-    const day = d.getUTCDay() || 7;
-    const mon = new Date(d);
-    mon.setUTCDate(d.getUTCDate() - (day - 1) - 7);
-    const sun = new Date(d);
-    sun.setUTCDate(d.getUTCDate() - (day - 1) - 1);
-
-    setStartDate(formatDate(mon));
-    setEndDate(formatDate(sun));
+    loadData(t, t);
   }
 
   function setPresetThisMonth() {
     const d = getBangkokDateObj();
     const firstDay = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1, 12));
-    const yesterday = new Date(d);
-    yesterday.setUTCDate(d.getUTCDate() - 1);
-
-    setStartDate(formatDate(firstDay));
-    setEndDate(d.getUTCDate() === 1 ? formatDate(d) : formatDate(yesterday));
+    const s = formatDate(firstDay);
+    const e = formatDate(d);
+    setStartDate(s);
+    setEndDate(e);
+    loadData(s, e);
   }
 
   function setPresetLastMonth() {
@@ -325,7 +305,7 @@ export default function RevenueReconciliationPage() {
                   fontSize: 14,
                   whiteSpace: "nowrap",
                 }}
-                onClick={loadData}
+                onClick={() => loadData()}
                 disabled={loading}
               >
                 <span>🔍</span>
