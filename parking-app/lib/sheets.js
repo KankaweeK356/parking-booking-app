@@ -2027,3 +2027,251 @@ export async function getCustomerSummaryData({ date, startDate, endDate, mode = 
   };
 }
 
+// ---------- Accounting Reconciliation Archive (จัดเก็บประวัติการกระทบยอดรายวันถาวร) ----------
+const ACCOUNTING_DAILY_SUMMARY_HEADERS = [
+  "Date",
+  "BoothCode",
+  "Customer_Name",
+  "Booked_Tickets",
+  "Paid_Tickets",
+  "Total_Paid",
+  "Earned_Today",
+  "Advance_Tomorrow",
+  "Surplus",
+  "Shortfall",
+  "Status",
+  "Status_Key",
+  "Urgent_Count",
+  "Advance_Count",
+  "Surplus_Tickets",
+  "Shortfall_Tickets",
+  "Recorded_At",
+];
+
+const ACCOUNTING_TICKET_ARCHIVE_HEADERS = [
+  "Ticket_Date",
+  "Sheet_Row",
+  "Create_Date",
+  "BoothCode",
+  "Customer_Name",
+  "Quantity",
+  "Amount",
+  "Attribution",
+  "Service_Date",
+  "Slot_Info",
+  "Recorded_At",
+];
+
+export async function ensureAccountingArchiveSheets() {
+  await Promise.all([
+    ensureSheet("Accounting_Daily_Summary", ACCOUNTING_DAILY_SUMMARY_HEADERS, 2),
+    ensureSheet("Accounting_Ticket_Archive", ACCOUNTING_TICKET_ARCHIVE_HEADERS, 2),
+  ]);
+}
+
+export async function saveAccountingArchive(items) {
+  const entries = Array.isArray(items) ? items : [items];
+  const validEntries = entries.filter((e) => e?.date && (e.customerSummary?.length || e.rawTransactions?.length));
+  if (validEntries.length === 0) return;
+  await ensureAccountingArchiveSheets();
+  const sheets = getSheetsClient();
+  const recordedAt = new Intl.DateTimeFormat("th-TH-u-ca-gregory", {
+    timeZone: "Asia/Bangkok",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(new Date());
+
+  const targetDates = new Set(validEntries.map((e) => e.date));
+
+  // 1. บันทึก Accounting_Daily_Summary
+  const allNewSummaryRows = [];
+  validEntries.forEach((entry) => {
+    (entry.customerSummary || []).forEach((c) => {
+      allNewSummaryRows.push([
+        c.date || entry.date,
+        c.boothCode,
+        c.customerName,
+        c.bookedTickets ?? 0,
+        c.paidTickets ?? 0,
+        c.totalPaid ?? 0,
+        c.earnedToday ?? 0,
+        c.advanceTomorrow ?? 0,
+        c.surplus ?? 0,
+        c.shortfall ?? 0,
+        c.status,
+        c.statusKey,
+        c.urgentCount ?? 0,
+        c.advanceCount ?? 0,
+        c.surplusTickets ?? 0,
+        c.shortfallTickets ?? 0,
+        recordedAt,
+      ]);
+    });
+  });
+
+  if (allNewSummaryRows.length > 0) {
+    const existingSummaryRes = await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: "Accounting_Daily_Summary!A2:Q",
+      valueRenderOption: "UNFORMATTED_VALUE",
+    });
+    const existingRows = existingSummaryRes.data.values || [];
+    const filteredRows = existingRows.filter((r) => {
+      const rDate = typeof r[0] === "number" ? isoFromSerial(r[0]) : String(r[0] || "");
+      return rDate && !targetDates.has(rDate);
+    });
+
+    const combinedSummary = [...filteredRows, ...allNewSummaryRows];
+    combinedSummary.sort((a, b) => {
+      const dateCmp = String(a[0]).localeCompare(String(b[0]));
+      if (dateCmp !== 0) return dateCmp;
+      return String(a[1]).localeCompare(String(b[1]), "th", { numeric: true });
+    });
+
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId: SHEET_ID,
+      range: "Accounting_Daily_Summary!A2:Q",
+    });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID,
+      range: "Accounting_Daily_Summary!A2:Q",
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: combinedSummary },
+    });
+  }
+
+  // 2. บันทึก Accounting_Ticket_Archive
+  const allNewTicketRows = [];
+  validEntries.forEach((entry) => {
+    (entry.rawTransactions || []).forEach((tx) => {
+      allNewTicketRows.push([
+        tx.posDate || entry.date,
+        tx.sheetRow || "",
+        tx.createDate || "",
+        tx.boothCode,
+        tx.customerName,
+        tx.quantity || 1,
+        tx.amount || 0,
+        tx.attribution || "",
+        tx.serviceDate || "",
+        tx.slotInfo || "",
+        recordedAt,
+      ]);
+    });
+  });
+
+  if (allNewTicketRows.length > 0) {
+    const existingTicketRes = await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: "Accounting_Ticket_Archive!A2:K",
+      valueRenderOption: "UNFORMATTED_VALUE",
+    });
+    const existingTx = existingTicketRes.data.values || [];
+    const filteredTx = existingTx.filter((r) => {
+      const rDate = typeof r[0] === "number" ? isoFromSerial(r[0]) : String(r[0] || "");
+      return rDate && !targetDates.has(rDate);
+    });
+
+    const combinedTx = [...filteredTx, ...allNewTicketRows];
+    combinedTx.sort((a, b) => {
+      const dateCmp = String(a[0]).localeCompare(String(b[0]));
+      if (dateCmp !== 0) return dateCmp;
+      return (Number(a[1]) || 0) - (Number(b[1]) || 0);
+    });
+
+    await sheets.spreadsheets.values.clear({
+      spreadsheetId: SHEET_ID,
+      range: "Accounting_Ticket_Archive!A2:K",
+    });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SHEET_ID,
+      range: "Accounting_Ticket_Archive!A2:K",
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: combinedTx },
+    });
+  }
+}
+
+export async function getAccountingArchive({ startDate, endDate } = {}) {
+  await ensureAccountingArchiveSheets();
+  const sheets = getSheetsClient();
+  const [summaryRes, ticketRes] = await Promise.all([
+    sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: "Accounting_Daily_Summary!A2:Q",
+      valueRenderOption: "UNFORMATTED_VALUE",
+    }),
+    sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: "Accounting_Ticket_Archive!A2:K",
+      valueRenderOption: "UNFORMATTED_VALUE",
+    }),
+  ]);
+
+  const summaryValues = summaryRes.data.values || [];
+  const ticketValues = ticketRes.data.values || [];
+
+  const startSerial = startDate ? isoDateToSerial(startDate) : 0;
+  const endSerial = endDate ? isoDateToSerial(endDate) : FAR_FUTURE_SERIAL;
+
+  const filteredSummary = summaryValues
+    .map((r) => {
+      const dateSerial = typeof r[0] === "number" ? r[0] : isoDateToSerial(String(r[0] || ""));
+      const dateIso = isoFromSerial(dateSerial) || String(r[0] || "");
+      return {
+        date: dateIso,
+        dateSerial,
+        boothCode: String(r[1] || "").trim(),
+        customerName: String(r[2] || "").trim(),
+        bookedTickets: Number(r[3]) || 0,
+        paidTickets: Number(r[4]) || 0,
+        totalPaid: Number(r[5]) || 0,
+        earnedToday: Number(r[6]) || 0,
+        advanceTomorrow: Number(r[7]) || 0,
+        surplus: Number(r[8]) || 0,
+        shortfall: Number(r[9]) || 0,
+        status: String(r[10] || ""),
+        statusKey: String(r[11] || ""),
+        urgentCount: Number(r[12]) || 0,
+        advanceCount: Number(r[13]) || 0,
+        surplusTickets: Number(r[14]) || 0,
+        shortfallTickets: Number(r[15]) || 0,
+        recordedAt: String(r[16] || ""),
+      };
+    })
+    .filter((r) => r.dateSerial >= startSerial && r.dateSerial <= endSerial);
+
+  const filteredTickets = ticketValues
+    .map((r) => {
+      const dateSerial = typeof r[0] === "number" ? r[0] : isoDateToSerial(String(r[0] || ""));
+      const dateIso = isoFromSerial(dateSerial) || String(r[0] || "");
+      return {
+        posDate: dateIso,
+        dateSerial,
+        sheetRow: r[1] !== "" && r[1] !== undefined ? Number(r[1]) || r[1] : "-",
+        createDate: String(r[2] || "-"),
+        boothCode: String(r[3] || "").trim(),
+        customerName: String(r[4] || "").trim(),
+        quantity: Number(r[5]) || 1,
+        amount: Number(r[6]) || 0,
+        attribution: String(r[7] || ""),
+        serviceDate: String(r[8] || "-"),
+        slotInfo: String(r[9] || "-"),
+        recordedAt: String(r[10] || ""),
+      };
+    })
+    .filter((r) => r.dateSerial >= startSerial && r.dateSerial <= endSerial);
+
+  const archivedDates = new Set(filteredSummary.map((r) => r.date));
+
+  return {
+    customerSummary: filteredSummary,
+    rawTransactions: filteredTickets,
+    archivedDates,
+  };
+}
+

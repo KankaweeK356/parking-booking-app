@@ -1,5 +1,6 @@
 // lib/accounting.js
 // ระบบกระทบยอดรายได้และการเงินสำหรับฝ่ายบัญชี (Revenue & Payment Reconciliation)
+// รองรับ Rolling 5 วันของตั๋วด่านด้วยระบบ Hybrid Smart Archive
 
 import {
   getTransectionRows,
@@ -7,6 +8,8 @@ import {
   getAllBookingRows,
   getMasterList,
   getBookingAdjustments,
+  saveAccountingArchive,
+  getAccountingArchive,
   isoFromSerial,
   isoDateToSerial,
   getTodaySerial,
@@ -29,6 +32,7 @@ export const RECON_STATUS_KEY = {
 
 /**
  * คำนวณข้อมูลกระทบยอดรายได้ตามช่วงวันที่
+ * รองรับการดึงตั๋วสด 5 วันล่าสุด และดึงย้อนหลังถาวรจาก Archive อัตโนมัติ
  * @param {Object} options
  * @param {string} options.startDate - YYYY-MM-DD
  * @param {string} options.endDate - YYYY-MM-DD
@@ -49,19 +53,24 @@ export async function getRevenueReconciliationData({ startDate, endDate } = {}) 
     endSerial = temp;
   }
 
-  // ดึงข้อมูลทั้งหมดในครั้งเดียว
+  // ดึงข้อมูลทั้งหมดในครั้งเดียว (รวมข้อมูล Archive ย้อนหลัง)
   const [
     allTransactions,
     urgentLogs,
     allBookings,
     masterList,
     allAdjustments,
+    archiveData,
   ] = await Promise.all([
     getTransectionRows(),
     getUrgentAccessLogs(),
     getAllBookingRows(),
     getMasterList(),
     getBookingAdjustments(),
+    getAccountingArchive({ startDate: sDate, endDate: eDate }).catch((err) => {
+      console.warn("Failed to fetch accounting archive:", err.message);
+      return { customerSummary: [], rawTransactions: [], archivedDates: new Set() };
+    }),
   ]);
 
   // สร้างแผนผังชื่อลูกค้า
@@ -89,9 +98,13 @@ export async function getRevenueReconciliationData({ startDate, endDate } = {}) 
       .map((b) => `${b.slot}::${b.startTime}`)
   );
 
+  // วันที่มีตั๋วสดใน tbt_DailyFee (Rolling 5 วันล่าสุด)
+  const liveDates = new Set(allTransactions.map((t) => t.dateStr));
+
   // ผลลัพธ์รวม
   const customerSummary = [];
   const rawTransactions = [];
+  const entriesToArchive = [];
 
   let grandTotalCash = 0;
   let grandEarnedToday = 0;
@@ -107,6 +120,31 @@ export async function getRevenueReconciliationData({ startDate, endDate } = {}) 
     const dIso = isoFromSerial(currentSerial);
     const tomorrowSerial = currentSerial + 1;
     const tomorrowIso = isoFromSerial(tomorrowSerial);
+
+    const hasLiveTickets = liveDates.has(dIso);
+    const archivedForDay = (archiveData?.customerSummary || []).filter((c) => c.date === dIso);
+
+    // กรณีที่ 1: วันที่นี้หลุดจาก Rolling 5 วันของตั๋วด่านแล้ว แต่มีใน Archive ถาวร
+    if (!hasLiveTickets && archivedForDay.length > 0) {
+      const archivedTxForDay = (archiveData?.rawTransactions || []).filter((tx) => tx.posDate === dIso);
+      archivedForDay.forEach((c) => {
+        uniqueCustomers.add(c.boothCode);
+        customerSummary.push(c);
+        grandTotalCash += c.totalPaid || 0;
+        grandEarnedToday += c.earnedToday || 0;
+        grandAdvanceTomorrow += c.advanceTomorrow || 0;
+        grandSurplus += c.surplus || 0;
+        grandShortfall += c.shortfall || 0;
+        grandPaidTickets += c.paidTickets || 0;
+        grandBookedTickets += c.bookedTickets || 0;
+      });
+      archivedTxForDay.forEach((tx) => rawTransactions.push(tx));
+      continue;
+    }
+
+    // กรณีที่ 2: วันที่นี้ยังอยู่ใน Rolling 5 วันของตั๋วด่าน -> คำนวณสด & เตรียมเซฟ Archive
+    const dayCustomerSummary = [];
+    const dayRawTransactions = [];
 
     // Pause / Daily adjustments สำหรับวันพรุ่งนี้
     const adjustmentsTomorrow = new Set(
@@ -165,7 +203,7 @@ export async function getRevenueReconciliationData({ startDate, endDate } = {}) 
       uniqueCustomers.add(docId);
       const custName = getCustomerName(docId);
 
-      // 1. ตั๋ว POS ที่จ่ายจริงในวัน dIso
+      // 1. ตั๋วที่จ่ายจริงในวัน dIso
       const custTxList = dayTransactions
         .filter((t) => String(t.boothCode).trim() === docId)
         .sort((a, b) => (a.sheetRow || 0) - (b.sheetRow || 0));
@@ -229,9 +267,8 @@ export async function getRevenueReconciliationData({ startDate, endDate } = {}) 
         statusKey = RECON_STATUS_KEY.SURPLUS;
       }
 
-      // บันทึกลง customerSummary
       const totalBookedSlots = urgentSlotsCount + advanceSlotsCount;
-      customerSummary.push({
+      const custSummaryItem = {
         date: dIso,
         boothCode: docId,
         customerName: custName,
@@ -248,7 +285,10 @@ export async function getRevenueReconciliationData({ startDate, endDate } = {}) 
         advanceCount: advanceSlotsCount,
         surplusTickets: surplusSlots,
         shortfallTickets: totalShortfallSlots,
-      });
+      };
+
+      dayCustomerSummary.push(custSummaryItem);
+      customerSummary.push(custSummaryItem);
 
       // สะสมยอดรวม KPI
       grandTotalCash += totalPaidAmount;
@@ -259,7 +299,7 @@ export async function getRevenueReconciliationData({ startDate, endDate } = {}) 
       grandPaidTickets += totalPaidTickets;
       grandBookedTickets += totalBookedSlots;
 
-      // 5. บันทึกลง rawTransactions (Sheet 2) แยกตามแถวตั๋ว POS
+      // 5. บันทึกรายละเอียดตั๋วรายวัน (Sheet 2) แยกตามแถวตั๋ว
       let remUrgentToAssign = earnedTodaySlots;
       let remAdvanceToAssign = advanceTomorrowSlots;
       const urgentQueue = [...custUrgentItems];
@@ -294,7 +334,7 @@ export async function getRevenueReconciliationData({ startDate, endDate } = {}) 
             slotInfo = "-";
           }
 
-          rawTransactions.push({
+          const rawTxItem = {
             sheetRow: tx.sheetRow,
             posDate: dIso,
             createDate: tx.createDate || tx.docDate || "-",
@@ -305,10 +345,29 @@ export async function getRevenueReconciliationData({ startDate, endDate } = {}) 
             attribution,
             serviceDate,
             slotInfo,
-          });
+          };
+
+          dayRawTransactions.push(rawTxItem);
+          rawTransactions.push(rawTxItem);
         }
       });
     }
+
+    // เก็บวันที่คำนวณสดเพื่อเตรียม Auto-Archive
+    if (dayCustomerSummary.length > 0 || dayRawTransactions.length > 0) {
+      entriesToArchive.push({
+        date: dIso,
+        customerSummary: dayCustomerSummary,
+        rawTransactions: dayRawTransactions,
+      });
+    }
+  }
+
+  // Auto-Archive: บันทึกข้อมูลวันที่คำนวณสดเข้าชีตถาวรแบบเบื้องหลัง (ไม่ให้กระทบผู้ใช้)
+  if (entriesToArchive.length > 0) {
+    saveAccountingArchive(entriesToArchive).catch((err) => {
+      console.warn("Auto-archiving reconciliation failed (safe ignore):", err.message);
+    });
   }
 
   return {
