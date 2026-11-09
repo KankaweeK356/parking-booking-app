@@ -2244,8 +2244,8 @@ export async function saveAccountingArchive(items) {
           .filter((r) => r[0] === tDate)
           .reduce((sum, r) => sum + (Number(r[4]) || 0), 0);
 
-        if (existingTotalPaid > 0 && newTotalPaid === 0) {
-          console.warn(`[saveAccountingArchive] Protected date ${tDate} from zero-ticket overwrite! Existing paid: ${existingTotalPaid}`);
+        if (existingTotalPaid > 0 && newTotalPaid < existingTotalPaid) {
+          console.warn(`[saveAccountingArchive] Protected date ${tDate} from ticket loss! Existing paid: ${existingTotalPaid}, new: ${newTotalPaid}`);
           protectedDates.add(tDate);
         }
       });
@@ -2274,7 +2274,10 @@ export async function saveAccountingArchive(items) {
           valueInputOption: "USER_ENTERED",
           requestBody: { values: combinedSummary },
         });
-        if (combinedSummary.length < existingRows.length) {
+        const existingDates = new Set(existingRows.map((r) => (typeof r[0] === "number" ? isoFromSerial(r[0]) : String(r[0] || "").trim())));
+        const combinedDates = new Set(combinedSummary.map((r) => r[0]));
+        const isEveryExistingDateKept = Array.from(existingDates).every((d) => !d || combinedDates.has(d));
+        if (isEveryExistingDateKept && combinedSummary.length < existingRows.length) {
           await sheets.spreadsheets.values.clear({
             spreadsheetId: SHEET_ID,
             range: `Accounting_Daily_Summary!A${combinedSummary.length + 2}:Q${existingRows.length + 1}`,
@@ -2349,7 +2352,10 @@ export async function saveAccountingArchive(items) {
           valueInputOption: "USER_ENTERED",
           requestBody: { values: combinedTx },
         });
-        if (combinedTx.length < existingTx.length) {
+        const existingTxDates = new Set(existingTx.map((r) => (typeof r[0] === "number" ? isoFromSerial(r[0]) : String(r[0] || "").trim())));
+        const combinedTxDates = new Set(combinedTx.map((r) => r[0]));
+        const isEveryTxDateKept = Array.from(existingTxDates).every((d) => !d || combinedTxDates.has(d));
+        if (isEveryTxDateKept && combinedTx.length < existingTx.length) {
           await sheets.spreadsheets.values.clear({
             spreadsheetId: SHEET_ID,
             range: `Accounting_Ticket_Archive!A${combinedTx.length + 2}:K${existingTx.length + 1}`,

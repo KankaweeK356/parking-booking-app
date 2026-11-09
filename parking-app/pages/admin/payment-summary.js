@@ -163,9 +163,11 @@ export default function PaymentSummaryPage() {
         escapeCell("ไม่ได้ใช้สิทธิ์ (ช่อง)"),
         escapeCell("ขอด่วน (ช่อง)"),
         escapeCell("% การจ่ายจริง"),
+        escapeCell("สถานะ"),
       ].join(",") + "\n";
 
       rows.forEach((r, idx) => {
+        const statusText = (r.surplus || 0) > 0 ? "เงินรับส่วนเกิน" : (r.shortfall || 0) > 0 ? "รอตรวจยอดชำระ" : "กระทบยอดลงตัว";
         csv += [
           escapeCell(idx + 1),
           escapeCell(r.docId),
@@ -176,10 +178,12 @@ export default function PaymentSummaryPage() {
           escapeCell(r.shortfall),
           escapeCell(r.urgent),
           escapeCell(`${((r.pct || 0) * 100).toFixed(1)}%`),
+          escapeCell(statusText),
         ].join(",") + "\n";
       });
 
       // Total row
+      const overallStatus = (totals.totalSurplus || 0) > 0 && totals.totalShortfall > 0 ? "มีทั้งขาดและเกิน" : (totals.totalSurplus || 0) > 0 ? "มีเงินส่วนเกิน" : totals.totalShortfall > 0 ? "รอตรวจยอดชำระ" : "กระทบยอดลงตัว";
       csv += [
         escapeCell("รวมทั้งหมด"),
         escapeCell(`ลูกค้า ${totals.customerCount} ราย`),
@@ -190,6 +194,7 @@ export default function PaymentSummaryPage() {
         escapeCell(totals.totalShortfall),
         escapeCell(totals.totalUrgent),
         escapeCell(`${((totals.overallPct || 0) * 100).toFixed(1)}%`),
+        escapeCell(overallStatus),
       ].join(",") + "\n";
 
       const filename = `สรุปยอดการชำระเงิน_${summaryData.date || selectedDate}.csv`;
@@ -256,9 +261,11 @@ export default function PaymentSummaryPage() {
         escapeCell("ไม่ได้ใช้สิทธิ์ (ช่อง)"),
         escapeCell("ขอด่วน (ช่อง)"),
         escapeCell("% การจ่ายจริง"),
+        escapeCell("สถานะ"),
       ].join(",") + "\n";
 
       (summaryData.dailyBreakdown || []).forEach((r) => {
+        const statusText = (r.surplus || 0) > 0 ? "เงินรับส่วนเกิน" : (r.shortfall || 0) > 0 ? "รอตรวจยอดชำระ" : "กระทบยอดลงตัว";
         csv += [
           escapeCell(r.date),
           escapeCell(r.docId),
@@ -269,6 +276,7 @@ export default function PaymentSummaryPage() {
           escapeCell(r.shortfall),
           escapeCell(r.urgent),
           escapeCell(`${((r.pct || 0) * 100).toFixed(1)}%`),
+          escapeCell(statusText),
         ].join(",") + "\n";
       });
 
@@ -545,7 +553,8 @@ export default function PaymentSummaryPage() {
                     <th style={{ width: "120px", textAlign: "right" }}>ส่วนเกิน / ตีเบิ้ล</th>
                     <th style={{ width: "120px", textAlign: "right" }}>ไม่ได้ใช้สิทธิ์</th>
                     <th style={{ width: "100px", textAlign: "right" }}>ขอด่วน</th>
-                    <th style={{ width: "130px", textAlign: "center" }}>% การจ่ายจริง</th>
+                    <th style={{ width: "110px", textAlign: "center" }}>% การจ่ายจริง</th>
+                    <th style={{ width: "120px", textAlign: "center" }}>สถานะ</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -575,6 +584,21 @@ export default function PaymentSummaryPage() {
                         <td style={{ textAlign: "center" }}>
                           <span className={`pct-badge ${badgeClass}`}>{pctVal}%</span>
                         </td>
+                        <td style={{ textAlign: "center" }}>
+                          {(r.surplus || 0) > 0 ? (
+                            <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700, background: "#e0f2fe", color: "#0369a1" }}>
+                              เงินรับส่วนเกิน
+                            </span>
+                          ) : (r.shortfall || 0) > 0 ? (
+                            <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700, background: "#fee2e2", color: "#991b1b" }}>
+                              รอตรวจยอดชำระ
+                            </span>
+                          ) : (
+                            <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700, background: "#dcfce7", color: "#15803d" }}>
+                              กระทบยอดลงตัว
+                            </span>
+                          )}
+                        </td>
                       </tr>
                     );
                   })}
@@ -597,6 +621,25 @@ export default function PaymentSummaryPage() {
                       <span className="pct-badge badge-foot">
                         {((totals.overallPct || 0) * 100).toFixed(1)}%
                       </span>
+                    </td>
+                    <td style={{ textAlign: "center", fontWeight: "bold" }}>
+                      {(totals.totalSurplus || 0) > 0 && totals.totalShortfall > 0 ? (
+                        <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700, background: "#f1f5f9", color: "#475569" }}>
+                          มีทั้งขาดและเกิน
+                        </span>
+                      ) : (totals.totalSurplus || 0) > 0 ? (
+                        <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700, background: "#e0f2fe", color: "#0369a1" }}>
+                          มีเงินส่วนเกิน
+                        </span>
+                      ) : totals.totalShortfall > 0 ? (
+                        <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700, background: "#fee2e2", color: "#991b1b" }}>
+                          รอตรวจยอดชำระ
+                        </span>
+                      ) : (
+                        <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700, background: "#dcfce7", color: "#15803d" }}>
+                          กระทบยอดลงตัว
+                        </span>
+                      )}
                     </td>
                   </tr>
                 </tfoot>

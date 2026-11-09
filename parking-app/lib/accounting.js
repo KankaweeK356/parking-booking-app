@@ -38,7 +38,7 @@ export const RECON_STATUS_KEY = {
  * @param {string} options.startDate - YYYY-MM-DD
  * @param {string} options.endDate - YYYY-MM-DD
  */
-export async function getRevenueReconciliationData({ startDate, endDate } = {}) {
+export async function getRevenueReconciliationData({ startDate, endDate, autoArchive = false } = {}) {
   const todaySerial = getTodaySerial();
   // ค่าเริ่มต้น: เมื่อวาน (D-1) ซึ่งเป็นกะที่ปิดยอดแล้ว
   const defaultDate = isoFromSerial(todaySerial - 1);
@@ -239,11 +239,6 @@ export async function getRevenueReconciliationData({ startDate, endDate } = {}) 
         grandBookedTickets += totalBookedSlots;
       });
 
-      entriesToArchive.push({
-        date: dIso,
-        customerSummary: fallbackDaySummary,
-        rawTransactions: [],
-      });
       continue;
     }
 
@@ -481,8 +476,9 @@ export async function getRevenueReconciliationData({ startDate, endDate } = {}) 
     }
   }
 
-  // Auto-Archive: บันทึกข้อมูลวันที่คำนวณสดเข้าชีตถาวร (รอให้บันทึกเสร็จสมบูรณ์เพื่อป้องกัน Race Condition)
-  if (entriesToArchive.length > 0) {
+  // Auto-Archive: บันทึกข้อมูลเฉพาะเมื่อเรียกจาก Cron Job หรือได้รับคำสั่งบันทึกอย่างชัดเจน (autoArchive === true)
+  // ป้องกันไม่ให้การเปิดดูหน้าเว็บทั่วไป (GET Request) ไปแอบเขียนหรือเสี่ยงล้างชีตโดยไม่ตั้งใจ
+  if (autoArchive && entriesToArchive.length > 0) {
     try {
       await saveAccountingArchive(entriesToArchive);
     } catch (err) {
