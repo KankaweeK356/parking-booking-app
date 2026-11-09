@@ -124,8 +124,16 @@ export async function getRevenueReconciliationData({ startDate, endDate } = {}) 
     const hasLiveTickets = liveDates.has(dIso);
     const archivedForDay = (archiveData?.customerSummary || []).filter((c) => c.date === dIso);
 
-    // กรณีที่ 1: วันที่นี้หลุดจาก Rolling 5 วันของตั๋วด่านแล้ว แต่มีใน Archive ถาวร
-    if (!hasLiveTickets && archivedForDay.length > 0) {
+    const liveDayTransactions = allTransactions.filter(
+      (t) => t.dateSerial === currentSerial || t.dateStr === dIso
+    );
+    const liveTicketsCount = liveDayTransactions.reduce((sum, t) => sum + (Number(t.quantity) || 1), 0);
+    const archivedPaidCount = archivedForDay.reduce((sum, c) => sum + (c.paidTickets || 0), 0);
+
+    // กรณีที่ 1: ใช้ข้อมูลจาก Archive ถาวรเมื่อ:
+    // 1) ไม่มีตั๋วสดใน tbt_DailyFee แล้ว (!hasLiveTickets)
+    // 2) หรือใน Archive มีข้อมูลตั๋วที่สมบูรณ์กว่าหรือเท่ากับตั๋วสดที่กำลังทยอยหลุดรอบ (archivedPaidCount >= liveTicketsCount && archivedPaidCount > 0)
+    if (archivedForDay.length > 0 && (!hasLiveTickets || (archivedPaidCount >= liveTicketsCount && archivedPaidCount > 0))) {
       const archivedTxForDay = (archiveData?.rawTransactions || []).filter((tx) => tx.posDate === dIso);
       archivedForDay.forEach((c) => {
         uniqueCustomers.add(c.boothCode);
