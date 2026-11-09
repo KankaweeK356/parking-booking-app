@@ -1964,7 +1964,7 @@ export async function getCustomerSummaryData({ date, startDate, endDate, mode = 
     const rowDate = isoFromSerial(r[0]) || String(r[0] || "").trim();
     const docId = String(r[3] || "").trim();
     const customerName = String(r[4] || "").trim();
-    if (!rowDate || (!docId && !customerName) || docId === "SURPLUS_TRANSITION") return;
+    if (!rowDate || (!docId && !customerName)) return;
     const booked = Number(r[5]) || 0;
     const paid = Number(r[6]) || 0;
     const shortfall = Math.max(0, booked - paid);
@@ -1999,7 +1999,7 @@ export async function getCustomerSummaryData({ date, startDate, endDate, mode = 
     const opDate = isoFromSerial(sourceSerial + 1);
     const docId = String(r[1] || "").trim();
     const customerName = String(r[2] || "").trim();
-    if (!opDate || (!docId && !customerName) || docId === "SURPLUS_TRANSITION") return;
+    if (!opDate || (!docId && !customerName)) return;
 
     const totalBookedInAcc = Number(r[3]) || 0;
     const totalPaidInAcc = Number(r[4]) || 0;
@@ -2202,7 +2202,6 @@ export async function saveAccountingArchive(items) {
     const allNewSummaryRows = [];
     validEntries.forEach((entry) => {
       (entry.customerSummary || []).forEach((c) => {
-        if (String(c.boothCode || "").trim() === "SURPLUS_TRANSITION") return;
         allNewSummaryRows.push([
           String(c.date || entry.date || "").trim(),
           String(c.boothCode || "").trim(),
@@ -2238,7 +2237,7 @@ export async function saveAccountingArchive(items) {
       targetDates.forEach((tDate) => {
         const existingDateRows = existingRows.filter((r) => {
           const rDate = typeof r[0] === "number" ? isoFromSerial(r[0]) : String(r[0] || "").trim();
-          return rDate === tDate && String(r[1] || "").trim() !== "SURPLUS_TRANSITION";
+          return rDate === tDate;
         });
         const existingTotalPaid = existingDateRows.reduce((sum, r) => sum + (Number(r[4]) || 0), 0);
         const newTotalPaid = allNewSummaryRows
@@ -2259,7 +2258,7 @@ export async function saveAccountingArchive(items) {
           const rDate = typeof r[0] === "number" ? isoFromSerial(r[0]) : String(r[0] || "").trim();
           return [rDate, ...r.slice(1)];
         })
-        .filter((r) => r[0] && String(r[1] || "").trim() !== "SURPLUS_TRANSITION" && !datesToReplace.has(r[0]));
+        .filter((r) => r[0] && !datesToReplace.has(r[0]));
 
       const combinedSummary = [...filteredRows, ...safeNewSummaryRows];
       combinedSummary.sort((a, b) => {
@@ -2411,7 +2410,7 @@ export async function getAccountingArchive({ startDate, endDate } = {}) {
         recordedAt: String(r[16] || ""),
       };
     })
-    .filter((r) => r.boothCode !== "SURPLUS_TRANSITION" && r.dateSerial >= startSerial && r.dateSerial <= endSerial);
+    .filter((r) => r.dateSerial >= startSerial && r.dateSerial <= endSerial);
 
   const filteredTickets = ticketValues
     .map((r) => {
@@ -2432,7 +2431,7 @@ export async function getAccountingArchive({ startDate, endDate } = {}) {
         recordedAt: String(r[10] || ""),
       };
     })
-    .filter((r) => r.boothCode !== "SURPLUS_TRANSITION" && r.dateSerial >= startSerial && r.dateSerial <= endSerial);
+    .filter((r) => r.dateSerial >= startSerial && r.dateSerial <= endSerial);
 
   const archivedDates = new Set(filteredSummary.map((r) => r.date));
 
