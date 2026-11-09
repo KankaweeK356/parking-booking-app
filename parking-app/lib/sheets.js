@@ -1569,7 +1569,16 @@ function getWeekNumberString(dateStr) {
   return `สัปดาห์ที่ ${weekNum}`;
 }
 
-export async function recordCustomerDailySummary({ operationalDate, sourceDate, activeByDoc, isPaidByBookingRow, urgentLogs = [], cancelledUrgentKeys = new Set() }) {
+export async function recordCustomerDailySummary({
+  operationalDate,
+  sourceDate,
+  activeByDoc,
+  isPaidByBookingRow,
+  ticketCountByDocId = null,
+  masterMap = null,
+  urgentLogs = [],
+  cancelledUrgentKeys = new Set(),
+}) {
   await ensureCustomerSummarySheet();
   const sheets = getSheetsClient();
   const month = String(operationalDate || "").slice(0, 7);
@@ -1593,18 +1602,30 @@ export async function recordCustomerDailySummary({ operationalDate, sourceDate, 
       if (log.customer) urgentCustomerNameByDoc.set(doc, String(log.customer).trim());
     });
 
-  const allDocKeys = new Set([...activeByDoc.keys(), ...urgentCountByDoc.keys()]);
+  const ticketDocKeys = ticketCountByDocId
+    ? Array.from(ticketCountByDocId.keys()).filter((k) => (ticketCountByDocId.get(k) || 0) > 0)
+    : [];
+  const allDocKeys = new Set([...activeByDoc.keys(), ...urgentCountByDoc.keys(), ...ticketDocKeys]);
   const summaryRows = [];
 
   allDocKeys.forEach((key) => {
     const bookings = activeByDoc.get(key) || [];
     const docId = String(bookings[0]?.docId || key).trim();
-    const customerName = String(bookings[0]?.customer || urgentCustomerNameByDoc.get(docId) || key).trim();
+    const customerName = String(
+      bookings[0]?.customer ||
+      urgentCustomerNameByDoc.get(docId) ||
+      (masterMap && masterMap.get(docId)) ||
+      key
+    ).trim();
     const booked = bookings.length;
-    const paid = bookings.filter((b) => isPaidByBookingRow.get(b.rowNumber)).length;
+    const matchedPaid = bookings.filter((b) => isPaidByBookingRow.get(b.rowNumber)).length;
+    // บันทึกจำนวนตั๋วจ่ายจริงทั้งหมด (รวมตั๋วส่วนเกิน/ตีเบิ้ล) ไม่เพดานกั้นไว้แค่จำนวนจอง
+    const paid = ticketCountByDocId && ticketCountByDocId.has(docId)
+      ? Math.max(matchedPaid, Number(ticketCountByDocId.get(docId)) || 0)
+      : matchedPaid;
     const shortfall = Math.max(0, booked - paid);
     const urgent = urgentCountByDoc.get(docId) || 0;
-    const pct = booked > 0 ? Math.round((paid / booked) * 1000) / 1000 : (urgent > 0 ? 1 : 0);
+    const pct = booked > 0 ? Math.round((paid / booked) * 1000) / 1000 : ((paid > 0 || urgent > 0) ? 1 : 0);
 
     summaryRows.push([
       operationalDate,
@@ -1639,11 +1660,6 @@ export async function recordCustomerDailySummary({ operationalDate, sourceDate, 
   });
   const newCombined = [...filteredRows, ...summaryRows];
 
-  await sheets.spreadsheets.values.clear({
-    spreadsheetId: SHEET_ID,
-    range: "Customer_Summary!A2:K",
-  });
-
   if (newCombined.length > 0) {
     await sheets.spreadsheets.values.update({
       spreadsheetId: SHEET_ID,
@@ -1651,6 +1667,12 @@ export async function recordCustomerDailySummary({ operationalDate, sourceDate, 
       valueInputOption: "USER_ENTERED",
       requestBody: { values: newCombined },
     });
+    if (newCombined.length < existingRows.length) {
+      await sheets.spreadsheets.values.clear({
+        spreadsheetId: SHEET_ID,
+        range: `Customer_Summary!A${newCombined.length + 2}:K${existingRows.length + 1}`,
+      });
+    }
   }
 
   return { count: summaryRows.length };
@@ -1662,9 +1684,18 @@ export async function createPaymentSnapshot(operationalDate) {
   const targetSerial = isoDateToSerial(operationalDate);
   const sourceSerial = targetSerial - 1;
   const sourceDate = isoFromSerial(sourceSerial);
-  const [allBookings, slotsWithStatus, transectionRows, urgentLogs, adjustedRows] = await Promise.all([
-    getAllBookingRows(), getSlotsWithStatus(), getTransectionRows(), getUrgentAccessLogs(), getAdjustedBookingRows(operationalDate),
+  const [allBookings, slotsWithStatus, transectionRows, urgentLogs, adjustedRows, masterList] = await Promise.all([
+    getAllBookingRows(), getSlotsWithStatus(), getTransectionRows(), getUrgentAccessLogs(), getAdjustedBookingRows(operationalDate), getMasterList(),
   ]);
+  const masterNameByDocId = new Map();
+  (masterList || []).forEach((m) => {
+    if (m.docId) masterNameByDocId.set(String(m.docId).trim(), String(m.name || "").trim());
+  });
+  allBookings.forEach((b) => {
+    if (b.docId && b.customer && !masterNameByDocId.has(String(b.docId).trim())) {
+      masterNameByDocId.set(String(b.docId).trim(), String(b.customer).trim());
+    }
+  });
   const activeBookings = allBookings.filter((booking) => {
     const endEff = booking.endEffectiveSerial ?? FAR_FUTURE_SERIAL;
     return booking.bookingType !== "Urgent" && booking.startSerial && !isClosingReason(booking.reason) && !adjustedRows.has(booking.rowNumber) && booking.startSerial <= targetSerial && targetSerial <= endEff;
@@ -1707,6 +1738,8 @@ export async function createPaymentSnapshot(operationalDate) {
       sourceDate,
       activeByDoc,
       isPaidByBookingRow,
+      ticketCountByDocId,
+      masterMap: masterNameByDocId,
       urgentLogs,
       cancelledUrgentKeys,
     });
@@ -1911,35 +1944,106 @@ export async function getDashboardData(dateStr) {
 }
 
 export async function getCustomerSummaryData({ date, startDate, endDate, mode = "day" } = {}) {
-  await ensureCustomerSummarySheet();
+  await Promise.all([ensureCustomerSummarySheet(), ensureAccountingArchiveSheets()]);
   const sheets = getSheetsClient();
-  const res = await executeWithRetry(() =>
-    sheets.spreadsheets.values.get({
+  const batchRes = await executeWithRetry(() =>
+    sheets.spreadsheets.values.batchGet({
       spreadsheetId: SHEET_ID,
-      range: "Customer_Summary!A2:K",
+      ranges: ["Customer_Summary!A2:K", "Accounting_Daily_Summary!A2:Q"],
       valueRenderOption: "UNFORMATTED_VALUE",
     })
   );
-  const rows = res.data.values || [];
+  const valueRanges = batchRes.data.valueRanges || [];
+  const rows = valueRanges[0]?.values || [];
+  const accountingRows = valueRanges[1]?.values || [];
 
-  const parsedRows = rows
-    .map((r) => {
-      const rowDate = isoFromSerial(r[0]) || String(r[0] || "").trim();
-      return {
-        date: rowDate,
-        month: String(r[1] || "").trim(),
-        week: String(r[2] || "").trim(),
-        docId: String(r[3] || "").trim(),
-        customerName: String(r[4] || "").trim(),
-        booked: Number(r[5]) || 0,
-        paid: Number(r[6]) || 0,
-        shortfall: Number(r[7]) || 0,
-        urgent: Number(r[8]) || 0,
-        pct: Number(r[9]) || 0,
-        recordedAt: String(r[10] || "").trim(),
-      };
-    })
-    .filter((r) => Boolean(r.date && (r.docId || r.customerName)));
+  const rowMapByOpDateAndDoc = new Map();
+  const latestRecordedByOpDate = new Map();
+
+  rows.forEach((r) => {
+    const rowDate = isoFromSerial(r[0]) || String(r[0] || "").trim();
+    const docId = String(r[3] || "").trim();
+    const customerName = String(r[4] || "").trim();
+    if (!rowDate || (!docId && !customerName) || docId === "SURPLUS_TRANSITION") return;
+    const booked = Number(r[5]) || 0;
+    const paid = Number(r[6]) || 0;
+    const shortfall = Math.max(0, booked - paid);
+    const surplus = Math.max(0, paid - booked);
+    const urgent = Number(r[8]) || 0;
+    const pct = booked > 0 ? Math.round((paid / booked) * 1000) / 1000 : ((paid > 0 || urgent > 0) ? 1 : 0);
+    const recordedAt = String(r[10] || "").trim();
+    if (recordedAt) latestRecordedByOpDate.set(rowDate, recordedAt);
+
+    const key = `${rowDate}::${docId || customerName}`;
+    rowMapByOpDateAndDoc.set(key, {
+      date: rowDate,
+      month: String(r[1] || "").trim() || rowDate.slice(0, 7),
+      week: String(r[2] || "").trim() || getWeekNumberString(rowDate),
+      docId,
+      customerName,
+      booked,
+      paid,
+      shortfall,
+      surplus,
+      urgent,
+      pct,
+      recordedAt,
+    });
+  });
+
+  // เชื่อมข้อมูลจาก Accounting_Daily_Summary (วันที่จ่ายตั๋ว sourceDate -> วันปฏิบัติการ sourceDate + 1)
+  // เพื่อให้แท็บ "สรุปพฤติกรรมลูกค้า" และ "สรุปการชำระเงิน" เห็นยอดจ่ายจริงและตั๋วส่วนเกิน (ตีเบิ้ล) ตรงกัน 100%
+  accountingRows.forEach((r) => {
+    const sourceSerial = typeof r[0] === "number" ? r[0] : isoDateToSerial(String(r[0] || "").trim());
+    if (!sourceSerial) return;
+    const opDate = isoFromSerial(sourceSerial + 1);
+    const docId = String(r[1] || "").trim();
+    const customerName = String(r[2] || "").trim();
+    if (!opDate || (!docId && !customerName) || docId === "SURPLUS_TRANSITION") return;
+
+    const totalBookedInAcc = Number(r[3]) || 0;
+    const totalPaidInAcc = Number(r[4]) || 0;
+    const urgentInAcc = Number(r[12]) || 0;
+    const advanceBookedInAcc = r[13] !== undefined && r[13] !== "" ? Number(r[13]) || 0 : Math.max(0, totalBookedInAcc - urgentInAcc);
+    const advancePaidInAcc = Math.max(0, totalPaidInAcc - urgentInAcc);
+    const recordedAt = String(r[16] || "").trim();
+
+    const key = `${opDate}::${docId || customerName}`;
+    const existing = rowMapByOpDateAndDoc.get(key);
+    if (existing) {
+      if (advancePaidInAcc > existing.paid) {
+        existing.paid = advancePaidInAcc;
+        existing.shortfall = Math.max(0, existing.booked - existing.paid);
+        existing.surplus = Math.max(0, existing.paid - existing.booked);
+        existing.pct = existing.booked > 0 ? Math.round((existing.paid / existing.booked) * 1000) / 1000 : 1;
+      }
+      if (urgentInAcc > existing.urgent) {
+        existing.urgent = urgentInAcc;
+      }
+    } else if (advancePaidInAcc > 0 || advanceBookedInAcc > 0 || urgentInAcc > 0) {
+      const booked = advanceBookedInAcc;
+      const paid = advancePaidInAcc;
+      const shortfall = Math.max(0, booked - paid);
+      const surplus = Math.max(0, paid - booked);
+      const pct = booked > 0 ? Math.round((paid / booked) * 1000) / 1000 : ((paid > 0 || urgentInAcc > 0) ? 1 : 0);
+      rowMapByOpDateAndDoc.set(key, {
+        date: opDate,
+        month: opDate.slice(0, 7),
+        week: getWeekNumberString(opDate),
+        docId,
+        customerName,
+        booked,
+        paid,
+        shortfall,
+        surplus,
+        urgent: urgentInAcc,
+        pct,
+        recordedAt: latestRecordedByOpDate.get(opDate) || recordedAt,
+      });
+    }
+  });
+
+  const parsedRows = Array.from(rowMapByOpDateAndDoc.values());
 
   if (mode === "range") {
     const from = startDate || "0000-00-00";
@@ -1956,6 +2060,7 @@ export async function getCustomerSummaryData({ date, startDate, endDate, mode = 
           booked: 0,
           paid: 0,
           shortfall: 0,
+          surplus: 0,
           urgent: 0,
           daysCount: 0,
         });
@@ -1965,13 +2070,14 @@ export async function getCustomerSummaryData({ date, startDate, endDate, mode = 
       entry.booked += r.booked;
       entry.paid += r.paid;
       entry.shortfall += r.shortfall;
+      entry.surplus += r.surplus || 0;
       entry.urgent += r.urgent;
       entry.daysCount += 1;
     });
 
     const summaryRows = Array.from(customerMap.values()).map((c) => ({
       ...c,
-      pct: c.booked > 0 ? Math.round((c.paid / c.booked) * 1000) / 1000 : (c.urgent > 0 ? 1 : 0),
+      pct: c.booked > 0 ? Math.round((c.paid / c.booked) * 1000) / 1000 : ((c.paid > 0 || c.urgent > 0) ? 1 : 0),
     }));
     summaryRows.sort((a, b) => a.docId.localeCompare(b.docId, "th", { numeric: true }));
 
@@ -1979,6 +2085,7 @@ export async function getCustomerSummaryData({ date, startDate, endDate, mode = 
       totalBooked: summaryRows.reduce((acc, c) => acc + c.booked, 0),
       totalPaid: summaryRows.reduce((acc, c) => acc + c.paid, 0),
       totalShortfall: summaryRows.reduce((acc, c) => acc + c.shortfall, 0),
+      totalSurplus: summaryRows.reduce((acc, c) => acc + (c.surplus || 0), 0),
       totalUrgent: summaryRows.reduce((acc, c) => acc + c.urgent, 0),
       customerCount: summaryRows.length,
       daysInRange: new Set(matchingRows.map((r) => r.date)).size,
@@ -2008,6 +2115,7 @@ export async function getCustomerSummaryData({ date, startDate, endDate, mode = 
     totalBooked: matchingRows.reduce((acc, c) => acc + c.booked, 0),
     totalPaid: matchingRows.reduce((acc, c) => acc + c.paid, 0),
     totalShortfall: matchingRows.reduce((acc, c) => acc + c.shortfall, 0),
+    totalSurplus: matchingRows.reduce((acc, c) => acc + (c.surplus || 0), 0),
     totalUrgent: matchingRows.reduce((acc, c) => acc + c.urgent, 0),
     customerCount: matchingRows.length,
   };
@@ -2069,171 +2177,191 @@ export async function ensureAccountingArchiveSheets() {
   ]);
 }
 
+let archiveSaveQueue = Promise.resolve();
+
 export async function saveAccountingArchive(items) {
-  const entries = Array.isArray(items) ? items : [items];
-  const validEntries = entries.filter((e) => e?.date && (e.customerSummary?.length || e.rawTransactions?.length));
-  if (validEntries.length === 0) return;
-  await ensureAccountingArchiveSheets();
-  const sheets = getSheetsClient();
-  const recordedAt = new Intl.DateTimeFormat("th-TH-u-ca-gregory", {
-    timeZone: "Asia/Bangkok",
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(new Date());
+  const runSave = async () => {
+    const entries = Array.isArray(items) ? items : [items];
+    const validEntries = entries.filter((e) => e?.date && (e.customerSummary?.length || e.rawTransactions?.length));
+    if (validEntries.length === 0) return;
+    await ensureAccountingArchiveSheets();
+    const sheets = getSheetsClient();
+    const recordedAt = new Intl.DateTimeFormat("th-TH-u-ca-gregory", {
+      timeZone: "Asia/Bangkok",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }).format(new Date());
 
-  const targetDates = new Set(validEntries.map((e) => e.date));
+    const targetDates = new Set(validEntries.map((e) => e.date));
 
-  // 1. บันทึก Accounting_Daily_Summary
-  const allNewSummaryRows = [];
-  validEntries.forEach((entry) => {
-    (entry.customerSummary || []).forEach((c) => {
-      allNewSummaryRows.push([
-        c.date || entry.date,
-        c.boothCode,
-        c.customerName,
-        c.bookedTickets ?? 0,
-        c.paidTickets ?? 0,
-        c.totalPaid ?? 0,
-        c.earnedToday ?? 0,
-        c.advanceTomorrow ?? 0,
-        c.surplus ?? 0,
-        c.shortfall ?? 0,
-        c.status,
-        c.statusKey,
-        c.urgentCount ?? 0,
-        c.advanceCount ?? 0,
-        c.surplusTickets ?? 0,
-        c.shortfallTickets ?? 0,
-        recordedAt,
-      ]);
-    });
-  });
-
-  if (allNewSummaryRows.length > 0) {
-    const existingSummaryRes = await sheets.spreadsheets.values.get({
-      spreadsheetId: SHEET_ID,
-      range: "Accounting_Daily_Summary!A2:Q",
-      valueRenderOption: "UNFORMATTED_VALUE",
-    });
-    const existingRows = existingSummaryRes.data.values || [];
-
-    // Failsafe Guard: เช็คไม่ให้บันทึกทับข้อมูลเดิม ถ้าข้อมูลใหม่มียอดตั๋วจ่ายเป็น 0 แต่ของเดิมเคยมีตั๋ว
-    const protectedDates = new Set();
-    targetDates.forEach((tDate) => {
-      const existingDateRows = existingRows.filter((r) => {
-        const rDate = typeof r[0] === "number" ? isoFromSerial(r[0]) : String(r[0] || "");
-        return rDate === tDate;
+    // 1. บันทึก Accounting_Daily_Summary
+    const allNewSummaryRows = [];
+    validEntries.forEach((entry) => {
+      (entry.customerSummary || []).forEach((c) => {
+        if (String(c.boothCode || "").trim() === "SURPLUS_TRANSITION") return;
+        allNewSummaryRows.push([
+          String(c.date || entry.date || "").trim(),
+          String(c.boothCode || "").trim(),
+          String(c.customerName || "").trim(),
+          c.bookedTickets ?? 0,
+          c.paidTickets ?? 0,
+          c.totalPaid ?? 0,
+          c.earnedToday ?? 0,
+          c.advanceTomorrow ?? 0,
+          c.surplus ?? 0,
+          c.shortfall ?? 0,
+          c.status,
+          c.statusKey,
+          c.urgentCount ?? 0,
+          c.advanceCount ?? 0,
+          c.surplusTickets ?? 0,
+          c.shortfallTickets ?? 0,
+          recordedAt,
+        ]);
       });
-      const existingTotalPaid = existingDateRows.reduce((sum, r) => sum + (Number(r[4]) || 0), 0);
-      const newTotalPaid = allNewSummaryRows
-        .filter((r) => r[0] === tDate)
-        .reduce((sum, r) => sum + (Number(r[4]) || 0), 0);
+    });
 
-      if (existingTotalPaid > 0 && newTotalPaid === 0) {
-        console.warn(`[saveAccountingArchive] Protected date ${tDate} from zero-ticket overwrite! Existing paid: ${existingTotalPaid}`);
-        protectedDates.add(tDate);
+    if (allNewSummaryRows.length > 0) {
+      const existingSummaryRes = await sheets.spreadsheets.values.get({
+        spreadsheetId: SHEET_ID,
+        range: "Accounting_Daily_Summary!A2:Q",
+        valueRenderOption: "UNFORMATTED_VALUE",
+      });
+      const existingRows = existingSummaryRes.data.values || [];
+
+      // Failsafe Guard: เช็คไม่ให้บันทึกทับข้อมูลเดิม ถ้าข้อมูลใหม่มียอดตั๋วจ่ายเป็น 0 หรือน้อยกว่าเดิมที่เคยบันทึกไว้
+      const protectedDates = new Set();
+      targetDates.forEach((tDate) => {
+        const existingDateRows = existingRows.filter((r) => {
+          const rDate = typeof r[0] === "number" ? isoFromSerial(r[0]) : String(r[0] || "").trim();
+          return rDate === tDate && String(r[1] || "").trim() !== "SURPLUS_TRANSITION";
+        });
+        const existingTotalPaid = existingDateRows.reduce((sum, r) => sum + (Number(r[4]) || 0), 0);
+        const newTotalPaid = allNewSummaryRows
+          .filter((r) => r[0] === tDate)
+          .reduce((sum, r) => sum + (Number(r[4]) || 0), 0);
+
+        if (existingTotalPaid > 0 && newTotalPaid === 0) {
+          console.warn(`[saveAccountingArchive] Protected date ${tDate} from zero-ticket overwrite! Existing paid: ${existingTotalPaid}`);
+          protectedDates.add(tDate);
+        }
+      });
+
+      const safeNewSummaryRows = allNewSummaryRows.filter((r) => !protectedDates.has(r[0]));
+      const datesToReplace = new Set([...targetDates].filter((d) => !protectedDates.has(d)));
+
+      const filteredRows = existingRows
+        .map((r) => {
+          const rDate = typeof r[0] === "number" ? isoFromSerial(r[0]) : String(r[0] || "").trim();
+          return [rDate, ...r.slice(1)];
+        })
+        .filter((r) => r[0] && String(r[1] || "").trim() !== "SURPLUS_TRANSITION" && !datesToReplace.has(r[0]));
+
+      const combinedSummary = [...filteredRows, ...safeNewSummaryRows];
+      combinedSummary.sort((a, b) => {
+        const dateCmp = String(a[0]).localeCompare(String(b[0]));
+        if (dateCmp !== 0) return dateCmp;
+        return String(a[1]).localeCompare(String(b[1]), "th", { numeric: true });
+      });
+
+      if (combinedSummary.length > 0) {
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: SHEET_ID,
+          range: "Accounting_Daily_Summary!A2:Q",
+          valueInputOption: "USER_ENTERED",
+          requestBody: { values: combinedSummary },
+        });
+        if (combinedSummary.length < existingRows.length) {
+          await sheets.spreadsheets.values.clear({
+            spreadsheetId: SHEET_ID,
+            range: `Accounting_Daily_Summary!A${combinedSummary.length + 2}:Q${existingRows.length + 1}`,
+          });
+        }
       }
+    }
+
+    // 2. บันทึก Accounting_Ticket_Archive
+    const allNewTicketRows = [];
+    validEntries.forEach((entry) => {
+      (entry.rawTransactions || []).forEach((tx) => {
+        allNewTicketRows.push([
+          String(tx.posDate || entry.date || "").trim(),
+          tx.sheetRow || "",
+          tx.createDate || "",
+          String(tx.boothCode || "").trim(),
+          String(tx.customerName || "").trim(),
+          tx.quantity || 1,
+          tx.amount || 0,
+          tx.attribution || "",
+          tx.serviceDate || "",
+          tx.slotInfo || "",
+          recordedAt,
+        ]);
+      });
     });
 
-    const safeNewSummaryRows = allNewSummaryRows.filter((r) => !protectedDates.has(r[0]));
-    const datesToReplace = new Set([...targetDates].filter((d) => !protectedDates.has(d)));
+    if (allNewTicketRows.length > 0) {
+      const existingTicketRes = await sheets.spreadsheets.values.get({
+        spreadsheetId: SHEET_ID,
+        range: "Accounting_Ticket_Archive!A2:K",
+        valueRenderOption: "UNFORMATTED_VALUE",
+      });
+      const existingTx = existingTicketRes.data.values || [];
 
-    const filteredRows = existingRows.filter((r) => {
-      const rDate = typeof r[0] === "number" ? isoFromSerial(r[0]) : String(r[0] || "");
-      return rDate && !datesToReplace.has(rDate);
-    });
+      // Failsafe Guard: ป้องกันไม่ให้ลบตั๋วเดิมของวันที่มีตั๋วอยู่แล้ว หากข้อมูลใหม่ส่งมาว่าง
+      const protectedTxDates = new Set();
+      targetDates.forEach((tDate) => {
+        const existingCount = existingTx.filter((r) => {
+          const rDate = typeof r[0] === "number" ? isoFromSerial(r[0]) : String(r[0] || "").trim();
+          return rDate === tDate;
+        }).length;
+        const newCount = allNewTicketRows.filter((r) => r[0] === tDate).length;
+        if (existingCount > 0 && newCount === 0) {
+          console.warn(`[saveAccountingArchive] Protected ticket transactions for date ${tDate}!`);
+          protectedTxDates.add(tDate);
+        }
+      });
 
-    const combinedSummary = [...filteredRows, ...safeNewSummaryRows];
-    combinedSummary.sort((a, b) => {
-      const dateCmp = String(a[0]).localeCompare(String(b[0]));
-      if (dateCmp !== 0) return dateCmp;
-      return String(a[1]).localeCompare(String(b[1]), "th", { numeric: true });
-    });
+      const safeNewTicketRows = allNewTicketRows.filter((r) => !protectedTxDates.has(r[0]));
+      const datesToReplaceTx = new Set([...targetDates].filter((d) => !protectedTxDates.has(d)));
 
-    await sheets.spreadsheets.values.clear({
-      spreadsheetId: SHEET_ID,
-      range: "Accounting_Daily_Summary!A2:Q",
-    });
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: SHEET_ID,
-      range: "Accounting_Daily_Summary!A2:Q",
-      valueInputOption: "USER_ENTERED",
-      requestBody: { values: combinedSummary },
-    });
-  }
+      const filteredTx = existingTx
+        .map((r) => {
+          const rDate = typeof r[0] === "number" ? isoFromSerial(r[0]) : String(r[0] || "").trim();
+          return [rDate, ...r.slice(1)];
+        })
+        .filter((r) => r[0] && !datesToReplaceTx.has(r[0]));
 
-  // 2. บันทึก Accounting_Ticket_Archive
-  const allNewTicketRows = [];
-  validEntries.forEach((entry) => {
-    (entry.rawTransactions || []).forEach((tx) => {
-      allNewTicketRows.push([
-        tx.posDate || entry.date,
-        tx.sheetRow || "",
-        tx.createDate || "",
-        tx.boothCode,
-        tx.customerName,
-        tx.quantity || 1,
-        tx.amount || 0,
-        tx.attribution || "",
-        tx.serviceDate || "",
-        tx.slotInfo || "",
-        recordedAt,
-      ]);
-    });
-  });
+      const combinedTx = [...filteredTx, ...safeNewTicketRows];
+      combinedTx.sort((a, b) => {
+        const dateCmp = String(a[0]).localeCompare(String(b[0]));
+        if (dateCmp !== 0) return dateCmp;
+        return (Number(a[1]) || 0) - (Number(b[1]) || 0);
+      });
 
-  if (allNewTicketRows.length > 0) {
-    const existingTicketRes = await sheets.spreadsheets.values.get({
-      spreadsheetId: SHEET_ID,
-      range: "Accounting_Ticket_Archive!A2:K",
-      valueRenderOption: "UNFORMATTED_VALUE",
-    });
-    const existingTx = existingTicketRes.data.values || [];
-
-    // Failsafe Guard: ป้องกันไม่ให้ลบตั๋วเดิมของวันที่มีตั๋วอยู่แล้ว หากข้อมูลใหม่ส่งมาว่าง
-    const protectedTxDates = new Set();
-    targetDates.forEach((tDate) => {
-      const existingCount = existingTx.filter((r) => {
-        const rDate = typeof r[0] === "number" ? isoFromSerial(r[0]) : String(r[0] || "");
-        return rDate === tDate;
-      }).length;
-      const newCount = allNewTicketRows.filter((r) => r[0] === tDate).length;
-      if (existingCount > 0 && newCount === 0) {
-        console.warn(`[saveAccountingArchive] Protected ticket transactions for date ${tDate}!`);
-        protectedTxDates.add(tDate);
+      if (combinedTx.length > 0) {
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: SHEET_ID,
+          range: "Accounting_Ticket_Archive!A2:K",
+          valueInputOption: "USER_ENTERED",
+          requestBody: { values: combinedTx },
+        });
+        if (combinedTx.length < existingTx.length) {
+          await sheets.spreadsheets.values.clear({
+            spreadsheetId: SHEET_ID,
+            range: `Accounting_Ticket_Archive!A${combinedTx.length + 2}:K${existingTx.length + 1}`,
+          });
+        }
       }
-    });
+    }
+  };
 
-    const safeNewTicketRows = allNewTicketRows.filter((r) => !protectedTxDates.has(r[0]));
-    const datesToReplaceTx = new Set([...targetDates].filter((d) => !protectedTxDates.has(d)));
-
-    const filteredTx = existingTx.filter((r) => {
-      const rDate = typeof r[0] === "number" ? isoFromSerial(r[0]) : String(r[0] || "");
-      return rDate && !datesToReplaceTx.has(rDate);
-    });
-
-    const combinedTx = [...filteredTx, ...safeNewTicketRows];
-    combinedTx.sort((a, b) => {
-      const dateCmp = String(a[0]).localeCompare(String(b[0]));
-      if (dateCmp !== 0) return dateCmp;
-      return (Number(a[1]) || 0) - (Number(b[1]) || 0);
-    });
-
-    await sheets.spreadsheets.values.clear({
-      spreadsheetId: SHEET_ID,
-      range: "Accounting_Ticket_Archive!A2:K",
-    });
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: SHEET_ID,
-      range: "Accounting_Ticket_Archive!A2:K",
-      valueInputOption: "USER_ENTERED",
-      requestBody: { values: combinedTx },
-    });
-  }
+  archiveSaveQueue = archiveSaveQueue.then(runSave, runSave);
+  return archiveSaveQueue;
 }
 
 export async function getAccountingArchive({ startDate, endDate } = {}) {
@@ -2283,7 +2411,7 @@ export async function getAccountingArchive({ startDate, endDate } = {}) {
         recordedAt: String(r[16] || ""),
       };
     })
-    .filter((r) => r.dateSerial >= startSerial && r.dateSerial <= endSerial);
+    .filter((r) => r.boothCode !== "SURPLUS_TRANSITION" && r.dateSerial >= startSerial && r.dateSerial <= endSerial);
 
   const filteredTickets = ticketValues
     .map((r) => {
@@ -2304,7 +2432,7 @@ export async function getAccountingArchive({ startDate, endDate } = {}) {
         recordedAt: String(r[10] || ""),
       };
     })
-    .filter((r) => r.dateSerial >= startSerial && r.dateSerial <= endSerial);
+    .filter((r) => r.boothCode !== "SURPLUS_TRANSITION" && r.dateSerial >= startSerial && r.dateSerial <= endSerial);
 
   const archivedDates = new Set(filteredSummary.map((r) => r.date));
 

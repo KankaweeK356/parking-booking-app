@@ -10,6 +10,7 @@ import {
   getBookingAdjustments,
   saveAccountingArchive,
   getAccountingArchive,
+  getCustomerSummaryData,
   isoFromSerial,
   isoDateToSerial,
   getTodaySerial,
@@ -53,7 +54,7 @@ export async function getRevenueReconciliationData({ startDate, endDate } = {}) 
     endSerial = temp;
   }
 
-  // ดึงข้อมูลทั้งหมดในครั้งเดียว (รวมข้อมูล Archive ย้อนหลัง)
+  // ดึงข้อมูลทั้งหมดในครั้งเดียว (รวมข้อมูล Archive ย้อนหลัง และ Customer_Summary)
   const [
     allTransactions,
     urgentLogs,
@@ -61,6 +62,7 @@ export async function getRevenueReconciliationData({ startDate, endDate } = {}) 
     masterList,
     allAdjustments,
     archiveData,
+    custSummaryRangeData,
   ] = await Promise.all([
     getTransectionRows(),
     getUrgentAccessLogs(),
@@ -71,7 +73,19 @@ export async function getRevenueReconciliationData({ startDate, endDate } = {}) 
       console.warn("Failed to fetch accounting archive:", err.message);
       return { customerSummary: [], rawTransactions: [], archivedDates: new Set() };
     }),
+    getCustomerSummaryData({
+      startDate: isoFromSerial(startSerial + 1),
+      endDate: isoFromSerial(endSerial + 1),
+      mode: "range",
+    }).catch(() => ({ dailyBreakdown: [] })),
   ]);
+
+  const custSummaryRowsByOpDate = new Map();
+  (custSummaryRangeData?.dailyBreakdown || []).forEach((r) => {
+    if (!r?.date) return;
+    if (!custSummaryRowsByOpDate.has(r.date)) custSummaryRowsByOpDate.set(r.date, []);
+    custSummaryRowsByOpDate.get(r.date).push(r);
+  });
 
   // สร้างแผนผังชื่อลูกค้า
   const masterMap = new Map();
@@ -130,10 +144,21 @@ export async function getRevenueReconciliationData({ startDate, endDate } = {}) 
     const liveTicketsCount = liveDayTransactions.reduce((sum, t) => sum + (Number(t.quantity) || 1), 0);
     const archivedPaidCount = archivedForDay.reduce((sum, c) => sum + (c.paidTickets || 0), 0);
 
+    const custRowsForTomorrow = custSummaryRowsByOpDate.get(tomorrowIso) || [];
+    const custSumTotalPaid = custRowsForTomorrow.reduce(
+      (sum, r) => sum + (Number(r.paid) || 0) + (Number(r.urgent) || 0),
+      0
+    );
+
     // กรณีที่ 1: ใช้ข้อมูลจาก Archive ถาวรเมื่อ:
-    // 1) ไม่มีตั๋วสดใน tbt_DailyFee แล้ว (!hasLiveTickets)
-    // 2) หรือใน Archive มีข้อมูลตั๋วที่สมบูรณ์กว่าหรือเท่ากับตั๋วสดที่กำลังทยอยหลุดรอบ (archivedPaidCount >= liveTicketsCount && archivedPaidCount > 0)
-    if (archivedForDay.length > 0 && (!hasLiveTickets || (archivedPaidCount >= liveTicketsCount && archivedPaidCount > 0))) {
+    // 1) ไม่มีตั๋วสดใน tbt_DailyFee แล้ว (!hasLiveTickets) และมีข้อมูลใน Archive ไม่น้อยกว่า Customer_Summary
+    // 2) หรือใน Archive มีข้อมูลตั๋วที่สมบูรณ์กว่าหรือเท่ากับตั๋วสดและ Customer_Summary
+    const minExpectedPaid = Math.max(liveTicketsCount, custSumTotalPaid);
+    if (
+      archivedForDay.length > 0 &&
+      archivedPaidCount >= minExpectedPaid &&
+      (!hasLiveTickets || archivedPaidCount > 0)
+    ) {
       const archivedTxForDay = (archiveData?.rawTransactions || []).filter((tx) => tx.posDate === dIso);
       archivedForDay.forEach((c) => {
         uniqueCustomers.add(c.boothCode);
@@ -150,9 +175,89 @@ export async function getRevenueReconciliationData({ startDate, endDate } = {}) 
       continue;
     }
 
+    // กรณีที่ 1.5: หากไม่มีตั๋วสดใน tbt_DailyFee แล้ว และยังไม่มีใน Accounting_Daily_Summary ให้ดึงข้อมูลจาก Customer_Summary (วันปฏิบัติการ tomorrowIso)
+    if (!hasLiveTickets && custRowsForTomorrow.length > 0) {
+      const fallbackDaySummary = [];
+      custRowsForTomorrow.forEach((r) => {
+        const docId = String(r.docId || "").trim();
+        const custName = String(r.customerName || getCustomerName(docId)).trim();
+        const advanceSlotsCount = Number(r.booked) || 0;
+        const urgentSlotsCount = Number(r.urgent) || 0;
+        const totalBookedSlots = advanceSlotsCount + urgentSlotsCount;
+        const advancePaidSlots = Number(r.paid) || 0;
+        const totalPaidTickets = advancePaidSlots + urgentSlotsCount;
+
+        const earnedTodaySlots = urgentSlotsCount;
+        const advanceTomorrowSlots = Math.min(advancePaidSlots, advanceSlotsCount);
+        const surplusSlots = Math.max(0, advancePaidSlots - advanceSlotsCount);
+        const totalShortfallSlots = Math.max(0, advanceSlotsCount - advanceTomorrowSlots);
+
+        const totalPaidAmount = totalPaidTickets * TICKET_PRICE_PER_UNIT;
+        const earnedTodayAmount = earnedTodaySlots * TICKET_PRICE_PER_UNIT;
+        const advanceTomorrowAmount = advanceTomorrowSlots * TICKET_PRICE_PER_UNIT;
+        const surplusAmount = surplusSlots * TICKET_PRICE_PER_UNIT;
+        const shortfallAmount = totalShortfallSlots * TICKET_PRICE_PER_UNIT;
+
+        let status = RECON_STATUS.BALANCED;
+        let statusKey = RECON_STATUS_KEY.BALANCED;
+        if (totalShortfallSlots > 0) {
+          status = RECON_STATUS.UNDERFUNDED;
+          statusKey = RECON_STATUS_KEY.UNDERFUNDED;
+        } else if (surplusSlots > 0) {
+          status = RECON_STATUS.SURPLUS;
+          statusKey = RECON_STATUS_KEY.SURPLUS;
+        }
+
+        const item = {
+          date: dIso,
+          boothCode: docId,
+          customerName: custName,
+          bookedTickets: totalBookedSlots,
+          paidTickets: totalPaidTickets,
+          totalPaid: totalPaidAmount,
+          earnedToday: earnedTodayAmount,
+          advanceTomorrow: advanceTomorrowAmount,
+          surplus: surplusAmount,
+          shortfall: shortfallAmount,
+          status,
+          statusKey,
+          urgentCount: urgentSlotsCount,
+          advanceCount: advanceSlotsCount,
+          surplusTickets: surplusSlots,
+          shortfallTickets: totalShortfallSlots,
+        };
+
+        uniqueCustomers.add(docId);
+        fallbackDaySummary.push(item);
+        customerSummary.push(item);
+        grandTotalCash += totalPaidAmount;
+        grandEarnedToday += earnedTodayAmount;
+        grandAdvanceTomorrow += advanceTomorrowAmount;
+        grandSurplus += surplusAmount;
+        grandShortfall += shortfallAmount;
+        grandPaidTickets += totalPaidTickets;
+        grandBookedTickets += totalBookedSlots;
+      });
+
+      entriesToArchive.push({
+        date: dIso,
+        customerSummary: fallbackDaySummary,
+        rawTransactions: [],
+      });
+      continue;
+    }
+
     // กรณีที่ 2: วันที่นี้ยังอยู่ใน Rolling 5 วันของตั๋วด่าน -> คำนวณสด & เตรียมเซฟ Archive
     const dayCustomerSummary = [];
     const dayRawTransactions = [];
+
+    // ดึงข้อมูล Customer_Summary ของวันปฏิบัติการ tomorrowIso (sourceDate = dIso) มาช่วยป้องกันกรณีวันเก่าสุดใน tbt_DailyFee ทยอยหลุดรอบบางส่วน
+    const custPaidByDoc = new Map();
+    custRowsForTomorrow.forEach((r) => {
+      if (r.docId) {
+        custPaidByDoc.set(String(r.docId).trim(), Number(r.paid) || 0);
+      }
+    });
 
     // Pause / Daily adjustments สำหรับวันพรุ่งนี้
     const adjustmentsTomorrow = new Set(
@@ -216,11 +321,10 @@ export async function getRevenueReconciliationData({ startDate, endDate } = {}) 
         .filter((t) => String(t.boothCode).trim() === docId)
         .sort((a, b) => (a.sheetRow || 0) - (b.sheetRow || 0));
 
-      const totalPaidTickets = custTxList.reduce(
+      const livePaidTickets = custTxList.reduce(
         (sum, t) => sum + (Number(t.quantity) || 1),
         0
       );
-      const totalPaidAmount = totalPaidTickets * TICKET_PRICE_PER_UNIT;
 
       // 2. สิทธิ์ด่วนวันนี้ (Operational Date dIso)
       const custUrgentItems = urgentLogs.filter(
@@ -233,6 +337,10 @@ export async function getRevenueReconciliationData({ startDate, endDate } = {}) 
         (sum, l) => sum + (Number(l.ticketCount) || 1),
         0
       );
+
+      const snapshotAdvancePaid = custPaidByDoc.get(docId) || 0;
+      const totalPaidTickets = Math.max(livePaidTickets, snapshotAdvancePaid + urgentSlotsCount);
+      const totalPaidAmount = totalPaidTickets * TICKET_PRICE_PER_UNIT;
 
       // 3. สิทธิ์จองล่วงหน้าวันพรุ่งนี้ (Operational Date tomorrowIso)
       const custAdvanceItems = allBookings.filter((b) => {
@@ -373,11 +481,13 @@ export async function getRevenueReconciliationData({ startDate, endDate } = {}) 
     }
   }
 
-  // Auto-Archive: บันทึกข้อมูลวันที่คำนวณสดเข้าชีตถาวรแบบเบื้องหลัง (ไม่ให้กระทบผู้ใช้)
+  // Auto-Archive: บันทึกข้อมูลวันที่คำนวณสดเข้าชีตถาวร (รอให้บันทึกเสร็จสมบูรณ์เพื่อป้องกัน Race Condition)
   if (entriesToArchive.length > 0) {
-    saveAccountingArchive(entriesToArchive).catch((err) => {
+    try {
+      await saveAccountingArchive(entriesToArchive);
+    } catch (err) {
       console.warn("Auto-archiving reconciliation failed (safe ignore):", err.message);
-    });
+    }
   }
 
   return {

@@ -108,6 +108,7 @@ export default function PaymentSummaryPage() {
     totalBooked: 0,
     totalPaid: 0,
     totalShortfall: 0,
+    totalSurplus: 0,
     totalUrgent: 0,
     overallPct: 0,
     customerCount: 0,
@@ -157,7 +158,8 @@ export default function PaymentSummaryPage() {
         escapeCell("รหัสสัญญา"),
         escapeCell("ชื่อลูกค้า"),
         escapeCell("จองตามสัญญา (ช่อง)"),
-        escapeCell("จ่ายจริง (ช่อง)"),
+        escapeCell("จ่ายจริง (ใบ)"),
+        escapeCell("ส่วนเกิน / ตีเบิ้ล (ใบ)"),
         escapeCell("ไม่ได้ใช้สิทธิ์ (ช่อง)"),
         escapeCell("ขอด่วน (ช่อง)"),
         escapeCell("% การจ่ายจริง"),
@@ -170,6 +172,7 @@ export default function PaymentSummaryPage() {
           escapeCell(r.customerName),
           escapeCell(r.booked),
           escapeCell(r.paid),
+          escapeCell(r.surplus || 0),
           escapeCell(r.shortfall),
           escapeCell(r.urgent),
           escapeCell(`${((r.pct || 0) * 100).toFixed(1)}%`),
@@ -183,6 +186,7 @@ export default function PaymentSummaryPage() {
         escapeCell(""),
         escapeCell(totals.totalBooked),
         escapeCell(totals.totalPaid),
+        escapeCell(totals.totalSurplus || 0),
         escapeCell(totals.totalShortfall),
         escapeCell(totals.totalUrgent),
         escapeCell(`${((totals.overallPct || 0) * 100).toFixed(1)}%`),
@@ -204,7 +208,8 @@ export default function PaymentSummaryPage() {
         escapeCell("ชื่อลูกค้า"),
         escapeCell("จำนวนวันที่จอง (วัน)"),
         escapeCell("จองรวมทั้งช่วง (ช่อง)"),
-        escapeCell("จ่ายจริงรวม (ช่อง)"),
+        escapeCell("จ่ายจริงรวม (ใบ)"),
+        escapeCell("ส่วนเกิน / ตีเบิ้ลรวม (ใบ)"),
         escapeCell("ไม่ได้ใช้สิทธิ์รวม (ช่อง)"),
         escapeCell("ขอด่วนรวม (ช่อง)"),
         escapeCell("% การจ่ายจริงเฉลี่ย"),
@@ -218,6 +223,7 @@ export default function PaymentSummaryPage() {
           escapeCell(r.daysCount || 1),
           escapeCell(r.booked),
           escapeCell(r.paid),
+          escapeCell(r.surplus || 0),
           escapeCell(r.shortfall),
           escapeCell(r.urgent),
           escapeCell(`${((r.pct || 0) * 100).toFixed(1)}%`),
@@ -232,6 +238,7 @@ export default function PaymentSummaryPage() {
         escapeCell(`รวม ${totals.daysInRange || 0} วัน`),
         escapeCell(totals.totalBooked),
         escapeCell(totals.totalPaid),
+        escapeCell(totals.totalSurplus || 0),
         escapeCell(totals.totalShortfall),
         escapeCell(totals.totalUrgent),
         escapeCell(`${((totals.overallPct || 0) * 100).toFixed(1)}%`),
@@ -244,7 +251,8 @@ export default function PaymentSummaryPage() {
         escapeCell("รหัสสัญญา"),
         escapeCell("ชื่อลูกค้า"),
         escapeCell("จองตามสัญญา (ช่อง)"),
-        escapeCell("จ่ายจริง (ช่อง)"),
+        escapeCell("จ่ายจริง (ใบ)"),
+        escapeCell("ส่วนเกิน / ตีเบิ้ล (ใบ)"),
         escapeCell("ไม่ได้ใช้สิทธิ์ (ช่อง)"),
         escapeCell("ขอด่วน (ช่อง)"),
         escapeCell("% การจ่ายจริง"),
@@ -257,6 +265,7 @@ export default function PaymentSummaryPage() {
           escapeCell(r.customerName),
           escapeCell(r.booked),
           escapeCell(r.paid),
+          escapeCell(r.surplus || 0),
           escapeCell(r.shortfall),
           escapeCell(r.urgent),
           escapeCell(`${((r.pct || 0) * 100).toFixed(1)}%`),
@@ -454,8 +463,14 @@ export default function PaymentSummaryPage() {
 
           <div className="kpi-card kpi-paid">
             <span className="kpi-label">จ่ายจริง / มีสิทธิ์</span>
-            <span className="kpi-value">{totals.totalPaid} <small>ช่อง</small></span>
-            <span className="kpi-sub">ได้รับการยืนยันตั๋ว</span>
+            <span className="kpi-value">{totals.totalPaid} <small>ใบ</small></span>
+            <span className="kpi-sub">รวมตั๋วที่ชำระจริง</span>
+          </div>
+
+          <div className="kpi-card kpi-surplus">
+            <span className="kpi-label">ส่วนเกิน / ตีเบิ้ล</span>
+            <span className="kpi-value" style={{ color: "#0284c7" }}>{totals.totalSurplus || 0} <small>ใบ</small></span>
+            <span className="kpi-sub">จ่ายเกินจำนวนที่จอง</span>
           </div>
 
           <div className="kpi-card kpi-shortfall">
@@ -527,6 +542,7 @@ export default function PaymentSummaryPage() {
                     )}
                     <th style={{ width: "120px", textAlign: "right" }}>จองตามสัญญา</th>
                     <th style={{ width: "110px", textAlign: "right" }}>จ่ายจริง</th>
+                    <th style={{ width: "120px", textAlign: "right" }}>ส่วนเกิน / ตีเบิ้ล</th>
                     <th style={{ width: "120px", textAlign: "right" }}>ไม่ได้ใช้สิทธิ์</th>
                     <th style={{ width: "100px", textAlign: "right" }}>ขอด่วน</th>
                     <th style={{ width: "130px", textAlign: "center" }}>% การจ่ายจริง</th>
@@ -549,6 +565,9 @@ export default function PaymentSummaryPage() {
                         )}
                         <td style={{ textAlign: "right" }}>{r.booked}</td>
                         <td style={{ textAlign: "right", color: "#2e7d32", fontWeight: "600" }}>{r.paid}</td>
+                        <td style={{ textAlign: "right", color: (r.surplus || 0) > 0 ? "#0284c7" : "#9e9e9e", fontWeight: (r.surplus || 0) > 0 ? "600" : "400" }}>
+                          {r.surplus || 0}
+                        </td>
                         <td style={{ textAlign: "right", color: r.shortfall > 0 ? "#c62828" : "#9e9e9e" }}>
                           {r.shortfall}
                         </td>
@@ -567,6 +586,9 @@ export default function PaymentSummaryPage() {
                     </td>
                     <td style={{ textAlign: "right", fontWeight: "bold" }}>{totals.totalBooked}</td>
                     <td style={{ textAlign: "right", fontWeight: "bold", color: "#2e7d32" }}>{totals.totalPaid}</td>
+                    <td style={{ textAlign: "right", fontWeight: "bold", color: (totals.totalSurplus || 0) > 0 ? "#0284c7" : "#9e9e9e" }}>
+                      {totals.totalSurplus || 0}
+                    </td>
                     <td style={{ textAlign: "right", fontWeight: "bold", color: totals.totalShortfall > 0 ? "#c62828" : "#9e9e9e" }}>
                       {totals.totalShortfall}
                     </td>
