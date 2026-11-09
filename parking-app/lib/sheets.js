@@ -2120,12 +2120,34 @@ export async function saveAccountingArchive(items) {
       valueRenderOption: "UNFORMATTED_VALUE",
     });
     const existingRows = existingSummaryRes.data.values || [];
-    const filteredRows = existingRows.filter((r) => {
-      const rDate = typeof r[0] === "number" ? isoFromSerial(r[0]) : String(r[0] || "");
-      return rDate && !targetDates.has(rDate);
+
+    // Failsafe Guard: เช็คไม่ให้บันทึกทับข้อมูลเดิม ถ้าข้อมูลใหม่มียอดตั๋วจ่ายเป็น 0 แต่ของเดิมเคยมีตั๋ว
+    const protectedDates = new Set();
+    targetDates.forEach((tDate) => {
+      const existingDateRows = existingRows.filter((r) => {
+        const rDate = typeof r[0] === "number" ? isoFromSerial(r[0]) : String(r[0] || "");
+        return rDate === tDate;
+      });
+      const existingTotalPaid = existingDateRows.reduce((sum, r) => sum + (Number(r[4]) || 0), 0);
+      const newTotalPaid = allNewSummaryRows
+        .filter((r) => r[0] === tDate)
+        .reduce((sum, r) => sum + (Number(r[4]) || 0), 0);
+
+      if (existingTotalPaid > 0 && newTotalPaid === 0) {
+        console.warn(`[saveAccountingArchive] Protected date ${tDate} from zero-ticket overwrite! Existing paid: ${existingTotalPaid}`);
+        protectedDates.add(tDate);
+      }
     });
 
-    const combinedSummary = [...filteredRows, ...allNewSummaryRows];
+    const safeNewSummaryRows = allNewSummaryRows.filter((r) => !protectedDates.has(r[0]));
+    const datesToReplace = new Set([...targetDates].filter((d) => !protectedDates.has(d)));
+
+    const filteredRows = existingRows.filter((r) => {
+      const rDate = typeof r[0] === "number" ? isoFromSerial(r[0]) : String(r[0] || "");
+      return rDate && !datesToReplace.has(rDate);
+    });
+
+    const combinedSummary = [...filteredRows, ...safeNewSummaryRows];
     combinedSummary.sort((a, b) => {
       const dateCmp = String(a[0]).localeCompare(String(b[0]));
       if (dateCmp !== 0) return dateCmp;
@@ -2171,12 +2193,30 @@ export async function saveAccountingArchive(items) {
       valueRenderOption: "UNFORMATTED_VALUE",
     });
     const existingTx = existingTicketRes.data.values || [];
-    const filteredTx = existingTx.filter((r) => {
-      const rDate = typeof r[0] === "number" ? isoFromSerial(r[0]) : String(r[0] || "");
-      return rDate && !targetDates.has(rDate);
+
+    // Failsafe Guard: ป้องกันไม่ให้ลบตั๋วเดิมของวันที่มีตั๋วอยู่แล้ว หากข้อมูลใหม่ส่งมาว่าง
+    const protectedTxDates = new Set();
+    targetDates.forEach((tDate) => {
+      const existingCount = existingTx.filter((r) => {
+        const rDate = typeof r[0] === "number" ? isoFromSerial(r[0]) : String(r[0] || "");
+        return rDate === tDate;
+      }).length;
+      const newCount = allNewTicketRows.filter((r) => r[0] === tDate).length;
+      if (existingCount > 0 && newCount === 0) {
+        console.warn(`[saveAccountingArchive] Protected ticket transactions for date ${tDate}!`);
+        protectedTxDates.add(tDate);
+      }
     });
 
-    const combinedTx = [...filteredTx, ...allNewTicketRows];
+    const safeNewTicketRows = allNewTicketRows.filter((r) => !protectedTxDates.has(r[0]));
+    const datesToReplaceTx = new Set([...targetDates].filter((d) => !protectedTxDates.has(d)));
+
+    const filteredTx = existingTx.filter((r) => {
+      const rDate = typeof r[0] === "number" ? isoFromSerial(r[0]) : String(r[0] || "");
+      return rDate && !datesToReplaceTx.has(rDate);
+    });
+
+    const combinedTx = [...filteredTx, ...safeNewTicketRows];
     combinedTx.sort((a, b) => {
       const dateCmp = String(a[0]).localeCompare(String(b[0]));
       if (dateCmp !== 0) return dateCmp;

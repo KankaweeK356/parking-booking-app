@@ -354,7 +354,9 @@ export async function getRevenueReconciliationData({ startDate, endDate } = {}) 
     }
 
     // เก็บวันที่คำนวณสดเพื่อเตรียม Auto-Archive
-    if (dayCustomerSummary.length > 0 || dayRawTransactions.length > 0) {
+    // STRICT GUARD: บันทึกเฉพาะวันที่มีตั๋วสดจากด่าน (hasLiveTickets === true) เท่านั้น
+    // ห้าม auto-archive หรือทับข้อมูลของวันที่ตั๋วสดหลุดรอบไปแล้วโดยเด็ดขาด
+    if (hasLiveTickets && (dayCustomerSummary.length > 0 || dayRawTransactions.length > 0)) {
       entriesToArchive.push({
         date: dIso,
         customerSummary: dayCustomerSummary,
