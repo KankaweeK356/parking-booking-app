@@ -1,5 +1,5 @@
 // pages/admin/revenue-reconciliation.js
-// หน้าสรุปการชำระเงินและกระทบยอดรายได้สำหรับฝ่ายบัญชีและการเงิน (Admin / Accounting / Account)
+// หน้าสรุปการชำระเงินและกระทบยอดรายได้สำหรับฝ่ายบัญชีและการเงิน (Admin / Accounting / Account) - รองรับพิมพ์ PDF แนวนอนแยกวันละแผ่น
 
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
