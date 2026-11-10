@@ -239,34 +239,6 @@ export async function getRevenueReconciliationData({ startDate, endDate, autoArc
         grandBookedTickets += totalBookedSlots;
       });
 
-      // วันที่ 2026-11-03 มียอดตั๋วส่วนเกิน/จ่ายเบิ้ลช่วงรอยต่อระบบเดิม 164 ใบ (16,400 บาท)
-      if (dIso === "2026-11-03") {
-        const transitionSurplusItem = {
-          date: dIso,
-          boothCode: "SURPLUS_TRANSITION",
-          customerName: "ตั๋วส่วนเกิน/ตีเบิ้ลช่วงรอยต่อ (164 ใบ)",
-          bookedTickets: 0,
-          paidTickets: 164,
-          totalPaid: 16400,
-          earnedToday: 0,
-          advanceTomorrow: 0,
-          surplus: 16400,
-          shortfall: 0,
-          status: RECON_STATUS.SURPLUS,
-          statusKey: RECON_STATUS_KEY.SURPLUS,
-          urgentCount: 0,
-          advanceCount: 0,
-          surplusTickets: 164,
-          shortfallTickets: 0,
-        };
-        uniqueCustomers.add("SURPLUS_TRANSITION");
-        fallbackDaySummary.push(transitionSurplusItem);
-        customerSummary.push(transitionSurplusItem);
-        grandTotalCash += 16400;
-        grandSurplus += 16400;
-        grandPaidTickets += 164;
-      }
-
       continue;
     }
 
