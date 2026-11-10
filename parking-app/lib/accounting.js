@@ -1,6 +1,6 @@
 // lib/accounting.js
 // ระบบกระทบยอดรายได้และการเงินสำหรับฝ่ายบัญชี (Revenue & Payment Reconciliation)
-// รองรับ Rolling 5 วันของตั๋วด่านด้วยระบบ Hybrid Smart Archive
+// รองรับ Rolling 5 วันของตั๋วด่านด้วยระบบ Hybrid Smart Archive (Production Release)
 
 import {
   getTransectionRows,
