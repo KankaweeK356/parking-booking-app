@@ -2043,7 +2043,16 @@ export async function getCustomerSummaryData({ date, startDate, endDate, mode = 
     }
   });
 
-  const parsedRows = Array.from(rowMapByOpDateAndDoc.values());
+  const getStatusObj = (shortfall, surplus) => {
+    if ((surplus || 0) > 0) return { status: "เงินรับส่วนเกิน", statusKey: "surplus" };
+    if ((shortfall || 0) > 0) return { status: "รอตรวจยอดชำระ", statusKey: "shortfall" };
+    return { status: "กระทบยอดลงตัว", statusKey: "balanced" };
+  };
+
+  const parsedRows = Array.from(rowMapByOpDateAndDoc.values()).map((r) => ({
+    ...r,
+    ...getStatusObj(r.shortfall, r.surplus),
+  }));
 
   if (mode === "range") {
     const from = startDate || "0000-00-00";
@@ -2078,6 +2087,7 @@ export async function getCustomerSummaryData({ date, startDate, endDate, mode = 
     const summaryRows = Array.from(customerMap.values()).map((c) => ({
       ...c,
       pct: c.booked > 0 ? Math.round((c.paid / c.booked) * 1000) / 1000 : ((c.paid > 0 || c.urgent > 0) ? 1 : 0),
+      ...getStatusObj(c.shortfall, c.surplus),
     }));
     summaryRows.sort((a, b) => a.docId.localeCompare(b.docId, "th", { numeric: true }));
 
