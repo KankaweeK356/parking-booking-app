@@ -214,10 +214,10 @@ export default function PaymentSummaryPage() {
         escapeCell("ลำดับ"),
         escapeCell("รหัสสัญญา"),
         escapeCell("ชื่อลูกค้า"),
-        escapeCell("จองตามสัญญา (ช่อง)"),
-        escapeCell("จ่ายจริง (ใบ)"),
-        escapeCell("ส่วนเกิน / ตีเบิ้ล (ใบ)"),
-        escapeCell("ไม่ได้ใช้สิทธิ์ (ช่อง)"),
+        escapeCell("จองตามสัญญา (ใบ)"),
+        escapeCell("ชำระจริง (ใบ)"),
+        escapeCell("ใช้งานเฉลี่ย (ใบ)"),
+        escapeCell("ส่วนเกิน / รอตรวจ (ใบ)"),
         escapeCell("ขอด่วน (ช่อง)"),
         escapeCell("% การจ่ายจริง"),
         escapeCell("สถานะ"),
@@ -225,14 +225,15 @@ export default function PaymentSummaryPage() {
 
       rows.forEach((r, idx) => {
         const statusText = (r.surplus || 0) > 0 ? "เงินรับส่วนเกิน" : (r.shortfall || 0) > 0 ? "รอตรวจยอดชำระ" : "กระทบยอดลงตัว";
+        const diffVal = (r.surplus || 0) > 0 ? `+${r.surplus}` : (r.shortfall || 0) > 0 ? `-${r.shortfall}` : "0";
         csv += [
           escapeCell(idx + 1),
           escapeCell(r.docId),
           escapeCell(r.customerName),
           escapeCell(r.booked),
           escapeCell(r.paid),
-          escapeCell(r.surplus || 0),
-          escapeCell(r.shortfall),
+          escapeCell(Math.round(r.avgUsed || 0)),
+          escapeCell(diffVal),
           escapeCell(r.urgent),
           escapeCell(`${((r.pct || 0) * 100).toFixed(1)}%`),
           escapeCell(statusText),
@@ -247,8 +248,8 @@ export default function PaymentSummaryPage() {
         escapeCell(""),
         escapeCell(totals.totalBooked),
         escapeCell(totals.totalPaid),
-        escapeCell(totals.totalSurplus || 0),
-        escapeCell(totals.totalShortfall),
+        escapeCell(totals.totalAvgUsed || 0),
+        escapeCell(`+${totals.totalSurplus || 0} / -${totals.totalShortfall || 0}`),
         escapeCell(totals.totalUrgent),
         escapeCell(`${((totals.overallPct || 0) * 100).toFixed(1)}%`),
         escapeCell(overallStatus),
@@ -629,11 +630,11 @@ export default function PaymentSummaryPage() {
                     {mode === "range" && (
                       <th style={{ width: "110px", textAlign: "center" }}>วันที่มีจอง</th>
                     )}
-                    <th style={{ width: "120px", textAlign: "right" }}>จองตามสัญญา</th>
-                    <th style={{ width: "110px", textAlign: "right" }}>จ่ายจริง</th>
-                    <th style={{ width: "120px", textAlign: "right" }}>ส่วนเกิน / ตีเบิ้ล</th>
-                    <th style={{ width: "120px", textAlign: "right" }}>ไม่ได้ใช้สิทธิ์</th>
-                    <th style={{ width: "100px", textAlign: "right" }}>ขอด่วน</th>
+                    <th style={{ width: "110px", textAlign: "right" }}>จอง (ใบ)</th>
+                    <th style={{ width: "110px", textAlign: "right" }}>ชำระ (ใบ)</th>
+                    <th style={{ width: "120px", textAlign: "right" }}>ใช้งานเฉลี่ย (ใบ)</th>
+                    <th style={{ width: "130px", textAlign: "right" }}>ส่วนเกิน / รอตรวจ</th>
+                    <th style={{ width: "95px", textAlign: "right" }}>ขอด่วน</th>
                     <th style={{ width: "110px", textAlign: "center" }}>% การจ่ายจริง</th>
                     <th style={{ width: "120px", textAlign: "center" }}>สถานะ</th>
                   </tr>
@@ -645,6 +646,9 @@ export default function PaymentSummaryPage() {
                     if (pctVal >= 100) badgeClass = "badge-green";
                     else if (pctVal >= 80) badgeClass = "badge-orange";
 
+                    const hasSurplus = (r.surplus || 0) > 0;
+                    const hasShortfall = (r.shortfall || 0) > 0;
+
                     return (
                       <tr key={r.docId || idx}>
                         <td style={{ textAlign: "center" }}>{idx + 1}</td>
@@ -654,23 +658,35 @@ export default function PaymentSummaryPage() {
                           <td style={{ textAlign: "center" }}>{r.daysCount || 1} วัน</td>
                         )}
                         <td style={{ textAlign: "right" }}>{r.booked}</td>
-                        <td style={{ textAlign: "right", color: "#2e7d32", fontWeight: "600" }}>{r.paid}</td>
-                        <td style={{ textAlign: "right", color: (r.surplus || 0) > 0 ? "#0284c7" : "#9e9e9e", fontWeight: (r.surplus || 0) > 0 ? "700" : "400" }}>
-                          {(r.surplus || 0) > 0 ? `+${r.surplus}` : 0}
+                        <td style={{ textAlign: "right", color: "#2e7d32", fontWeight: "700" }}>{r.paid}</td>
+                        <td style={{ textAlign: "right", fontWeight: "600", color: "#475569", background: "#f8fafc" }}>
+                          {Math.round(r.avgUsed || 0)}
                         </td>
-                        <td style={{ textAlign: "right", color: r.shortfall > 0 ? "#c62828" : "#9e9e9e", fontWeight: r.shortfall > 0 ? "700" : "400" }}>
-                          {r.shortfall > 0 ? `-${r.shortfall}` : 0}
+                        <td
+                          style={{
+                            textAlign: "right",
+                            color: hasSurplus && !hasShortfall ? "#0284c7" : hasShortfall && !hasSurplus ? "#c62828" : hasSurplus && hasShortfall ? "#334155" : "#9e9e9e",
+                            fontWeight: hasSurplus || hasShortfall ? "700" : "400",
+                          }}
+                        >
+                          {hasSurplus && hasShortfall
+                            ? `+${r.surplus} / -${r.shortfall}`
+                            : hasSurplus
+                            ? `+${r.surplus}`
+                            : hasShortfall
+                            ? `-${r.shortfall}`
+                            : "-"}
                         </td>
                         <td style={{ textAlign: "right" }}>{r.urgent}</td>
                         <td style={{ textAlign: "center" }}>
                           <span className={`pct-badge ${badgeClass}`}>{pctVal}%</span>
                         </td>
                         <td style={{ textAlign: "center" }}>
-                          {(r.surplus || 0) > 0 ? (
+                          {hasSurplus && !hasShortfall ? (
                             <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700, background: "#e0f2fe", color: "#0369a1" }}>
                               เงินรับส่วนเกิน
                             </span>
-                          ) : (r.shortfall || 0) > 0 ? (
+                          ) : hasShortfall ? (
                             <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700, background: "#fee2e2", color: "#991b1b" }}>
                               รอตรวจยอดชำระ
                             </span>
@@ -691,11 +707,23 @@ export default function PaymentSummaryPage() {
                     </td>
                     <td style={{ textAlign: "right", fontWeight: "bold" }}>{totals.totalBooked}</td>
                     <td style={{ textAlign: "right", fontWeight: "bold", color: "#2e7d32" }}>{totals.totalPaid}</td>
-                    <td style={{ textAlign: "right", fontWeight: "bold", color: (totals.totalSurplus || 0) > 0 ? "#0284c7" : "#9e9e9e" }}>
-                      {totals.totalSurplus || 0}
+                    <td style={{ textAlign: "right", fontWeight: "bold", color: "#475569" }}>
+                      {totals.totalAvgUsed || 0}
                     </td>
-                    <td style={{ textAlign: "right", fontWeight: "bold", color: totals.totalShortfall > 0 ? "#c62828" : "#9e9e9e" }}>
-                      {totals.totalShortfall}
+                    <td style={{ textAlign: "right", fontWeight: "bold" }}>
+                      {(totals.totalSurplus || 0) > 0 && totals.totalShortfall > 0 ? (
+                        <span>
+                          <span style={{ color: "#0284c7" }}>+{totals.totalSurplus}</span>
+                          {" / "}
+                          <span style={{ color: "#c62828" }}>-{totals.totalShortfall}</span>
+                        </span>
+                      ) : (totals.totalSurplus || 0) > 0 ? (
+                        <span style={{ color: "#0284c7" }}>+{totals.totalSurplus}</span>
+                      ) : totals.totalShortfall > 0 ? (
+                        <span style={{ color: "#c62828" }}>-{totals.totalShortfall}</span>
+                      ) : (
+                        "-"
+                      )}
                     </td>
                     <td style={{ textAlign: "right", fontWeight: "bold" }}>{totals.totalUrgent}</td>
                     <td style={{ textAlign: "center", fontWeight: "bold" }}>
@@ -794,10 +822,10 @@ export default function PaymentSummaryPage() {
                         <th style={{ width: "22px" }}>#</th>
                         <th style={{ width: "36px" }}>รหัส</th>
                         <th style={{ textAlign: "left" }}>ชื่อลูกค้า</th>
-                        <th style={{ width: "36px" }}>จอง</th>
-                        <th style={{ width: "36px" }}>จ่าย</th>
-                        <th style={{ width: "42px" }}>ส่วนเกิน</th>
-                        <th style={{ width: "42px" }}>ขาด</th>
+                        <th style={{ width: "34px" }}>จอง</th>
+                        <th style={{ width: "34px" }}>ชำระ</th>
+                        <th style={{ width: "38px" }}>เฉลี่ย</th>
+                        <th style={{ width: "58px" }}>ส่วนเกิน/รอตรวจ</th>
                         <th style={{ width: "34px" }}>ด่วน</th>
                         <th style={{ width: "42px" }}>% จ่าย</th>
                         <th style={{ width: "70px" }}>สถานะ</th>
@@ -816,11 +844,13 @@ export default function PaymentSummaryPage() {
                             </td>
                             <td style={{ textAlign: "right" }}>{r.booked}</td>
                             <td style={{ textAlign: "right", fontWeight: 700 }}>{r.paid}</td>
-                            <td style={{ textAlign: "right", fontWeight: (r.surplus || 0) > 0 ? 700 : 400 }}>
-                              {(r.surplus || 0) > 0 ? `+${r.surplus}` : 0}
-                            </td>
-                            <td style={{ textAlign: "right", fontWeight: r.shortfall > 0 ? 700 : 400 }}>
-                              {r.shortfall > 0 ? `-${r.shortfall}` : 0}
+                            <td style={{ textAlign: "right" }}>{Math.round(r.avgUsed || 0)}</td>
+                            <td style={{ textAlign: "right", fontWeight: (r.surplus || 0) > 0 || (r.shortfall || 0) > 0 ? 700 : 400 }}>
+                              {(r.surplus || 0) > 0
+                                ? `+${r.surplus}`
+                                : (r.shortfall || 0) > 0
+                                ? `-${r.shortfall}`
+                                : "-"}
                             </td>
                             <td style={{ textAlign: "right" }}>{r.urgent || 0}</td>
                             <td style={{ textAlign: "right" }}>{pctVal}%</td>

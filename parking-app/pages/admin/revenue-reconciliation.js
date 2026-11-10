@@ -190,6 +190,7 @@ export default function RevenueReconciliationPage() {
           (acc, item) => ({
             bookedTickets: acc.bookedTickets + (item.bookedTickets || 0),
             paidTickets: acc.paidTickets + (item.paidTickets || 0),
+            avgUsed: acc.avgUsed + Math.round(item.avgUsed || 0),
             totalPaid: acc.totalPaid + (item.totalPaid || 0),
             earnedToday: acc.earnedToday + (item.earnedToday || 0),
             advanceTomorrow: acc.advanceTomorrow + (item.advanceTomorrow || 0),
@@ -199,6 +200,7 @@ export default function RevenueReconciliationPage() {
           {
             bookedTickets: 0,
             paidTickets: 0,
+            avgUsed: 0,
             totalPaid: 0,
             earnedToday: 0,
             advanceTomorrow: 0,
@@ -636,23 +638,22 @@ export default function RevenueReconciliationPage() {
                 <thead>
                   <tr style={{ background: "#f1f5f9", borderBottom: "2px solid #cbd5e1", color: "#334155" }}>
                     <th style={{ padding: "8px 10px", textAlign: "center" }}>#</th>
-                    <th style={{ padding: "8px 10px", textAlign: "center" }}>วันที่ในตั๋ว</th>
-                    <th style={{ padding: "8px 10px", textAlign: "center" }}>รหัสลูกค้า</th>
+                    <th style={{ padding: "8px 10px", textAlign: "center" }}>วันที่</th>
+                    <th style={{ padding: "8px 10px", textAlign: "center" }}>รหัส</th>
                     <th style={{ padding: "8px 10px", textAlign: "left" }}>ชื่อลูกค้า</th>
                     <th style={{ padding: "8px 10px", textAlign: "right" }}>จอง (ใบ)</th>
                     <th style={{ padding: "8px 10px", textAlign: "right" }}>ชำระ (ใบ)</th>
-                    <th style={{ padding: "8px 10px", textAlign: "right" }}>เงินรับจริง (฿)</th>
-                    <th style={{ padding: "8px 10px", textAlign: "right" }}>รายได้รอบวัน (฿)</th>
+                    <th style={{ padding: "8px 10px", textAlign: "right" }}>ใช้งานเฉลี่ย (ใบ)</th>
                     <th style={{ padding: "8px 10px", textAlign: "right" }}>รับล่วงหน้า (฿)</th>
-                    <th style={{ padding: "8px 10px", textAlign: "right" }}>ส่วนเกิน (฿)</th>
-                    <th style={{ padding: "8px 10px", textAlign: "right" }}>รอตรวจ (฿)</th>
+                    <th style={{ padding: "8px 10px", textAlign: "right" }}>รอบวัน (฿)</th>
+                    <th style={{ padding: "8px 10px", textAlign: "right" }}>ส่วนเกิน / รอตรวจ (฿)</th>
                     <th style={{ padding: "8px 10px", textAlign: "center" }}>สถานะ</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredCustomers.length === 0 ? (
                     <tr>
-                      <td colSpan={12} style={{ textAlign: "center", padding: 24, color: "#94a3b8" }}>
+                      <td colSpan={11} style={{ textAlign: "center", padding: 24, color: "#94a3b8" }}>
                         ไม่พบข้อมูลที่ตรงกับเงื่อนไขการค้นหา
                       </td>
                     </tr>
@@ -676,35 +677,36 @@ export default function RevenueReconciliationPage() {
                         <td style={{ padding: "8px 10px", textAlign: "right", color: "#475569" }}>
                           {c.bookedTickets || 0}
                         </td>
-                        <td style={{ padding: "8px 10px", textAlign: "right" }}>{c.paidTickets}</td>
-                        <td style={{ padding: "8px 10px", textAlign: "right", fontWeight: 600 }}>
-                          {formatCurrency(c.totalPaid)}
+                        <td style={{ padding: "8px 10px", textAlign: "right", fontWeight: 700, color: "#0f172a" }}>
+                          {c.paidTickets}
                         </td>
-                        <td style={{ padding: "8px 10px", textAlign: "right", color: "#059669" }}>
-                          {formatCurrency(c.earnedToday)}
+                        <td style={{ padding: "8px 10px", textAlign: "right", fontWeight: 600, color: "#475569", background: "#f8fafc" }}>
+                          {Math.round(c.avgUsed || 0)}
                         </td>
                         <td style={{ padding: "8px 10px", textAlign: "right", color: "#2563eb" }}>
-                          {formatCurrency(c.advanceTomorrow)}
+                          {c.advanceTomorrow > 0 ? formatNumber(c.advanceTomorrow) : "-"}
+                        </td>
+                        <td style={{ padding: "8px 10px", textAlign: "right", color: "#059669" }}>
+                          {c.earnedToday > 0 ? formatNumber(c.earnedToday) : "-"}
                         </td>
                         <td
                           style={{
                             padding: "8px 10px",
                             textAlign: "right",
-                            color: c.surplus > 0 ? "#0284c7" : "#94a3b8",
-                            fontWeight: c.surplus > 0 ? 700 : 400,
+                            color:
+                              c.surplus > 0
+                                ? "#0284c7"
+                                : c.shortfall > 0
+                                ? "#dc2626"
+                                : "#94a3b8",
+                            fontWeight: c.surplus > 0 || c.shortfall > 0 ? 700 : 400,
                           }}
                         >
-                          {c.surplus > 0 ? `+฿${formatCurrency(c.surplus)}` : "-"}
-                        </td>
-                        <td
-                          style={{
-                            padding: "8px 10px",
-                            textAlign: "right",
-                            color: c.shortfall > 0 ? "#dc2626" : "#94a3b8",
-                            fontWeight: c.shortfall > 0 ? 700 : 400,
-                          }}
-                        >
-                          {c.shortfall > 0 ? `-฿${formatCurrency(c.shortfall)}` : "-"}
+                          {c.surplus > 0
+                            ? `+฿${formatNumber(c.surplus)}`
+                            : c.shortfall > 0
+                            ? `-฿${formatNumber(c.shortfall)}`
+                            : "-"}
                         </td>
                         <td style={{ padding: "8px 10px", textAlign: "center" }}>
                           <span
@@ -800,11 +802,11 @@ export default function RevenueReconciliationPage() {
                       <th style={{ width: "36px" }}>รหัส</th>
                       <th style={{ textAlign: "left" }}>ชื่อลูกค้า</th>
                       <th style={{ width: "30px" }}>จอง</th>
-                      <th style={{ width: "30px" }}>จ่าย</th>
-                      <th style={{ width: "56px" }}>รับจริง</th>
-                      <th style={{ width: "56px" }}>ล่วงหน้า</th>
-                      <th style={{ width: "52px" }}>ส่วนเกิน</th>
-                      <th style={{ width: "52px" }}>รอตรวจ</th>
+                      <th style={{ width: "30px" }}>ชำระ</th>
+                      <th style={{ width: "34px" }}>เฉลี่ย</th>
+                      <th style={{ width: "54px" }}>รับล่วงหน้า</th>
+                      <th style={{ width: "44px" }}>รอบวัน</th>
+                      <th style={{ width: "62px" }}>ส่วนเกิน/รอตรวจ</th>
                       <th style={{ width: "68px" }}>สถานะ</th>
                     </tr>
                   </thead>
@@ -818,13 +820,24 @@ export default function RevenueReconciliationPage() {
                         </td>
                         <td style={{ textAlign: "right" }}>{c.bookedTickets || 0}</td>
                         <td style={{ textAlign: "right", fontWeight: 700 }}>{c.paidTickets}</td>
-                        <td style={{ textAlign: "right" }}>{formatNumber(c.totalPaid)}</td>
-                        <td style={{ textAlign: "right" }}>{formatNumber(c.advanceTomorrow)}</td>
-                        <td style={{ textAlign: "right", fontWeight: c.surplus > 0 ? 700 : 400 }}>
-                          {c.surplus > 0 ? `+${formatNumber(c.surplus)}` : "-"}
+                        <td style={{ textAlign: "right" }}>{Math.round(c.avgUsed || 0)}</td>
+                        <td style={{ textAlign: "right" }}>
+                          {c.advanceTomorrow > 0 ? formatNumber(c.advanceTomorrow) : "-"}
                         </td>
-                        <td style={{ textAlign: "right", fontWeight: c.shortfall > 0 ? 700 : 400 }}>
-                          {c.shortfall > 0 ? `-${formatNumber(c.shortfall)}` : "-"}
+                        <td style={{ textAlign: "right" }}>
+                          {c.earnedToday > 0 ? formatNumber(c.earnedToday) : "-"}
+                        </td>
+                        <td
+                          style={{
+                            textAlign: "right",
+                            fontWeight: c.surplus > 0 || c.shortfall > 0 ? 700 : 400,
+                          }}
+                        >
+                          {c.surplus > 0
+                            ? `+${formatNumber(c.surplus)}`
+                            : c.shortfall > 0
+                            ? `-${formatNumber(c.shortfall)}`
+                            : "-"}
                         </td>
                         <td style={{ textAlign: "center", fontWeight: 600 }}>{c.status}</td>
                       </tr>

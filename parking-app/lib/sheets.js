@@ -2049,10 +2049,68 @@ export async function getCustomerSummaryData({ date, startDate, endDate, mode = 
     return { status: "กระทบยอดลงตัว", statusKey: "balanced" };
   };
 
-  const parsedRows = Array.from(rowMapByOpDateAndDoc.values()).map((r) => ({
-    ...r,
-    ...getStatusObj(r.shortfall, r.surplus),
-  }));
+  // คำนวณ "ใช้งานเฉลี่ย (ใบ)" (จำนวนเต็มเท่านั้น) จากวันปกติ (ตัดช่วงน้ำท่วม <= 2026-10-04, ตัดช่วงเปลี่ยนระบบ 2026-11-04..06, และไม่นับวันที่จ่าย = 0)
+  const avgStatsByDoc = new Map();
+  rowMapByOpDateAndDoc.forEach((r) => {
+    const key = r.docId || r.customerName;
+    if (!key) return;
+    if (!avgStatsByDoc.has(key)) {
+      avgStatsByDoc.set(key, {
+        preSum: 0,
+        preDays: 0,
+        preMaxBooked: 0,
+        postNormalSum: 0,
+        postNormalDays: 0,
+        anySum: 0,
+        anyDays: 0,
+      });
+    }
+    const paid = Number(r.paid) || 0;
+    const booked = Number(r.booked) || 0;
+    if (paid <= 0) return;
+
+    const st = avgStatsByDoc.get(key);
+    st.anySum += paid;
+    st.anyDays += 1;
+
+    if (r.date >= "2026-10-05" && r.date <= "2026-11-03") {
+      st.preSum += paid;
+      st.preDays += 1;
+      if (booked > st.preMaxBooked) st.preMaxBooked = booked;
+    } else if (r.date >= "2026-11-07") {
+      st.postNormalSum += paid;
+      st.postNormalDays += 1;
+    }
+  });
+
+  const avgByDocId = {};
+  avgStatsByDoc.forEach((st, key) => {
+    const preAvg = st.preDays > 0 ? st.preSum / st.preDays : 0;
+    const postAvg = st.postNormalDays > 0 ? st.postNormalSum / st.postNormalDays : 0;
+    const anyAvg = st.anyDays > 0 ? st.anySum / st.anyDays : 0;
+    let avgInt = 0;
+    if (st.preDays > 0) {
+      if (st.preMaxBooked > 0 && preAvg >= st.preMaxBooked && postAvg > preAvg) {
+        avgInt = Math.round(postAvg);
+      } else {
+        avgInt = Math.round(preAvg);
+      }
+    } else if (st.postNormalDays > 0) {
+      avgInt = Math.round(postAvg);
+    } else if (st.anyDays > 0) {
+      avgInt = Math.round(anyAvg);
+    }
+    avgByDocId[key] = avgInt;
+  });
+
+  const parsedRows = Array.from(rowMapByOpDateAndDoc.values()).map((r) => {
+    const key = r.docId || r.customerName;
+    return {
+      ...r,
+      avgUsed: avgByDocId[key] || 0,
+      ...getStatusObj(r.shortfall, r.surplus),
+    };
+  });
 
   if (mode === "range") {
     const from = startDate || "0000-00-00";
@@ -2068,6 +2126,7 @@ export async function getCustomerSummaryData({ date, startDate, endDate, mode = 
           customerName: r.customerName,
           booked: 0,
           paid: 0,
+          avgUsed: avgByDocId[key] || 0,
           shortfall: 0,
           surplus: 0,
           urgent: 0,
@@ -2094,6 +2153,7 @@ export async function getCustomerSummaryData({ date, startDate, endDate, mode = 
     const totals = {
       totalBooked: summaryRows.reduce((acc, c) => acc + c.booked, 0),
       totalPaid: summaryRows.reduce((acc, c) => acc + c.paid, 0),
+      totalAvgUsed: summaryRows.reduce((acc, c) => acc + (c.avgUsed || 0), 0),
       totalShortfall: summaryRows.reduce((acc, c) => acc + c.shortfall, 0),
       totalSurplus: summaryRows.reduce((acc, c) => acc + (c.surplus || 0), 0),
       totalUrgent: summaryRows.reduce((acc, c) => acc + c.urgent, 0),
@@ -2113,6 +2173,7 @@ export async function getCustomerSummaryData({ date, startDate, endDate, mode = 
       totals,
       summaryRows,
       dailyBreakdown,
+      avgByDocId,
       latestRecordedAt: matchingRows[matchingRows.length - 1]?.recordedAt || "",
     };
   }
@@ -2124,6 +2185,7 @@ export async function getCustomerSummaryData({ date, startDate, endDate, mode = 
   const totals = {
     totalBooked: matchingRows.reduce((acc, c) => acc + c.booked, 0),
     totalPaid: matchingRows.reduce((acc, c) => acc + c.paid, 0),
+    totalAvgUsed: matchingRows.reduce((acc, c) => acc + (c.avgUsed || 0), 0),
     totalShortfall: matchingRows.reduce((acc, c) => acc + c.shortfall, 0),
     totalSurplus: matchingRows.reduce((acc, c) => acc + (c.surplus || 0), 0),
     totalUrgent: matchingRows.reduce((acc, c) => acc + c.urgent, 0),
@@ -2141,6 +2203,7 @@ export async function getCustomerSummaryData({ date, startDate, endDate, mode = 
     totals,
     summaryRows: matchingRows,
     dailyBreakdown: matchingRows,
+    avgByDocId,
     latestRecordedAt: matchingRows[0]?.recordedAt || "",
   };
 }

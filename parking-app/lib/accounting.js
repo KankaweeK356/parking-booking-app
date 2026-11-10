@@ -80,6 +80,7 @@ export async function getRevenueReconciliationData({ startDate, endDate, autoArc
     }).catch(() => ({ dailyBreakdown: [] })),
   ]);
 
+  const avgByDocId = custSummaryRangeData?.avgByDocId || {};
   const custSummaryRowsByOpDate = new Map();
   (custSummaryRangeData?.dailyBreakdown || []).forEach((r) => {
     if (!r?.date) return;
@@ -162,7 +163,10 @@ export async function getRevenueReconciliationData({ startDate, endDate, autoArc
       const archivedTxForDay = (archiveData?.rawTransactions || []).filter((tx) => tx.posDate === dIso);
       archivedForDay.forEach((c) => {
         uniqueCustomers.add(c.boothCode);
-        customerSummary.push(c);
+        customerSummary.push({
+          ...c,
+          avgUsed: avgByDocId[c.boothCode] ?? avgByDocId[c.customerName] ?? 0,
+        });
         grandTotalCash += c.totalPaid || 0;
         grandEarnedToday += c.earnedToday || 0;
         grandAdvanceTomorrow += c.advanceTomorrow || 0;
@@ -215,6 +219,7 @@ export async function getRevenueReconciliationData({ startDate, endDate, autoArc
           customerName: custName,
           bookedTickets: totalBookedSlots,
           paidTickets: totalPaidTickets,
+          avgUsed: avgByDocId[docId] ?? avgByDocId[custName] ?? 0,
           totalPaid: totalPaidAmount,
           earnedToday: earnedTodayAmount,
           advanceTomorrow: advanceTomorrowAmount,
@@ -418,6 +423,7 @@ export async function getRevenueReconciliationData({ startDate, endDate, autoArc
         customerName: custName,
         bookedTickets: totalBookedSlots,
         paidTickets: totalPaidTickets,
+        avgUsed: avgByDocId[docId] ?? avgByDocId[custName] ?? 0,
         totalPaid: totalPaidAmount,
         earnedToday: earnedTodayAmount,
         advanceTomorrow: advanceTomorrowAmount,
