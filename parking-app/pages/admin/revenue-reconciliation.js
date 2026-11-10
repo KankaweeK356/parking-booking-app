@@ -448,7 +448,10 @@ export default function RevenueReconciliationPage() {
               borderTop: "4px solid #0284c7",
               background: "#ffffff",
               boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+              cursor: totals.surplus > 0 ? "pointer" : "default",
             }}
+            onClick={() => { if (totals.surplus > 0) setStatusFilter("surplus"); }}
+            title={totals.surplus > 0 ? "คลิกเพื่อกรองดูเฉพาะรายที่จ่ายเกิน" : ""}
           >
             <div style={{ fontSize: 13, fontWeight: 700, color: "#0284c7", marginBottom: 4 }}>
               4. เงินรับส่วนเกิน (ตั๋วเกิน)
@@ -465,7 +468,9 @@ export default function RevenueReconciliationPage() {
               ฿{formatCurrency(totals.surplus)}
             </div>
             <div style={{ fontSize: 12, color: "#64748b", marginTop: 6 }}>
-              {formatNumber(totals.surplus / 100)} สิทธิ์ (ช่วงรอยต่อ/ตั๋วเกิน)
+              {totals.surplus > 0
+                ? `฿${formatCurrency(totals.surplus)} (${formatNumber(totals.surplus / 100)} ใบ) — คลิกเพื่อกรองดูรายชื่อ`
+                : "0 สิทธิ์ (จ่ายเกินจำนวนที่จอง)"}
             </div>
           </div>
         </div>
@@ -616,18 +621,25 @@ export default function RevenueReconciliationPage() {
                         <td style={{ padding: "8px 10px", textAlign: "right", color: "#2563eb" }}>
                           {formatCurrency(c.advanceTomorrow)}
                         </td>
-                        <td style={{ padding: "8px 10px", textAlign: "right", color: "#0284c7" }}>
-                          {c.surplus > 0 ? formatCurrency(c.surplus) : "-"}
+                        <td
+                          style={{
+                            padding: "8px 10px",
+                            textAlign: "right",
+                            color: c.surplus > 0 ? "#0284c7" : "#94a3b8",
+                            fontWeight: c.surplus > 0 ? 700 : 400,
+                          }}
+                        >
+                          {c.surplus > 0 ? `+฿${formatCurrency(c.surplus)}` : "-"}
                         </td>
                         <td
                           style={{
                             padding: "8px 10px",
                             textAlign: "right",
-                            color: c.shortfall > 0 ? "#dc2626" : "#64748b",
+                            color: c.shortfall > 0 ? "#dc2626" : "#94a3b8",
                             fontWeight: c.shortfall > 0 ? 700 : 400,
                           }}
                         >
-                          {c.shortfall > 0 ? formatCurrency(c.shortfall) : "-"}
+                          {c.shortfall > 0 ? `-฿${formatCurrency(c.shortfall)}` : "-"}
                         </td>
                         <td style={{ padding: "8px 10px", textAlign: "center" }}>
                           <span

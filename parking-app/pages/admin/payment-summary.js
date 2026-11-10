@@ -48,6 +48,7 @@ export default function PaymentSummaryPage() {
   const [error, setError] = useState("");
   const [summaryData, setSummaryData] = useState(null);
   const [filterText, setFilterText] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
 
   // Check user session
   useEffect(() => {
@@ -95,14 +96,23 @@ export default function PaymentSummaryPage() {
 
   const rows = useMemo(() => {
     if (!summaryData?.summaryRows) return [];
-    if (!filterText.trim()) return summaryData.summaryRows;
+    let list = summaryData.summaryRows;
+    if (statusFilter !== "all") {
+      list = list.filter((r) => {
+        if (statusFilter === "surplus") return (r.surplus || 0) > 0 || r.statusKey === "surplus";
+        if (statusFilter === "shortfall") return (r.shortfall || 0) > 0 || r.statusKey === "shortfall";
+        if (statusFilter === "balanced") return (r.surplus || 0) === 0 && (r.shortfall || 0) === 0;
+        return true;
+      });
+    }
+    if (!filterText.trim()) return list;
     const q = filterText.trim().toLowerCase();
-    return summaryData.summaryRows.filter(
+    return list.filter(
       (r) =>
         (r.docId && String(r.docId).toLowerCase().includes(q)) ||
         (r.customerName && String(r.customerName).toLowerCase().includes(q))
     );
-  }, [summaryData, filterText]);
+  }, [summaryData, filterText, statusFilter]);
 
   const totals = summaryData?.totals || {
     totalBooked: 0,
@@ -475,16 +485,30 @@ export default function PaymentSummaryPage() {
             <span className="kpi-sub">รวมตั๋วที่ชำระจริง</span>
           </div>
 
-          <div className="kpi-card kpi-surplus">
+          <div
+            className="kpi-card kpi-surplus"
+            style={{ cursor: (totals.totalSurplus || 0) > 0 ? "pointer" : "default" }}
+            onClick={() => { if ((totals.totalSurplus || 0) > 0) setStatusFilter("surplus"); }}
+            title={(totals.totalSurplus || 0) > 0 ? "คลิกเพื่อกรองดูเฉพาะรายที่จ่ายเกิน" : ""}
+          >
             <span className="kpi-label">ส่วนเกิน / ตีเบิ้ล</span>
             <span className="kpi-value" style={{ color: "#0284c7" }}>{totals.totalSurplus || 0} <small>ใบ</small></span>
-            <span className="kpi-sub">จ่ายเกินจำนวนที่จอง</span>
+            <span className="kpi-sub">
+              {(totals.totalSurplus || 0) > 0 ? "คลิกเพื่อกรองดูเฉพาะรายที่จ่ายเกิน" : "จ่ายเกินจำนวนที่จอง"}
+            </span>
           </div>
 
-          <div className="kpi-card kpi-shortfall">
+          <div
+            className="kpi-card kpi-shortfall"
+            style={{ cursor: (totals.totalShortfall || 0) > 0 ? "pointer" : "default" }}
+            onClick={() => { if ((totals.totalShortfall || 0) > 0) setStatusFilter("shortfall"); }}
+            title={(totals.totalShortfall || 0) > 0 ? "คลิกเพื่อกรองดูเฉพาะรายที่ขาดชำระ" : ""}
+          >
             <span className="kpi-label">ไม่ได้ใช้สิทธิ์</span>
             <span className="kpi-value">{totals.totalShortfall} <small>ช่อง</small></span>
-            <span className="kpi-sub">ไม่มีการชำระเงิน</span>
+            <span className="kpi-sub">
+              {(totals.totalShortfall || 0) > 0 ? "คลิกเพื่อกรองดูเฉพาะรายที่ขาดชำระ" : "ไม่มีการชำระเงิน"}
+            </span>
           </div>
 
           <div className="kpi-card kpi-urgent">
@@ -509,12 +533,32 @@ export default function PaymentSummaryPage() {
         <div className="card table-card">
           <div className="table-header-bar no-print">
             <div className="table-title">
-              <strong>📋 รายละเอียดแยกตามรายชื่อลูกค้า</strong>
+              <strong>📋 รายละเอียดแยกตามรายชื่อลูกค้า ({rows.length} ราย)</strong>
               {mode === "range" && (
                 <span className="range-badge">สรุปรวมทั้งช่วงเวลา ({totals.daysInRange || 0} วัน)</span>
               )}
             </div>
-            <div className="table-search">
+            <div className="table-search" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                style={{
+                  width: "auto",
+                  fontSize: 13,
+                  padding: "6px 10px",
+                  borderRadius: 6,
+                  border: "1px solid #cbd5e1",
+                  background: "white",
+                  color: "#334155",
+                  fontWeight: 600,
+                }}
+              >
+                <option value="all">สถานะทั้งหมด</option>
+                <option value="balanced">กระทบยอดลงตัว</option>
+                <option value="surplus">เงินรับส่วนเกิน</option>
+                <option value="shortfall">รอตรวจยอดชำระ</option>
+              </select>
+
               <input
                 type="text"
                 placeholder="🔍 ค้นหาชื่อ หรือ รหัสสัญญา..."
@@ -574,11 +618,11 @@ export default function PaymentSummaryPage() {
                         )}
                         <td style={{ textAlign: "right" }}>{r.booked}</td>
                         <td style={{ textAlign: "right", color: "#2e7d32", fontWeight: "600" }}>{r.paid}</td>
-                        <td style={{ textAlign: "right", color: (r.surplus || 0) > 0 ? "#0284c7" : "#9e9e9e", fontWeight: (r.surplus || 0) > 0 ? "600" : "400" }}>
-                          {r.surplus || 0}
+                        <td style={{ textAlign: "right", color: (r.surplus || 0) > 0 ? "#0284c7" : "#9e9e9e", fontWeight: (r.surplus || 0) > 0 ? "700" : "400" }}>
+                          {(r.surplus || 0) > 0 ? `+${r.surplus}` : 0}
                         </td>
-                        <td style={{ textAlign: "right", color: r.shortfall > 0 ? "#c62828" : "#9e9e9e" }}>
-                          {r.shortfall}
+                        <td style={{ textAlign: "right", color: r.shortfall > 0 ? "#c62828" : "#9e9e9e", fontWeight: r.shortfall > 0 ? "700" : "400" }}>
+                          {r.shortfall > 0 ? `-${r.shortfall}` : 0}
                         </td>
                         <td style={{ textAlign: "right" }}>{r.urgent}</td>
                         <td style={{ textAlign: "center" }}>
