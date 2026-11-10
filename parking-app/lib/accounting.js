@@ -175,8 +175,9 @@ export async function getRevenueReconciliationData({ startDate, endDate, autoArc
       continue;
     }
 
-    // กรณีที่ 1.5: หากไม่มีตั๋วสดใน tbt_DailyFee แล้ว และยังไม่มีใน Accounting_Daily_Summary ให้ดึงข้อมูลจาก Customer_Summary (วันปฏิบัติการ tomorrowIso)
-    if (!hasLiveTickets && custRowsForTomorrow.length > 0) {
+    // กรณีที่ 1.5: หากมีข้อมูล Snapshot ใน Customer_Summary (วันปฏิบัติการ tomorrowIso) และมียอดรวม >= ตั๋วสดใน tbt_DailyFee
+    // ให้ยึดข้อมูลจาก Customer_Summary เป็นหลัก (ป้องกันกรณีไม่มีตั๋วสด หรือวันขอบที่ตั๋วสดโดนตัด 1,000 แถวจนแหว่ง)
+    if (custRowsForTomorrow.length > 0 && custSumTotalPaid >= liveTicketsCount && (!hasLiveTickets || custSumTotalPaid > 0)) {
       const fallbackDaySummary = [];
       custRowsForTomorrow.forEach((r) => {
         const docId = String(r.docId || "").trim();
@@ -239,6 +240,32 @@ export async function getRevenueReconciliationData({ startDate, endDate, autoArc
         grandBookedTickets += totalBookedSlots;
       });
 
+      // หากมีตั๋วรายใบใน Archive หรือใน tbt_DailyFee ให้แนบไปด้วยสำหรับการส่งออก Excel แท็บที่ 2
+      const archivedTxForDay = (archiveData?.rawTransactions || []).filter((tx) => tx.posDate === dIso);
+      if (archivedTxForDay.length > 0) {
+        archivedTxForDay.forEach((tx) => rawTransactions.push(tx));
+      } else if (liveDayTransactions.length > 0) {
+        liveDayTransactions.forEach((tx) => {
+          const docId = String(tx.boothCode || "").trim();
+          const custName = getCustomerName(docId);
+          const qty = Number(tx.quantity) || 1;
+          for (let q = 0; q < qty; q++) {
+            rawTransactions.push({
+              sheetRow: tx.sheetRow,
+              posDate: dIso,
+              createDate: tx.createDate || tx.docDate || "-",
+              boothCode: docId,
+              customerName: custName,
+              quantity: 1,
+              amount: TICKET_PRICE_PER_UNIT,
+              attribution: "เงินรับล่วงหน้า / ค่าบริการตามสิทธิ์",
+              serviceDate: tomorrowIso,
+              slotInfo: "-",
+            });
+          }
+        });
+      }
+
       continue;
     }
 
@@ -248,9 +275,12 @@ export async function getRevenueReconciliationData({ startDate, endDate, autoArc
 
     // ดึงข้อมูล Customer_Summary ของวันปฏิบัติการ tomorrowIso (sourceDate = dIso) มาช่วยป้องกันกรณีวันเก่าสุดใน tbt_DailyFee ทยอยหลุดรอบบางส่วน
     const custPaidByDoc = new Map();
+    const custNameByDocFromSnap = new Map();
     custRowsForTomorrow.forEach((r) => {
       if (r.docId) {
-        custPaidByDoc.set(String(r.docId).trim(), Number(r.paid) || 0);
+        const doc = String(r.docId).trim();
+        custPaidByDoc.set(doc, Number(r.paid) || 0);
+        if (r.customerName) custNameByDocFromSnap.set(doc, String(r.customerName).trim());
       }
     });
 
@@ -271,10 +301,13 @@ export async function getRevenueReconciliationData({ startDate, endDate, autoArc
       (t) => t.dateSerial === currentSerial || t.dateStr === dIso
     );
 
-    // รวบรวม docId ทั้งหมดที่เกี่ยวข้องในวัน dIso
+    // รวบรวม docId ทั้งหมดที่เกี่ยวข้องในวัน dIso (รวมทั้งจากตั๋วสด และจาก Customer_Summary)
     const dayDocIds = new Set();
     dayTransactions.forEach((t) => {
       if (t.boothCode) dayDocIds.add(String(t.boothCode).trim());
+    });
+    custRowsForTomorrow.forEach((r) => {
+      if (r.docId) dayDocIds.add(String(r.docId).trim());
     });
 
     // เพิ่มลูกค้าที่มี Urgent Log วันนี้
@@ -309,7 +342,7 @@ export async function getRevenueReconciliationData({ startDate, endDate, autoArc
 
     for (const docId of sortedDocIds) {
       uniqueCustomers.add(docId);
-      const custName = getCustomerName(docId);
+      const custName = custNameByDocFromSnap.get(docId) || getCustomerName(docId);
 
       // 1. ตั๋วที่จ่ายจริงในวัน dIso
       const custTxList = dayTransactions

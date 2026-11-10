@@ -175,6 +175,48 @@ export default function RevenueReconciliationPage() {
     return list;
   }, [reconData, statusFilter, searchTerm]);
 
+  // จัดกลุ่มรายการแยกตามวัน สำหรับการพิมพ์ PDF แนวนอน แยกแผ่นละ 1 วัน
+  const dailyPrintPages = useMemo(() => {
+    if (!filteredCustomers.length) return [];
+    const byDate = new Map();
+    filteredCustomers.forEach((c) => {
+      if (!byDate.has(c.date)) byDate.set(c.date, []);
+      byDate.get(c.date).push(c);
+    });
+    return Array.from(byDate.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([date, items]) => {
+        const dayTotals = items.reduce(
+          (acc, item) => ({
+            bookedTickets: acc.bookedTickets + (item.bookedTickets || 0),
+            paidTickets: acc.paidTickets + (item.paidTickets || 0),
+            totalPaid: acc.totalPaid + (item.totalPaid || 0),
+            earnedToday: acc.earnedToday + (item.earnedToday || 0),
+            advanceTomorrow: acc.advanceTomorrow + (item.advanceTomorrow || 0),
+            surplus: acc.surplus + (item.surplus || 0),
+            shortfall: acc.shortfall + (item.shortfall || 0),
+          }),
+          {
+            bookedTickets: 0,
+            paidTickets: 0,
+            totalPaid: 0,
+            earnedToday: 0,
+            advanceTomorrow: 0,
+            surplus: 0,
+            shortfall: 0,
+          }
+        );
+        const mid = Math.ceil(items.length / 2);
+        const leftItems = items.slice(0, mid);
+        const rightItems = items.slice(mid);
+        return { date, items, leftItems, rightItems, mid, dayTotals };
+      });
+  }, [filteredCustomers]);
+
+  function handlePrintPdf() {
+    window.print();
+  }
+
   const totals = reconData?.totals || {
     totalCash: 0,
     earnedToday: 0,
@@ -217,7 +259,7 @@ export default function RevenueReconciliationPage() {
 
   return (
     <div>
-      <div className="top-bar" style={{ background: "#0f172a" }}>
+      <div className="top-bar no-print" style={{ background: "#0f172a" }}>
         <div className="inner" style={{ maxWidth: 1040 }}>
           <div>
             <h1 style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -231,7 +273,7 @@ export default function RevenueReconciliationPage() {
         </div>
       </div>
 
-      <div className="page" style={{ maxWidth: 1040, paddingBottom: 60 }}>
+      <div className="page no-print" style={{ maxWidth: 1040, paddingBottom: 60 }}>
         {error && (
           <div className="alert alert-error" style={{ marginBottom: 16 }}>
             {error}
@@ -289,8 +331,8 @@ export default function RevenueReconciliationPage() {
                 onChange={(e) => setEndDate(e.target.value)}
               />
             </div>
-            {/* แถวปุ่มคำนวณและปุ่มส่งออก Excel อยู่เคียงข้างกันอย่างลงตัว */}
-            <div style={{ display: "flex", gap: 8 }}>
+            {/* แถวปุ่มคำนวณ ส่งออก Excel และ พิมพ์ PDF */}
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button
                 type="button"
                 className="btn btn-primary"
@@ -335,6 +377,29 @@ export default function RevenueReconciliationPage() {
               >
                 <span>📥</span>
                 <span>{exporting ? "กำลังส่งออก..." : "ส่งออก Excel"}</span>
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{
+                  flex: 1,
+                  padding: "10px 14px",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6,
+                  fontSize: 14,
+                  whiteSpace: "nowrap",
+                  cursor: loading || !dailyPrintPages.length ? "not-allowed" : "pointer",
+                  opacity: loading || !dailyPrintPages.length ? 0.65 : 1,
+                }}
+                onClick={handlePrintPdf}
+                disabled={loading || !dailyPrintPages.length}
+                title="พิมพ์หรือบันทึกเป็น PDF แนวนอน (แยกแผ่นละ 1 วัน)"
+              >
+                <span>🖨️</span>
+                <span>พิมพ์ / PDF ({dailyPrintPages.length || 1} แผ่น)</span>
               </button>
             </div>
           </div>
@@ -675,6 +740,195 @@ export default function RevenueReconciliationPage() {
           </div>
         )}
       </div>
+
+      {/* โซนสำหรับสั่งพิมพ์ / Export PDF แนวนอน (แยก 1 แผ่นต่อ 1 วัน) */}
+      <div className="print-only recon-print-container">
+        {dailyPrintPages.map((page, pageIdx) => (
+          <div
+            key={page.date}
+            className="recon-print-sheet"
+            style={{
+              pageBreakAfter: pageIdx < dailyPrintPages.length - 1 ? "always" : "auto",
+              breakAfter: pageIdx < dailyPrintPages.length - 1 ? "page" : "auto",
+            }}
+          >
+            <div className="recon-print-header">
+              <div>
+                <h2>รายงานสรุปการชำระเงินและกระทบยอดรายได้ประจำวัน — วันที่ในตั๋ว: {page.date}</h2>
+                <p>
+                  ลูกค้าทั้งหมด {page.items.length} ราย · ยอดจองรวม {formatNumber(page.dayTotals.bookedTickets)} ใบ · ยอดชำระจริง {formatNumber(page.dayTotals.paidTickets)} ใบ
+                </p>
+              </div>
+              <div style={{ textAlign: "right", fontSize: "8.5pt", color: "#334155" }}>
+                <div>แผ่นที่ {pageIdx + 1} / {dailyPrintPages.length}</div>
+                <div>ระบบจองที่จอดรถเรียงสินค้า</div>
+              </div>
+            </div>
+
+            <div className="recon-print-kpis">
+              <div className="recon-print-kpi">
+                <span>1. เงินสดรับจริง:</span>{" "}
+                <strong>฿{formatCurrency(page.dayTotals.totalPaid)}</strong> ({formatNumber(page.dayTotals.paidTickets)} ใบ)
+              </div>
+              <div className="recon-print-kpi">
+                <span>2. รายได้รอบวัน:</span>{" "}
+                <strong>฿{formatCurrency(page.dayTotals.earnedToday)}</strong> ({formatNumber(page.dayTotals.earnedToday / 100)} ใบ)
+              </div>
+              <div className="recon-print-kpi">
+                <span>3. รับล่วงหน้า (จอดพรุ่งนี้):</span>{" "}
+                <strong>฿{formatCurrency(page.dayTotals.advanceTomorrow)}</strong> ({formatNumber(page.dayTotals.advanceTomorrow / 100)} ใบ)
+              </div>
+              <div className="recon-print-kpi">
+                <span>4. ส่วนเกิน (ตีเบิ้ล):</span>{" "}
+                <strong>+฿{formatCurrency(page.dayTotals.surplus)}</strong> ({formatNumber(page.dayTotals.surplus / 100)} ใบ)
+              </div>
+              <div className="recon-print-kpi">
+                <span>5. รอตรวจ (ขาดชำระ):</span>{" "}
+                <strong>-฿{formatCurrency(page.dayTotals.shortfall)}</strong> ({formatNumber(page.dayTotals.shortfall / 100)} ใบ)
+              </div>
+            </div>
+
+            <div className="recon-print-two-cols">
+              {[
+                { list: page.leftItems, offset: 0 },
+                { list: page.rightItems, offset: page.mid },
+              ].map((col, colIdx) => (
+                <table key={colIdx} className="recon-print-table">
+                  <thead>
+                    <tr>
+                      <th style={{ width: "22px" }}>#</th>
+                      <th style={{ width: "36px" }}>รหัส</th>
+                      <th style={{ textAlign: "left" }}>ชื่อลูกค้า</th>
+                      <th style={{ width: "30px" }}>จอง</th>
+                      <th style={{ width: "30px" }}>จ่าย</th>
+                      <th style={{ width: "56px" }}>รับจริง</th>
+                      <th style={{ width: "56px" }}>ล่วงหน้า</th>
+                      <th style={{ width: "52px" }}>ส่วนเกิน</th>
+                      <th style={{ width: "52px" }}>รอตรวจ</th>
+                      <th style={{ width: "68px" }}>สถานะ</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {col.list.map((c, idx) => (
+                      <tr key={`${c.boothCode}-${idx}`}>
+                        <td style={{ textAlign: "center" }}>{col.offset + idx + 1}</td>
+                        <td style={{ textAlign: "center", fontWeight: 700 }}>{c.boothCode}</td>
+                        <td style={{ textAlign: "left", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "125px" }}>
+                          {c.customerName}
+                        </td>
+                        <td style={{ textAlign: "right" }}>{c.bookedTickets || 0}</td>
+                        <td style={{ textAlign: "right", fontWeight: 700 }}>{c.paidTickets}</td>
+                        <td style={{ textAlign: "right" }}>{formatNumber(c.totalPaid)}</td>
+                        <td style={{ textAlign: "right" }}>{formatNumber(c.advanceTomorrow)}</td>
+                        <td style={{ textAlign: "right", fontWeight: c.surplus > 0 ? 700 : 400 }}>
+                          {c.surplus > 0 ? `+${formatNumber(c.surplus)}` : "-"}
+                        </td>
+                        <td style={{ textAlign: "right", fontWeight: c.shortfall > 0 ? 700 : 400 }}>
+                          {c.shortfall > 0 ? `-${formatNumber(c.shortfall)}` : "-"}
+                        </td>
+                        <td style={{ textAlign: "center", fontWeight: 600 }}>{c.status}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ))}
+            </div>
+
+            <div className="recon-print-footer">
+              <strong>รวมประจำวันที่ {page.date} ({page.items.length} ราย):</strong>{" "}
+              จองรวม {formatNumber(page.dayTotals.bookedTickets)} ใบ | ชำระจริง {formatNumber(page.dayTotals.paidTickets)} ใบ | เงินสดรับจริง ฿{formatCurrency(page.dayTotals.totalPaid)} | รายได้รอบวัน ฿{formatCurrency(page.dayTotals.earnedToday)} | รับล่วงหน้า ฿{formatCurrency(page.dayTotals.advanceTomorrow)} | เงินรับส่วนเกิน +฿{formatCurrency(page.dayTotals.surplus)} | รอตรวจยอดชำระ -฿{formatCurrency(page.dayTotals.shortfall)}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <style jsx>{`
+        .print-only {
+          display: none;
+        }
+        @media print {
+          .no-print {
+            display: none !important;
+          }
+          .print-only {
+            display: block !important;
+          }
+          @page {
+            size: A4 landscape;
+            margin: 6mm;
+          }
+          .recon-print-sheet {
+            width: 100%;
+            box-sizing: border-box;
+            font-family: "Sarabun", "Tahoma", sans-serif;
+            color: #000;
+          }
+          .recon-print-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            border-bottom: 1.5px solid #0f172a;
+            padding-bottom: 3px;
+            margin-bottom: 4px;
+          }
+          .recon-print-header h2 {
+            margin: 0;
+            font-size: 11.5pt;
+            font-weight: 700;
+            color: #0f172a;
+          }
+          .recon-print-header p {
+            margin: 1px 0 0;
+            font-size: 8.5pt;
+            color: #334155;
+          }
+          .recon-print-kpis {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 4px;
+            margin-bottom: 5px;
+          }
+          .recon-print-kpi {
+            border: 1px solid #cbd5e1;
+            border-radius: 3px;
+            padding: 2px 6px;
+            font-size: 8pt;
+            background: #f8fafc;
+          }
+          .recon-print-two-cols {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+            align-items: start;
+          }
+          .recon-print-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 7.2pt;
+            font-variant-numeric: tabular-nums;
+          }
+          .recon-print-table th,
+          .recon-print-table td {
+            border: 1px solid #cbd5e1;
+            padding: 1.5px 3px;
+            text-align: center;
+            line-height: 1.15;
+          }
+          .recon-print-table th {
+            background: #e2e8f0 !important;
+            font-weight: 700;
+            color: #0f172a;
+          }
+          .recon-print-footer {
+            margin-top: 4px;
+            padding: 3px 6px;
+            border: 1px solid #0f172a;
+            background: #f1f5f9;
+            font-size: 8pt;
+            text-align: right;
+          }
+        }
+      `}</style>
     </div>
   );
 }

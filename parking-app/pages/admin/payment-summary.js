@@ -114,6 +114,53 @@ export default function PaymentSummaryPage() {
     );
   }, [summaryData, filterText, statusFilter]);
 
+  // จัดกลุ่มรายการแยกตามวัน สำหรับการพิมพ์ PDF แนวนอน แยกแผ่นละ 1 วัน
+  const dailyPrintPages = useMemo(() => {
+    const rawList = summaryData?.dailyBreakdown || summaryData?.summaryRows || [];
+    if (!rawList.length) return [];
+    let list = rawList;
+    if (statusFilter !== "all") {
+      list = list.filter((r) => {
+        if (statusFilter === "surplus") return (r.surplus || 0) > 0 || r.statusKey === "surplus";
+        if (statusFilter === "shortfall") return (r.shortfall || 0) > 0 || r.statusKey === "shortfall";
+        if (statusFilter === "balanced") return (r.surplus || 0) === 0 && (r.shortfall || 0) === 0;
+        return true;
+      });
+    }
+    if (filterText.trim()) {
+      const q = filterText.trim().toLowerCase();
+      list = list.filter(
+        (r) =>
+          (r.docId && String(r.docId).toLowerCase().includes(q)) ||
+          (r.customerName && String(r.customerName).toLowerCase().includes(q))
+      );
+    }
+    const byDate = new Map();
+    list.forEach((r) => {
+      const d = r.date || selectedDate;
+      if (!byDate.has(d)) byDate.set(d, []);
+      byDate.get(d).push(r);
+    });
+    return Array.from(byDate.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([date, items]) => {
+        const dayTotals = items.reduce(
+          (acc, item) => ({
+            booked: acc.booked + (item.booked || 0),
+            paid: acc.paid + (item.paid || 0),
+            surplus: acc.surplus + (item.surplus || 0),
+            shortfall: acc.shortfall + (item.shortfall || 0),
+            urgent: acc.urgent + (item.urgent || 0),
+          }),
+          { booked: 0, paid: 0, surplus: 0, shortfall: 0, urgent: 0 }
+        );
+        const mid = Math.ceil(items.length / 2);
+        const leftItems = items.slice(0, mid);
+        const rightItems = items.slice(mid);
+        return { date, items, leftItems, rightItems, mid, dayTotals };
+      });
+  }, [summaryData, statusFilter, filterText, selectedDate]);
+
   const totals = summaryData?.totals || {
     totalBooked: 0,
     totalPaid: 0,
@@ -339,7 +386,7 @@ export default function PaymentSummaryPage() {
 
   return (
     <div>
-      <div className="top-bar">
+      <div className="top-bar no-print">
         <div className="inner top-bar-wide">
           <div>
             <h1>👥 สรุปพฤติกรรมลูกค้า</h1>
@@ -349,7 +396,7 @@ export default function PaymentSummaryPage() {
         </div>
       </div>
 
-      <div className="page summary-container">
+      <div className="page summary-container no-print">
         {error && <div className="alert alert-error">{error}</div>}
 
         {/* Filter Controls Card */}
@@ -452,23 +499,13 @@ export default function PaymentSummaryPage() {
               <button
                 type="button"
                 className="btn btn-secondary"
-                disabled={loading || rows.length === 0}
+                disabled={loading || dailyPrintPages.length === 0}
                 onClick={handlePrint}
               >
-                🖨 พิมพ์รายงาน
+                🖨 พิมพ์ / PDF ({dailyPrintPages.length || 1} แผ่น)
               </button>
             </div>
           </div>
-        </div>
-
-        {/* Print Header */}
-        <div className="print-only print-header">
-          <h2>ระบบจองที่จอดรถเรียงสินค้า - สรุปยอดการชำระเงินและการใช้สิทธิ์</h2>
-          <p>
-            {mode === "day"
-              ? `วันปฏิบัติการ: ${formatThaiDate(selectedDate)} (อ้างอิงตั๋ววันที่: ${formatThaiDate(summaryData?.sourceDate)})`
-              : `ช่วงวันที่: ${formatThaiDate(startDate)} ถึง ${formatThaiDate(endDate)} (${totals.daysInRange || 0} วันปฏิบัติการ)`}
-          </p>
         </div>
 
         {/* KPI Summary Cards */}
@@ -700,6 +737,109 @@ export default function PaymentSummaryPage() {
             </span>
           </div>
         </div>
+      </div>
+
+      {/* โซนสำหรับสั่งพิมพ์ / Export PDF แนวนอน (แยก 1 แผ่นต่อ 1 วัน) */}
+      <div className="print-only summary-print-container">
+        {dailyPrintPages.map((page, pageIdx) => {
+          const dayPct = page.dayTotals.booked > 0 ? ((page.dayTotals.paid / page.dayTotals.booked) * 100).toFixed(1) : "100.0";
+          return (
+            <div
+              key={page.date}
+              className="summary-print-sheet"
+              style={{
+                pageBreakAfter: pageIdx < dailyPrintPages.length - 1 ? "always" : "auto",
+                breakAfter: pageIdx < dailyPrintPages.length - 1 ? "page" : "auto",
+              }}
+            >
+              <div className="summary-print-header">
+                <div>
+                  <h2>รายงานสรุปพฤติกรรมลูกค้าและการใช้สิทธิ์ประจำวัน — วันปฏิบัติการ: {formatThaiDate(page.date)}</h2>
+                  <p>
+                    ลูกค้าทั้งหมด {page.items.length} ราย · จองตามสัญญา {page.dayTotals.booked} ช่อง · จ่ายจริง {page.dayTotals.paid} ใบ · อัตราจ่ายจริง {dayPct}%
+                  </p>
+                </div>
+                <div style={{ textAlign: "right", fontSize: "8.5pt", color: "#334155" }}>
+                  <div>แผ่นที่ {pageIdx + 1} / {dailyPrintPages.length}</div>
+                  <div>ระบบจองที่จอดรถเรียงสินค้า</div>
+                </div>
+              </div>
+
+              <div className="summary-print-kpis">
+                <div className="summary-print-kpi">
+                  <span>จองตามสัญญา:</span> <strong>{page.dayTotals.booked} ช่อง</strong>
+                </div>
+                <div className="summary-print-kpi">
+                  <span>จ่ายจริง / มีสิทธิ์:</span> <strong>{page.dayTotals.paid} ใบ</strong>
+                </div>
+                <div className="summary-print-kpi">
+                  <span>ส่วนเกิน / ตีเบิ้ล:</span> <strong>+{page.dayTotals.surplus} ใบ</strong>
+                </div>
+                <div className="summary-print-kpi">
+                  <span>ไม่ได้ใช้สิทธิ์:</span> <strong>-{page.dayTotals.shortfall} ช่อง</strong>
+                </div>
+                <div className="summary-print-kpi">
+                  <span>ขอด่วน / % จ่ายจริง:</span> <strong>{page.dayTotals.urgent} ช่อง ({dayPct}%)</strong>
+                </div>
+              </div>
+
+              <div className="summary-print-two-cols">
+                {[
+                  { list: page.leftItems, offset: 0 },
+                  { list: page.rightItems, offset: page.mid },
+                ].map((col, colIdx) => (
+                  <table key={colIdx} className="summary-print-table">
+                    <thead>
+                      <tr>
+                        <th style={{ width: "22px" }}>#</th>
+                        <th style={{ width: "36px" }}>รหัส</th>
+                        <th style={{ textAlign: "left" }}>ชื่อลูกค้า</th>
+                        <th style={{ width: "36px" }}>จอง</th>
+                        <th style={{ width: "36px" }}>จ่าย</th>
+                        <th style={{ width: "42px" }}>ส่วนเกิน</th>
+                        <th style={{ width: "42px" }}>ขาด</th>
+                        <th style={{ width: "34px" }}>ด่วน</th>
+                        <th style={{ width: "42px" }}>% จ่าย</th>
+                        <th style={{ width: "70px" }}>สถานะ</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {col.list.map((r, idx) => {
+                        const pctVal = Math.round((r.pct || 0) * 100);
+                        const statusLabel = (r.surplus || 0) > 0 ? "เงินรับส่วนเกิน" : (r.shortfall || 0) > 0 ? "รอตรวจยอดชำระ" : "กระทบยอดลงตัว";
+                        return (
+                          <tr key={`${r.docId}-${idx}`}>
+                            <td style={{ textAlign: "center" }}>{col.offset + idx + 1}</td>
+                            <td style={{ textAlign: "center", fontWeight: 700 }}>{r.docId}</td>
+                            <td style={{ textAlign: "left", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "130px" }}>
+                              {r.customerName}
+                            </td>
+                            <td style={{ textAlign: "right" }}>{r.booked}</td>
+                            <td style={{ textAlign: "right", fontWeight: 700 }}>{r.paid}</td>
+                            <td style={{ textAlign: "right", fontWeight: (r.surplus || 0) > 0 ? 700 : 400 }}>
+                              {(r.surplus || 0) > 0 ? `+${r.surplus}` : 0}
+                            </td>
+                            <td style={{ textAlign: "right", fontWeight: r.shortfall > 0 ? 700 : 400 }}>
+                              {r.shortfall > 0 ? `-${r.shortfall}` : 0}
+                            </td>
+                            <td style={{ textAlign: "right" }}>{r.urgent || 0}</td>
+                            <td style={{ textAlign: "right" }}>{pctVal}%</td>
+                            <td style={{ textAlign: "center", fontWeight: 600 }}>{statusLabel}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                ))}
+              </div>
+
+              <div className="summary-print-footer">
+                <strong>รวมประจำวันปฏิบัติการ {formatThaiDate(page.date)} ({page.items.length} ราย):</strong>{" "}
+                จองตามสัญญา {page.dayTotals.booked} ช่อง | จ่ายจริง {page.dayTotals.paid} ใบ | ส่วนเกิน +{page.dayTotals.surplus} ใบ | ไม่ได้ใช้สิทธิ์ -{page.dayTotals.shortfall} ช่อง | ขอด่วน {page.dayTotals.urgent} ช่อง | อัตราการจ่ายจริง {dayPct}%
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       <style jsx>{`
@@ -970,49 +1110,79 @@ export default function PaymentSummaryPage() {
           .print-only {
             display: block !important;
           }
-          .summary-container {
-            max-width: 100% !important;
-            padding: 0 !important;
-          }
-          .card {
-            border: 0 !important;
-            box-shadow: none !important;
-            padding: 0 !important;
-          }
-          .print-header {
-            margin-bottom: 16px;
-            border-bottom: 2px solid #000;
-            padding-bottom: 8px;
-          }
-          .print-header h2 {
-            margin: 0 0 4px;
-            font-size: 18pt;
-            color: #000;
-          }
-          .print-header p {
-            margin: 0;
-            font-size: 11pt;
-            color: #333;
-          }
-          .kpi-grid {
-            grid-template-columns: repeat(5, 1fr) !important;
-            margin-bottom: 16px;
-            gap: 8px !important;
-          }
-          .kpi-card {
-            border: 1px solid #ccc !important;
-            padding: 8px !important;
-          }
-          .kpi-value {
-            font-size: 18pt !important;
-          }
-          .data-table th, .data-table td {
-            padding: 6px 8px !important;
-            font-size: 10pt !important;
-          }
           @page {
             size: A4 landscape;
-            margin: 10mm;
+            margin: 6mm;
+          }
+          .summary-print-sheet {
+            width: 100%;
+            box-sizing: border-box;
+            font-family: "Sarabun", "Tahoma", sans-serif;
+            color: #000;
+          }
+          .summary-print-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            border-bottom: 1.5px solid #0f172a;
+            padding-bottom: 3px;
+            margin-bottom: 4px;
+          }
+          .summary-print-header h2 {
+            margin: 0;
+            font-size: 11.5pt;
+            font-weight: 700;
+            color: #0f172a;
+          }
+          .summary-print-header p {
+            margin: 1px 0 0;
+            font-size: 8.5pt;
+            color: #334155;
+          }
+          .summary-print-kpis {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 4px;
+            margin-bottom: 5px;
+          }
+          .summary-print-kpi {
+            border: 1px solid #cbd5e1;
+            border-radius: 3px;
+            padding: 2px 6px;
+            font-size: 8pt;
+            background: #f8fafc;
+          }
+          .summary-print-two-cols {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+            align-items: start;
+          }
+          .summary-print-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 7.2pt;
+            font-variant-numeric: tabular-nums;
+          }
+          .summary-print-table th,
+          .summary-print-table td {
+            border: 1px solid #cbd5e1;
+            padding: 1.5px 3px;
+            text-align: center;
+            line-height: 1.15;
+          }
+          .summary-print-table th {
+            background: #e2e8f0 !important;
+            font-weight: 700;
+            color: #0f172a;
+          }
+          .summary-print-footer {
+            margin-top: 4px;
+            padding: 3px 6px;
+            border: 1px solid #0f172a;
+            background: #f1f5f9;
+            font-size: 8pt;
+            text-align: right;
           }
         }
       `}</style>
