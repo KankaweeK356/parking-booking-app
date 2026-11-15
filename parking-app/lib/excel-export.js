@@ -1,6 +1,8 @@
 // lib/excel-export.js
 // ตัวช่วยสร้างไฟล์ Excel สรุปการชำระเงินและกระทบยอดรายได้แบบ 2 แท็บ (Sheet 1: สรุปภาพรวม, Sheet 2: รายละเอียดตั๋วรายวัน)
 
+import { displayCustomerName } from "./display.js";
+
 export async function exportRevenueReconciliationExcel(data) {
   const ExcelJS = (await import("exceljs/dist/exceljs.min.js")).default || (await import("exceljs/dist/exceljs.min.js"));
 
@@ -104,7 +106,7 @@ export async function exportRevenueReconciliationExcel(data) {
     ["2. รับรู้เป็นรายได้ค่าบริการรอบวัน (จอดวันนั้น) (Earned Revenue)", totals.earnedToday, "บาท"],
     ["3. บันทึกเป็นเงินรับล่วงหน้า - จอดพรุ่งนี้ (Unearned Revenue / Advance)", totals.advanceTomorrow, "บาท"],
     ["4. เงินรับส่วนเกิน - ตั๋วเกิน/ตีตั๋วแมนนวล (Surplus Cash)", totals.surplus, "บาท"],
-    ["5. ยอดรอตรวจชำระ - CS ทำรายการแต่ตั๋วไม่พอ (Underfunded / Shortfall)", totals.shortfall, "บาท"],
+    ["5. ยอดรอตรวจชำระ - บริการลูกค้าทำรายการแต่ตั๋วไม่พอ (Underfunded / Shortfall)", totals.shortfall, "บาท"],
   ];
 
   kpiData.forEach((item, idx) => {
@@ -158,7 +160,7 @@ export async function exportRevenueReconciliationExcel(data) {
       idx + 1,
       c.date,
       c.boothCode,
-      c.customerName,
+      displayCustomerName(c.customerName),
       c.bookedTickets || 0,
       c.paidTickets,
       avgUsedInt,
@@ -312,7 +314,7 @@ export async function exportRevenueReconciliationExcel(data) {
       tx.posDate,
       tx.createDate,
       tx.boothCode,
-      tx.customerName,
+      displayCustomerName(tx.customerName),
       tx.quantity,
       tx.amount,
       tx.attribution,

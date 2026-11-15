@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
+import { displayCustomerName } from "../../lib/display";
 
 function getTodayIso() {
   return new Intl.DateTimeFormat("en-CA", {
@@ -110,7 +111,8 @@ export default function PaymentSummaryPage() {
     return list.filter(
       (r) =>
         (r.docId && String(r.docId).toLowerCase().includes(q)) ||
-        (r.customerName && String(r.customerName).toLowerCase().includes(q))
+        (r.customerName && String(r.customerName).toLowerCase().includes(q)) ||
+        (r.customerName && displayCustomerName(r.customerName).toLowerCase().includes(q))
     );
   }, [summaryData, filterText, statusFilter]);
 
@@ -132,7 +134,8 @@ export default function PaymentSummaryPage() {
       list = list.filter(
         (r) =>
           (r.docId && String(r.docId).toLowerCase().includes(q)) ||
-          (r.customerName && String(r.customerName).toLowerCase().includes(q))
+          (r.customerName && String(r.customerName).toLowerCase().includes(q)) ||
+          (r.customerName && displayCustomerName(r.customerName).toLowerCase().includes(q))
       );
     }
     const byDate = new Map();
@@ -229,7 +232,7 @@ export default function PaymentSummaryPage() {
         csv += [
           escapeCell(idx + 1),
           escapeCell(r.docId),
-          escapeCell(r.customerName),
+          escapeCell(displayCustomerName(r.customerName)),
           escapeCell(r.booked),
           escapeCell(r.paid),
           escapeCell(Math.round(r.avgUsed || 0)),
@@ -282,7 +285,7 @@ export default function PaymentSummaryPage() {
         csv += [
           escapeCell(idx + 1),
           escapeCell(r.docId),
-          escapeCell(r.customerName),
+          escapeCell(displayCustomerName(r.customerName)),
           escapeCell(r.daysCount || 1),
           escapeCell(r.booked),
           escapeCell(r.paid),
@@ -327,7 +330,7 @@ export default function PaymentSummaryPage() {
         csv += [
           escapeCell(r.date),
           escapeCell(r.docId),
-          escapeCell(r.customerName),
+          escapeCell(displayCustomerName(r.customerName)),
           escapeCell(r.booked),
           escapeCell(r.paid),
           escapeCell(r.surplus || 0),
@@ -425,7 +428,7 @@ export default function PaymentSummaryPage() {
           <div className="filter-inputs">
             {mode === "day" ? (
               <div className="input-group">
-                <label>เลือกวันที่ปฏิบัติการ:</label>
+                <label>วันที่เข้าจอด:</label>
                 <div className="input-row">
                   <input
                     type="date"
@@ -653,7 +656,7 @@ export default function PaymentSummaryPage() {
                       <tr key={r.docId || idx}>
                         <td style={{ textAlign: "center" }}>{idx + 1}</td>
                         <td><strong>{r.docId}</strong></td>
-                        <td>{r.customerName}</td>
+                        <td>{displayCustomerName(r.customerName)}</td>
                         {mode === "range" && (
                           <td style={{ textAlign: "center" }}>{r.daysCount || 1} วัน</td>
                         )}
@@ -840,7 +843,7 @@ export default function PaymentSummaryPage() {
                             <td style={{ textAlign: "center" }}>{col.offset + idx + 1}</td>
                             <td style={{ textAlign: "center", fontWeight: 700 }}>{r.docId}</td>
                             <td style={{ textAlign: "left", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "130px" }}>
-                              {r.customerName}
+                              {displayCustomerName(r.customerName)}
                             </td>
                             <td style={{ textAlign: "right" }}>{r.booked}</td>
                             <td style={{ textAlign: "right", fontWeight: 700 }}>{r.paid}</td>

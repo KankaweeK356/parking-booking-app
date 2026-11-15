@@ -19,7 +19,7 @@ function AccessGate({ children }) {
   }, [router.pathname]);
   if (PUBLIC_PAGES.includes(router.pathname)) return children;
   if (!user) return <main className="auth-page">กำลังตรวจสอบสิทธิ์...</main>;
-  return <><div className="session-bar">เข้าสู่ระบบ: {user.name} · {user.department} · {user.role}<button onClick={async () => { await fetch("/api/auth/logout", { method: "POST" }); router.replace("/login"); }}>ออกจากระบบ</button></div>{children}</>;
+  return <><div className="session-bar">เข้าสู่ระบบ: {user.name} · {user.department} · {user.role === "CS" ? "บริการลูกค้า" : user.role}<button onClick={async () => { await fetch("/api/auth/logout", { method: "POST" }); router.replace("/login"); }}>ออกจากระบบ</button></div>{children}</>;
 }
 
 export default function App({ Component, pageProps }) {

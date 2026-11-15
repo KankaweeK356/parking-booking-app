@@ -4,6 +4,7 @@
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { exportRevenueReconciliationExcel } from "../../lib/excel-export";
+import { displayCustomerName } from "../../lib/display";
 
 function getBangkokDateObj() {
   const str = new Intl.DateTimeFormat("en-CA", {
@@ -168,7 +169,8 @@ export default function RevenueReconciliationPage() {
       list = list.filter(
         (c) =>
           c.boothCode.toLowerCase().includes(q) ||
-          c.customerName.toLowerCase().includes(q)
+          c.customerName.toLowerCase().includes(q) ||
+          displayCustomerName(c.customerName).toLowerCase().includes(q)
       );
     }
 
@@ -563,7 +565,7 @@ export default function RevenueReconciliationPage() {
             <div>
               <strong>⚠️ รอตรวจยอดชำระ:</strong> พบยอดขาดชำระรวม{" "}
               <strong>฿{formatCurrency(totals.shortfall)}</strong> (
-              {formatNumber(totals.shortfall / 100)} สิทธิ์) — CS ทำการจองแต่ตั๋วรายวันไม่เพียงพอ
+              {formatNumber(totals.shortfall / 100)} สิทธิ์) — บริการลูกค้าทำการจองแต่ตั๋วไม่เพียงพอ
             </div>
             <button
               type="button"
@@ -673,7 +675,7 @@ export default function RevenueReconciliationPage() {
                         <td style={{ padding: "8px 10px", textAlign: "center", fontWeight: 700 }}>
                           {c.boothCode}
                         </td>
-                        <td style={{ padding: "8px 10px", textAlign: "left" }}>{c.customerName}</td>
+                        <td style={{ padding: "8px 10px", textAlign: "left" }}>{displayCustomerName(c.customerName)}</td>
                         <td style={{ padding: "8px 10px", textAlign: "right", color: "#475569" }}>
                           {c.bookedTickets || 0}
                         </td>
@@ -816,7 +818,7 @@ export default function RevenueReconciliationPage() {
                         <td style={{ textAlign: "center" }}>{col.offset + idx + 1}</td>
                         <td style={{ textAlign: "center", fontWeight: 700 }}>{c.boothCode}</td>
                         <td style={{ textAlign: "left", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "125px" }}>
-                          {c.customerName}
+                          {displayCustomerName(c.customerName)}
                         </td>
                         <td style={{ textAlign: "right" }}>{c.bookedTickets || 0}</td>
                         <td style={{ textAlign: "right", fontWeight: 700 }}>{c.paidTickets}</td>

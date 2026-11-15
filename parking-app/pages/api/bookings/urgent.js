@@ -30,12 +30,12 @@ export default async function handler(req, res) {
     let logEntries = [];
     if (newBooking) {
       const timeList = newBooking.startTime ? [newBooking.startTime] : [];
-      if (timeList.length !== 1 || !isBeforeOperationalBlockStart(date, timeList[0])) throw new Error("สิทธิ์ระหว่างวันเลือกได้ 1 รอบที่ยังไม่เริ่มเท่านั้น");
+      if (timeList.length !== 1 || !isBeforeOperationalBlockStart(date, timeList[0])) throw new Error("รอบเวลานี้สิ้นสุดแล้ว ไม่สามารถจองย้อนหลังได้");
       await createBookingBatch({ ...newBooking, customer, startDate: date, endDate: date, startTimes: timeList, startTime: timeList[0], reason: bookingKind === "additional" ? "จองเพิ่มระหว่างวัน" : "จองใหม่รายวัน", actor: session, bookingType: "Urgent" });
       const slots = await getSlotsWithStatus();
       logEntries = (newBooking.slots || []).flatMap((slot) => { const info = slots.find((s) => s.slotCode === slot) || {}; return timeList.map((startTime) => ({ lot: newBooking.lot, slot, number: info.number || "", startTime })); });
     }
-    if (logEntries.some((entry) => !isBeforeOperationalBlockStart(date, entry.startTime))) throw new Error("เลือกรอบที่ยังไม่เริ่มเท่านั้น");
+    if (logEntries.some((entry) => !isBeforeOperationalBlockStart(date, entry.startTime))) throw new Error("รอบเวลานี้สิ้นสุดแล้ว ไม่สามารถจองย้อนหลังได้");
     const result = await appendUrgentAccessLogs({ customer, accessDate: date, entries: logEntries, note, actionType: bookingKind === "additional" ? "จองเพิ่ม" : "จองใหม่รายวัน", actor: session });
     invalidateDashboardCache();
     return res.status(200).json(result);

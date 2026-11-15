@@ -13,7 +13,7 @@ function formatPaymentDate(date) {
 
 export default function Dashboard() {
   const [selectedDate, setSelectedDate] = useState(today());
-  const [data, setData] = useState({ slots: [], bookings: [], unpaidBookings: [] });
+  const [data, setData] = useState({ slots: [], bookings: [], unpaidBookings: [], verticalAllocationActive: false });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedLot, setSelectedLot] = useState("");
@@ -101,8 +101,8 @@ export default function Dashboard() {
     try {
       const url = `/api/dashboard?date=${encodeURIComponent(date)}${force ? "&force=true" : ""}`;
       const response = await fetch(url);
-      const result = await readApiJson(response, "โหลดข้อมูล Dashboard ไม่สำเร็จ กรุณารอสักครู่");
-      if (!response.ok) throw new Error(result.error || "โหลดข้อมูล Dashboard ไม่สำเร็จ");
+      const result = await readApiJson(response, "โหลดข้อมูลตารางสถานะลานไม่สำเร็จ กรุณารอสักครู่");
+      if (!response.ok) throw new Error(result.error || "โหลดข้อมูลตารางสถานะลานไม่สำเร็จ");
       setData(result);
       setLastUpdated(new Intl.DateTimeFormat("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" }).format(new Date()));
       const availableLots = Array.from(new Set((result.slots || []).map((slot) => slot.lot).filter(Boolean))).sort();
@@ -134,7 +134,7 @@ export default function Dashboard() {
       const until = Date.now() + 120 * 1000;
       localStorage.setItem("payment_cooldown_until", String(until));
       setCooldownSeconds(120);
-      setPaymentMessage(`ระบบอัปเดตข้อมูลสำหรับวันที่ ${date} เรียบร้อยแล้ว`);
+      setPaymentMessage(`อัปเดตข้อมูลสำหรับวันที่ ${date} เรียบร้อยแล้ว`);
       await loadDashboard(selectedDate);
     } catch (err) {
       setPaymentMessage(err.message);
@@ -153,12 +153,14 @@ export default function Dashboard() {
   const slotsInLot = useMemo(() => (data.slots || []).filter((slot) => slot.lot === selectedLot), [data.slots, selectedLot]);
   const paidBookingsInLot = useMemo(() => (data.bookings || []).filter((booking) => booking.lot === selectedLot), [data.bookings, selectedLot]);
   const unpaidBookingsInLot = useMemo(() => (data.unpaidBookings || []).filter((booking) => booking.lot === selectedLot), [data.unpaidBookings, selectedLot]);
+  const activeUnpaidBookings = data.verticalAllocationActive ? unpaidBookingsInLot : [];
   const stats = useMemo(() => getDashboardStatusCounts({
     slots: slotsInLot,
     bookings: paidBookingsInLot,
+    unpaidBookings: activeUnpaidBookings,
     currentBlockStartTime: data.currentBlock?.startTime,
     isLiveOperationalDate: data.isLiveOperationalDate,
-  }), [slotsInLot, paidBookingsInLot, data.currentBlock, data.isLiveOperationalDate]);
+  }), [slotsInLot, paidBookingsInLot, activeUnpaidBookings, data.currentBlock, data.isLiveOperationalDate]);
   const paymentUpdate = data.paymentUpdate;
   const paymentDateLabel = paymentUpdate?.date ? new Intl.DateTimeFormat("th-TH-u-ca-gregory", { timeZone: "Asia/Bangkok", day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(`${paymentUpdate.date}T00:00:00Z`)) : "";
   const paymentUpdatedAt = paymentUpdate?.snapshot?.updatedAt ? new Intl.DateTimeFormat("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" }).format(new Date(paymentUpdate.snapshot.updatedAt)) : "";
@@ -169,12 +171,12 @@ export default function Dashboard() {
   return (
     <div>
       {printing && <style media="print">{"@page { size: A3 portrait; margin: 8mm; }"}</style>}
-      <div className="top-bar"><div className="inner"><h1>ติดตามสถานะลานจอด</h1><Link href="/" className="back">← กลับหน้าหลัก</Link></div></div>
+      <div className="top-bar"><div className="inner"><h1>ตารางสถานะลานจอด</h1><Link href="/" className="back">← กลับหน้าหลัก</Link></div></div>
       <div className="page timeline-page">
         {error && <div className="alert alert-error">{error}</div>}
         <div className="card timeline-controls">
-          <div><label>วันที่ของรอบ 07:00</label><input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} /></div>
-          <div><label>เลือกลาน</label><div className="lot-buttons">{lots.map((lot) => <button key={lot} type="button" className={`btn ${selectedLot === lot ? "btn-primary" : "btn-secondary"}`} onClick={() => setSelectedLot(lot)}>{lot}</button>)}</div></div>
+          <div><label>วันที่เข้าจอด (เริ่ม 07:00)</label><input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} /></div>
+          <div><label>เลือกลาน</label><div className="lot-buttons">{lots.map((lot) => <button key={lot} type="button" className={`btn ${selectedLot === lot ? "btn-primary" : "btn-secondary"}`} onClick={() => setSelectedLot(lot)}>{displayLotName(lot)}</button>)}</div></div>
           <div>
             <label>&nbsp;</label>
             <div>
@@ -190,13 +192,76 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
-        {paymentMessage && <div className={`alert ${paymentMessage.includes("สำเร็จ") ? "alert-success" : "alert-error"}`}>{paymentMessage}</div>}
+        {paymentMessage && <div className={`alert ${paymentMessage.includes("เรียบร้อย") || paymentMessage.includes("สำเร็จ") ? "alert-success" : "alert-error"}`}>{paymentMessage}</div>}
         {!loading && paymentUpdate?.status === "UPDATING" && <div className="alert alert-warning">ข้อมูลสำหรับวันที่ {paymentDateLabel} ยังไม่พร้อม{canShowRetry && <><br />โปรดรอหรือกด <button type="button" className="btn btn-secondary refresh-button" disabled={retryingPayment || cooldownSeconds > 0} onClick={retryPaymentSnapshot}>{retryingPayment ? "กำลังอัปเดตข้อมูล..." : cooldownSeconds > 0 ? `ข้อมูลล่าสุดแล้ว (รอ ${Math.floor(cooldownSeconds / 60)}:${String(cooldownSeconds % 60).padStart(2, "0")})` : "อัปเดตข้อมูลใหม่"}</button></>}</div>}
         {!loading && paymentUpdate?.status === "FAILED" && <div className="alert alert-error">ข้อมูลสำหรับวันที่ {paymentDateLabel} ยังไม่พร้อม{canShowRetry && <><br />โปรดรอหรือกด <button type="button" className="btn btn-secondary refresh-button" disabled={retryingPayment || cooldownSeconds > 0} onClick={retryPaymentSnapshot}>{retryingPayment ? "กำลังอัปเดตข้อมูล..." : cooldownSeconds > 0 ? `ข้อมูลล่าสุดแล้ว (รอ ${Math.floor(cooldownSeconds / 60)}:${String(cooldownSeconds % 60).padStart(2, "0")})` : "อัปเดตข้อมูลใหม่"}</button></>}</div>}
-        {!loading && paymentUpdate?.status === "READY" && <div className="alert alert-success">สิทธิ์วันที่ {paymentDateLabel} พร้อมแล้ว<br />ตรวจสอบการชำระเงินเมื่อ {paymentUpdatedAt} · ใช้ตั๋ววันที่ {formatPaymentDate(paymentUpdate.snapshot.sourceDate)}</div>}
-        {!loading && data.paymentStatus === "READY" && data.isLiveOperationalDate && <><div className="dashboard-current-block">สรุปสถานะรอบปัจจุบัน: {data.currentBlock?.label || "-"}{lastUpdated ? ` · ข้อมูลสถานะช่องล่าสุด ${lastUpdated}` : ""}</div><div className="summary-stat"><div className="stat-box"><div className="stat-label">มีการจอง</div><div className="stat-value">{stats.booked}</div></div><div className="stat-box"><div className="stat-label">ว่าง</div><div className="stat-value">{stats.vacant}</div></div><div className="stat-box stat-ticket-check"><div className="stat-label">รอตรวจตั๋ว</div><div className="stat-value">{stats["ticket-check"]}</div></div><div className="stat-box stat-expired"><div className="stat-label">หมดเวลาจอด</div><div className="stat-value">{stats.expired}</div></div><div className="stat-box"><div className="stat-label">ปิดใช้งาน</div><div className="stat-value">{stats.closed}</div></div></div></>}
-        {!loading && data.paymentStatus === "READY" && !data.isLiveOperationalDate && <div className="alert alert-warning">กำลังดูข้อมูลย้อนหลัง/ล่วงหน้า จึงไม่แสดงสถานะ “หมดเวลาจอด” ตามเวลาจริง</div>}
-        {loading ? <div className="card"><p className="subtitle">กำลังโหลดข้อมูล Dashboard...</p></div> : data.paymentStatus === "UPDATING" ? <div className="card"><p className="subtitle">กำลังเตรียมสถานะช่องจอดจากข้อมูลชำระเงินล่าสุด โปรดรอให้ข้อมูลพร้อมก่อนใช้งานตารางนี้</p></div> : <><div className="status-legend screen-only"><span className="timeline-booked">มีการจอง</span><span className="timeline-vacant">ว่าง</span><span className="timeline-ticket-check">รอตรวจตั๋ว</span><span className="timeline-expired">หมดเวลาจอด</span><span className="timeline-closed">ปิดใช้งาน</span></div><div className="print-dashboard-header print-only"><h1>ระบบจองที่จอดรถเรียงสินค้า</h1><h2>ตารางสถานะลานจอด</h2><div><span>วันปฏิบัติการ: {selectedDateLabel}</span><span>ลาน: {displayLotName(selectedLot)}</span><span>ข้อมูลล่าสุด: {lastUpdated || "-"}</span><span>พิมพ์เมื่อ: {printedAt || "-"}</span></div>{!data.isLiveOperationalDate && <p>เอกสารอ้างอิงย้อนหลัง</p>}<div className="print-status-legend"><span>แดง: มีการจอง</span><span>น้ำเงิน: รอตรวจตั๋ว</span><span>เขียว: ว่าง</span><span>เหลือง: หมดเวลาจอด</span><span>เทา: ปิดใช้งาน</span></div></div><div className="card dashboard-print-grid"><ParkingTimelineGrid slots={slotsInLot} bookings={paidBookingsInLot} mode="dashboard" currentBlockStartTime={data.currentBlock?.startTime} isLiveOperationalDate={data.isLiveOperationalDate} /></div>{unpaidBookingsInLot.length > 0 && <div className="alert alert-warning screen-only">มี {unpaidBookingsInLot.length} รายการจองที่ยังไม่พบหลักฐานชำระเงิน จึงแสดงเป็น “ว่าง” สำหรับทีมตรวจพื้นที่ตามกติกา production</div>}</>}
+        {!loading && paymentUpdate?.status === "READY" && <div className="alert alert-success">สิทธิ์วันที่ {paymentDateLabel} พร้อมแล้ว · อัปเดต {paymentUpdatedAt} (ใช้ตั๋ววันที่ {formatPaymentDate(paymentUpdate.snapshot.sourceDate)})</div>}
+        {!loading && data.paymentStatus === "READY" && data.isLiveOperationalDate && (
+          <>
+            <div className="dashboard-current-block">รอบปัจจุบัน: {data.currentBlock?.label || "-"}{lastUpdated ? ` · อัปเดต ${lastUpdated}` : ""}</div>
+            <div className="summary-stat">
+              <div className="stat-box"><div className="stat-label">จองแล้ว</div><div className="stat-value">{stats.booked}</div></div>
+              <div className="stat-box"><div className="stat-label">ว่าง</div><div className="stat-value">{stats.vacant}</div></div>
+              {data.verticalAllocationActive && (
+                <div className="stat-box stat-unpaid"><div className="stat-label">ไม่ตีตั๋ว</div><div className="stat-value">{stats["unpaid-booking"]}</div></div>
+              )}
+              <div className="stat-box stat-ticket-check"><div className="stat-label">รอตรวจตั๋ว</div><div className="stat-value">{stats["ticket-check"]}</div></div>
+              <div className="stat-box stat-expired"><div className="stat-label">หมดเวลาจอด</div><div className="stat-value">{stats.expired}</div></div>
+              <div className="stat-box"><div className="stat-label">ปิดใช้งาน</div><div className="stat-value">{stats.closed}</div></div>
+            </div>
+          </>
+        )}
+        {!loading && data.paymentStatus === "READY" && !data.isLiveOperationalDate && <div className="alert alert-warning">กำลังดูข้อมูลย้อนหลัง/ล่วงหน้า (ไม่แสดงสถานะหมดเวลาจอดตามเวลาจริง)</div>}
+        {loading ? (
+          <div className="card"><p className="subtitle">กำลังโหลดข้อมูลตารางสถานะลาน...</p></div>
+        ) : data.paymentStatus === "UPDATING" ? (
+          <div className="card"><p className="subtitle">กำลังเตรียมสถานะช่องจอดจากข้อมูลชำระเงินล่าสุด กรุณารอสักครู่</p></div>
+        ) : (
+          <>
+            <div className="status-legend screen-only">
+              <span className="timeline-booked">จองแล้ว</span>
+              <span className="timeline-vacant">ว่าง</span>
+              {data.verticalAllocationActive && <span className="timeline-unpaid">ไม่ตีตั๋ว</span>}
+              <span className="timeline-ticket-check">รอตรวจตั๋ว</span>
+              <span className="timeline-expired">หมดเวลาจอด</span>
+              <span className="timeline-closed">ปิดใช้งาน</span>
+            </div>
+            <div className="print-dashboard-header print-only">
+              <h1>ระบบจองที่จอดรถเรียงสินค้า</h1>
+              <h2>ตารางสถานะลานจอด</h2>
+              <div>
+                <span>วันที่เข้าจอด: {selectedDateLabel}</span>
+                <span>ลาน: {displayLotName(selectedLot)}</span>
+                <span>ข้อมูลล่าสุด: {lastUpdated || "-"}</span>
+                <span>พิมพ์เมื่อ: {printedAt || "-"}</span>
+              </div>
+              {!data.isLiveOperationalDate && <p>เอกสารอ้างอิงย้อนหลัง</p>}
+              <div className="print-status-legend">
+                <span>แดง: จองแล้ว</span>
+                {data.verticalAllocationActive && <span>ส้ม: ไม่ตีตั๋ว</span>}
+                <span>น้ำเงิน: รอตรวจตั๋ว</span>
+                <span>เขียว: ว่าง</span>
+                <span>เหลือง: หมดเวลาจอด</span>
+                <span>เทา: ปิดใช้งาน</span>
+              </div>
+            </div>
+            <div className="card dashboard-print-grid">
+              <ParkingTimelineGrid
+                slots={slotsInLot}
+                bookings={paidBookingsInLot}
+                unpaidBookings={activeUnpaidBookings}
+                mode="dashboard"
+                currentBlockStartTime={data.currentBlock?.startTime}
+                isLiveOperationalDate={data.isLiveOperationalDate}
+              />
+            </div>
+            {!data.verticalAllocationActive && unpaidBookingsInLot.length > 0 && (
+              <div className="alert alert-warning screen-only">
+                มี {unpaidBookingsInLot.length} รายการจองที่ยังไม่พบหลักฐานชำระเงิน จึงแสดงเป็น “ว่าง” สำหรับทีมตรวจพื้นที่
+              </div>
+            )}
+          </>
+        )}
       </div>
     </div>
   );

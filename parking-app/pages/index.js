@@ -59,28 +59,28 @@ export default function Home() {
         {tab === "booking" && canManage && (
           <div className="nav-grid">
             <Link href="/booking/new" className="nav-card">
-              <div className="title">📝 จองใหม่ / เพิ่มช่องจอด</div>
-              <div className="desc">จองช่องจอดระยะยาว โดยเริ่มใช้งานช่องจริงได้ตั้งแต่วันถัดไป</div>
+              <div className="title">📝 จองใหม่ / เพิ่มช่อง</div>
+              <div className="desc">จองช่องจอดระยะยาว (เริ่มใช้วันถัดไป)</div>
             </Link>
             <Link href="/booking/urgent" className="nav-card">
-              <div className="title">⚡ จองรายวัน</div>
-              <div className="desc">จองระหว่างวัน ต้องบันทึกก่อนเวลาเริ่มรอบที่เลือก</div>
+              <div className="title">⚡ จองรายวัน / หน้างาน</div>
+              <div className="desc">จองใช้งานวันนี้ในรอบที่กำลังเปิดหรือรอบถัดไป</div>
             </Link>
             <Link href="/booking/edit" className="nav-card">
-              <div className="title">✏️ พัก / ยกเลิกการจอง / ย้ายช่องจอด</div>
-              <div className="desc">เลือกทำรายการจากการจองเดิมของลูกค้า ทีละรอบ</div>
+              <div className="title">✏️ พัก / ยกเลิก / ย้ายช่อง</div>
+              <div className="desc">แก้ไข พัก ยกเลิก หรือย้ายช่องจอดเดิม</div>
             </Link>
             <Link href="/required-summary" className="nav-card">
               <div className="title">🎟️ สรุปรายการตีตั๋ว</div>
-              <div className="desc">สรุปจำนวนตั๋วที่ลูกค้าต้องตี และพิมพ์รายการให้ลูกค้า</div>
+              <div className="desc">ดูจำนวนตั๋วที่ต้องตีและพิมพ์ใบสรุปให้ลูกค้า</div>
             </Link>
             <Link href="/cs-overview" className="nav-card">
-              <div className="title">📋 ภาพรวมการจอง</div>
-              <div className="desc">ดูว่าช่องจอดใดถูกลูกค้าจองแล้วในแต่ละรอบ</div>
+              <div className="title">📋 ผังการจองทั้งหมด</div>
+              <div className="desc">ดูตารางการจองทุกช่องแยกตามลานและรอบเวลา</div>
             </Link>
             <Link href="/slot-status" className="nav-card">
               <div className="title">⛔ ปิด / เปิดช่องจอด</div>
-              <div className="desc">ปิดหรือเปิดช่องจอด กรณีช่องจอดไม่สามารถใช้งานได้</div>
+              <div className="desc">ปิดซ่อมแซมหรือเปิดใช้งานช่องจอด</div>
             </Link>
             {canAdmin && (
               <Link href="/admin/users" className="nav-card">
@@ -91,7 +91,7 @@ export default function Home() {
             {canAdmin && (
               <Link href="/admin/payment-summary" className="nav-card">
                 <div className="title">👥 สรุปพฤติกรรมลูกค้า</div>
-                <div className="desc">สรุปยอดจอง, จ่ายจริง, อัตราการใช้สิทธิ์รายลูกค้า</div>
+                <div className="desc">ดูสถิติยอดจอง ยอดจ่ายจริง และการใช้สิทธิ์รายลูกค้า</div>
               </Link>
             )}
           </div>
@@ -110,12 +110,12 @@ export default function Home() {
         {tab === "field" && (
           <div className="nav-grid">
             <Link href="/dashboard" className="nav-card">
-              <div className="title">📊 ติดตามสถานะลานจอด</div>
-              <div className="desc">ดูสถานะช่องจอดในแต่ละลาน</div>
+              <div className="title">📊 ตารางสถานะลานจอด</div>
+              <div className="desc">ดูตารางสถานะช่องจอดทั้งลาน</div>
             </Link>
             <Link href="/mobile" className="nav-card">
-              <div className="title">📱 ติดตามสถานะช่องจอด (Mobile View)</div>
-              <div className="desc">ตรวจสอบสถานะช่องจอด เหมาะสำหรับใช้งานบนมือถือ</div>
+              <div className="title">📱 ตรวจเช็กหน้างาน (มือถือ)</div>
+              <div className="desc">ตรวจช่องจอดและปรับยอดใช้จริงหน้างานบนมือถือ</div>
             </Link>
           </div>
         )}
@@ -125,7 +125,7 @@ export default function Home() {
             <Link href="/admin/revenue-reconciliation" className="nav-card">
               <div className="title">📊 สรุปการชำระเงิน</div>
               <div className="desc">
-                กระทบยอดเงินสดตั๋วรายวัน รายได้รอบวัน รายได้รับล่วงหน้า และส่งออก Excel สำหรับฝ่ายบัญชี
+                กระทบยอดตั๋วรายวัน ตั๋วล่วงหน้า และส่งออก Excel
               </div>
             </Link>
           </div>

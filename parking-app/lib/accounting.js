@@ -5,6 +5,9 @@
 import {
   getTransectionRows,
   getUrgentAccessLogs,
+  getFieldInspectionLogs,
+  getSlotsWithStatus,
+  computeDailyInspectionAdjustments,
   getAllBookingRows,
   getMasterList,
   getBookingAdjustments,
@@ -17,6 +20,7 @@ import {
   isClosingReason,
   FAR_FUTURE_SERIAL,
 } from "./sheets.js";
+import { isVerticalAllocationActive } from "./operational-day.js";
 import { TICKET_PRICE_PER_UNIT } from "./ticket-pricing.js";
 
 export const RECON_STATUS = {
@@ -58,6 +62,8 @@ export async function getRevenueReconciliationData({ startDate, endDate, autoArc
   const [
     allTransactions,
     urgentLogs,
+    allInspectionLogs,
+    slotsWithStatus,
     allBookings,
     masterList,
     allAdjustments,
@@ -66,6 +72,8 @@ export async function getRevenueReconciliationData({ startDate, endDate, autoArc
   ] = await Promise.all([
     getTransectionRows(),
     getUrgentAccessLogs(),
+    getFieldInspectionLogs().catch(() => []),
+    getSlotsWithStatus().catch(() => []),
     getAllBookingRows(),
     getMasterList(),
     getBookingAdjustments(),
@@ -74,11 +82,13 @@ export async function getRevenueReconciliationData({ startDate, endDate, autoArc
       return { customerSummary: [], rawTransactions: [], archivedDates: new Set() };
     }),
     getCustomerSummaryData({
-      startDate: isoFromSerial(startSerial + 1),
+      startDate: sDate,
       endDate: isoFromSerial(endSerial + 1),
       mode: "range",
     }).catch(() => ({ dailyBreakdown: [] })),
   ]);
+
+  const slotNumberByCode = new Map((slotsWithStatus || []).map((slot) => [slot.slotCode, slot.number]));
 
   const avgByDocId = custSummaryRangeData?.avgByDocId || {};
   const custSummaryRowsByOpDate = new Map();
@@ -301,6 +311,44 @@ export async function getRevenueReconciliationData({ startDate, endDate, autoArc
         .map((row) => row.rowNumber)
     );
 
+    // คำนวณตั๋วหน้าป้อมที่ปลดล็อกช่องสีส้ม (ไม่ตีตั๋ว) ในวัน dIso เพื่อนับเป็นตั๋วรายวันของวัน dIso
+    let extraUsedOnDayByDoc = new Map();
+    const dayInspectionLogs = (allInspectionLogs || []).filter((log) => log.operationalDate === dIso);
+    if (isVerticalAllocationActive(dIso) && dayInspectionLogs.length > 0) {
+      const adjustmentsToday = new Set(
+        allAdjustments
+          .filter(
+            (row) =>
+              (row.action.includes("ลด") || row.action.includes("พัก")) &&
+              isoDateToSerial(row.startDate) <= currentSerial &&
+              currentSerial <= isoDateToSerial(row.endDate)
+          )
+          .map((row) => row.rowNumber)
+      );
+      const activeTodayBookings = allBookings.filter((b) => {
+        const endEff = b.endEffectiveSerial ?? FAR_FUTURE_SERIAL;
+        return (
+          b.bookingType !== "Urgent" &&
+          b.startSerial &&
+          !isClosingReason(b.reason) &&
+          !adjustmentsToday.has(b.rowNumber) &&
+          b.startSerial <= currentSerial &&
+          currentSerial <= endEff
+        );
+      });
+      const advancePaidTodayByDoc = new Map();
+      (custSummaryRowsByOpDate.get(dIso) || []).forEach((r) => {
+        if (r.docId) advancePaidTodayByDoc.set(String(r.docId).trim(), Number(r.paid) || 0);
+      });
+      const { extraUsedByDoc } = computeDailyInspectionAdjustments({
+        activeBookings: activeTodayBookings,
+        slotNumberByCode,
+        advancePaidByDoc: advancePaidTodayByDoc,
+        inspectionLogs: dayInspectionLogs,
+      });
+      extraUsedOnDayByDoc = extraUsedByDoc;
+    }
+
     // ตั๋ว POS ในวัน dIso
     const dayTransactions = allTransactions.filter(
       (t) => t.dateSerial === currentSerial || t.dateStr === dIso
@@ -359,17 +407,16 @@ export async function getRevenueReconciliationData({ startDate, endDate, autoArc
         0
       );
 
-      // 2. สิทธิ์ด่วนวันนี้ (Operational Date dIso)
+      // 2. สิทธิ์ด่วนวันนี้ + ตั๋วรายวันที่ใช้ปลดล็อกช่องสีส้มวันนี้ (Operational Date dIso)
       const custUrgentItems = urgentLogs.filter(
         (log) =>
           (log.accessDate === dIso || log.ticketIssuedDate === dIso) &&
           String(log.docId).trim() === docId &&
           !cancelledUrgentKeys.has(`${log.slot}::${log.startTime}`)
       );
-      const urgentSlotsCount = custUrgentItems.reduce(
-        (sum, l) => sum + (Number(l.ticketCount) || 1),
-        0
-      );
+      const extraUsedToday = extraUsedOnDayByDoc.get(docId) || 0;
+      const urgentSlotsCount =
+        custUrgentItems.reduce((sum, l) => sum + (Number(l.ticketCount) || 1), 0) + extraUsedToday;
 
       const snapshotAdvancePaid = custPaidByDoc.get(docId) || 0;
       const totalPaidTickets = Math.max(livePaidTickets, snapshotAdvancePaid + urgentSlotsCount);

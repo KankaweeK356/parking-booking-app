@@ -9,7 +9,13 @@ function today() { return getCurrentOperationalDateIso(); }
 
 export default function MobileView() {
   const [selectedDate, setSelectedDate] = useState(today());
-  const [data, setData] = useState({ slots: [], bookings: [], unpaidBookings: [] });
+  const [data, setData] = useState({
+    slots: [],
+    bookings: [],
+    unpaidBookings: [],
+    underpaidCustomers: [],
+    verticalAllocationActive: false,
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedLot, setSelectedLot] = useState("");
@@ -126,19 +132,33 @@ export default function MobileView() {
   const lots = useMemo(() => Array.from(new Set((data.slots || []).map((slot) => slot.lot).filter(Boolean))).sort(), [data.slots]);
   const slotsInLot = useMemo(() => (data.slots || []).filter((slot) => slot.lot === selectedLot), [data.slots, selectedLot]);
   const paidBookingsInLot = useMemo(() => (data.bookings || []).filter((booking) => booking.lot === selectedLot), [data.bookings, selectedLot]);
-  const stats = useMemo(() => getDashboardStatusCounts({ slots: slotsInLot, bookings: paidBookingsInLot, currentBlockStartTime: data.currentBlock?.startTime, isLiveOperationalDate: data.isLiveOperationalDate }), [slotsInLot, paidBookingsInLot, data.currentBlock, data.isLiveOperationalDate]);
+  const unpaidBookingsInLot = useMemo(
+    () => (data.verticalAllocationActive ? (data.unpaidBookings || []).filter((booking) => booking.lot === selectedLot) : []),
+    [data.unpaidBookings, data.verticalAllocationActive, selectedLot]
+  );
+  const stats = useMemo(
+    () =>
+      getDashboardStatusCounts({
+        slots: slotsInLot,
+        bookings: paidBookingsInLot,
+        unpaidBookings: unpaidBookingsInLot,
+        currentBlockStartTime: data.currentBlock?.startTime,
+        isLiveOperationalDate: data.isLiveOperationalDate,
+      }),
+    [slotsInLot, paidBookingsInLot, unpaidBookingsInLot, data.currentBlock, data.isLiveOperationalDate]
+  );
   const paymentUpdate = data.paymentUpdate;
   const paymentDateLabel = paymentUpdate?.date ? new Intl.DateTimeFormat("th-TH-u-ca-gregory", { timeZone: "Asia/Bangkok", day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(`${paymentUpdate.date}T00:00:00Z`)) : "";
   const activeRound = data.currentBlock?.startTime || "07:00";
-  const attentionCount = stats["ticket-check"] + stats.expired;
+  const attentionCount = stats["ticket-check"] + stats.expired + (stats["unpaid-booking"] || 0);
 
   return (
     <div>
-      <div className="top-bar"><div className="inner"><h1>📱 ติดตามสถานะช่องจอด</h1><Link href="/" className="back">หน้าหลัก</Link></div></div>
+      <div className="top-bar"><div className="inner"><h1>📱 ตรวจเช็กหน้างาน</h1><Link href="/" className="back">หน้าหลัก</Link></div></div>
       <div className="page timeline-page mobile-timeline-page">
         {error && <div className="alert alert-error">{error}</div>}
         <div className="card timeline-controls mobile-timeline-controls">
-          <div><label>วันปฏิบัติการ</label><strong>{selectedDate} · 07:00–07:00</strong></div>
+          <div><label>วันที่เข้าจอด</label><strong>{selectedDate} · 07:00–07:00</strong></div>
           <div><label>ลาน</label><div className="lot-buttons">{lots.map((lot) => <button key={lot} type="button" className={`btn ${selectedLot === lot ? "btn-primary" : "btn-secondary"}`} onClick={() => setSelectedLot(lot)}>{displayLotName(lot)}</button>)}</div></div>
           <div>
             <label>&nbsp;</label>
@@ -154,7 +174,7 @@ export default function MobileView() {
             </div>
           </div>
         </div>
-        {loading ? <div className="card"><p className="subtitle">กำลังโหลดสถานะช่องจอด...</p></div> : <>{paymentUpdate?.status !== "READY" && <div className="alert alert-warning">ข้อมูลสำหรับวันที่ {paymentDateLabel} ยังไม่พร้อม<br />โปรดรอ{canRetryPayment ? <>หรือกด <button type="button" className="btn btn-secondary refresh-button" disabled={retryingPayment || cooldownSeconds > 0} onClick={retryPaymentSnapshot}>{retryingPayment ? "กำลังอัปเดตข้อมูล..." : cooldownSeconds > 0 ? `ข้อมูลล่าสุดแล้ว (รอ ${Math.floor(cooldownSeconds / 60)}:${String(cooldownSeconds % 60).padStart(2, "0")})` : "อัปเดตข้อมูลใหม่"}</button></> : "ระบบกำลังอัปเดตข้อมูลอัตโนมัติ"}</div>}{data.paymentStatus === "UPDATING" ? <div className="card"><p className="subtitle">โปรดรอให้ข้อมูลพร้อมก่อนใช้สถานะช่องจอดตัดสินพื้นที่</p></div> : <><div className="dashboard-current-block">รอบปัจจุบัน: {data.currentBlock?.label || "-"}{lastUpdated ? ` · อัปเดต ${lastUpdated}` : ""}</div><p className="mobile-attention-count">ต้องตรวจ {attentionCount} ช่อง</p><MobileRoundSlotList slots={slotsInLot} bookings={paidBookingsInLot} selectedRound={activeRound} currentBlockStartTime={data.currentBlock?.startTime} isLiveOperationalDate={data.isLiveOperationalDate} /></>}</>}
+        {loading ? <div className="card"><p className="subtitle">กำลังโหลดสถานะช่องจอด...</p></div> : <>{paymentUpdate?.status !== "READY" && <div className="alert alert-warning">ข้อมูลสำหรับวันที่ {paymentDateLabel} ยังไม่พร้อม<br />โปรดรอ{canRetryPayment ? <>หรือกด <button type="button" className="btn btn-secondary refresh-button" disabled={retryingPayment || cooldownSeconds > 0} onClick={retryPaymentSnapshot}>{retryingPayment ? "กำลังอัปเดตข้อมูล..." : cooldownSeconds > 0 ? `ข้อมูลล่าสุดแล้ว (รอ ${Math.floor(cooldownSeconds / 60)}:${String(cooldownSeconds % 60).padStart(2, "0")})` : "อัปเดตข้อมูลใหม่"}</button></> : "ระบบกำลังอัปเดตข้อมูลอัตโนมัติ"}</div>}{data.paymentStatus === "UPDATING" ? <div className="card"><p className="subtitle">กำลังเตรียมข้อมูลสถานะช่องจอด กรุณารอสักครู่</p></div> : <><div className="dashboard-current-block">รอบปัจจุบัน: {data.currentBlock?.label || "-"}{lastUpdated ? ` · อัปเดต ${lastUpdated}` : ""}</div><p className="mobile-attention-count">ต้องตรวจ {attentionCount} ช่อง</p><MobileRoundSlotList slots={slotsInLot} bookings={paidBookingsInLot} unpaidBookings={unpaidBookingsInLot} underpaidCustomers={data.verticalAllocationActive ? data.underpaidCustomers : []} operationalDate={selectedDate} selectedLot={selectedLot} selectedRound={activeRound} currentBlockStartTime={data.currentBlock?.startTime} isLiveOperationalDate={data.isLiveOperationalDate} onInspectionSaved={() => loadData(selectedDate, { force: true })} /></>}</>}
       </div>
     </div>
   );
