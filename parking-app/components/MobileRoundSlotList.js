@@ -25,6 +25,7 @@ export default function MobileRoundSlotList({
   onInspectionSaved,
 }) {
   const [editingCustomer, setEditingCustomer] = useState(null);
+  const [pickingCustomer, setPickingCustomer] = useState(false);
   const [draftUsed, setDraftUsed] = useState(0);
   const [saving, setSaving] = useState(false);
   const [modalError, setModalError] = useState("");
@@ -34,14 +35,26 @@ export default function MobileRoundSlotList({
   );
 
   function openModal(item) {
+    setPickingCustomer(false);
     setEditingCustomer(item);
     setDraftUsed(Number(item.roundActualUsed) || 0);
     setModalError("");
   }
 
+  function openTopBarAction() {
+    if (roundCustomers.length === 1) {
+      openModal(roundCustomers[0]);
+    } else if (roundCustomers.length > 1) {
+      setEditingCustomer(null);
+      setModalError("");
+      setPickingCustomer(true);
+    }
+  }
+
   function closeModal() {
     if (saving) return;
     setEditingCustomer(null);
+    setPickingCustomer(false);
     setModalError("");
   }
 
@@ -78,25 +91,53 @@ export default function MobileRoundSlotList({
     <section className="card mobile-round-slots">
       <h2>สถานะช่องรอบ {selectedRound}</h2>
 
-      {roundCustomers.length > 0 && (
+      {roundCustomers.length === 1 && (
         <div className="underpaid-customer-list">
-          {roundCustomers.map((item) => (
-            <div
-              key={`${item.docId || item.customer}-${item.lot}-${item.startTime}`}
-              className="underpaid-customer-bar"
+          <div
+            className="underpaid-customer-bar"
+            onClick={() => openModal(roundCustomers[0])}
+            role="button"
+            tabIndex={0}
+          >
+            <span className="underpaid-customer-text">
+              🟠 <strong>{formatFieldCustomerName(roundCustomers[0].customer)}</strong> (ตั๋ว {roundCustomers[0].dailyPaid}/{roundCustomers[0].dailyContracted})
+            </span>
+            <button
+              type="button"
+              className="btn-underpaid-edit"
+              onClick={(e) => {
+                e.stopPropagation();
+                openModal(roundCustomers[0]);
+              }}
             >
-              <span className="underpaid-customer-text">
-                🟠 <strong>{formatFieldCustomerName(item.customer)}</strong> (ตั๋ว {item.dailyPaid}/{item.dailyContracted})
-              </span>
-              <button
-                type="button"
-                className="btn-underpaid-edit"
-                onClick={() => openModal(item)}
-              >
-                แก้
-              </button>
-            </div>
-          ))}
+              แก้
+            </button>
+          </div>
+        </div>
+      )}
+
+      {roundCustomers.length > 1 && (
+        <div className="underpaid-customer-list">
+          <div
+            className="underpaid-customer-bar"
+            onClick={openTopBarAction}
+            role="button"
+            tabIndex={0}
+          >
+            <span className="underpaid-customer-text">
+              🟠 <strong>ลูกค้าตีตั๋วไม่ครบในรอบนี้ ({roundCustomers.length} ราย)</strong>
+            </span>
+            <button
+              type="button"
+              className="btn-underpaid-edit"
+              onClick={(e) => {
+                e.stopPropagation();
+                openTopBarAction();
+              }}
+            >
+              เลือกชื่อ / แก้
+            </button>
+          </div>
         </div>
       )}
 
@@ -165,9 +206,70 @@ export default function MobileRoundSlotList({
         })}
       </div>
 
+      {pickingCustomer && !editingCustomer && roundCustomers.length > 1 && (
+        <div className="inspection-modal-backdrop" onClick={closeModal}>
+          <div className="inspection-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="inspection-modal-header">
+              <strong>เลือกลูกค้าที่ต้องการแก้ยอด</strong>
+              <span>รอบ {selectedRound} ({roundCustomers.length} ราย)</span>
+            </div>
+            <div className="inspection-picker-list">
+              {roundCustomers.map((item) => (
+                <div
+                  key={`${item.docId || item.customer}-${item.lot}-${item.startTime}`}
+                  className="inspection-picker-item"
+                  onClick={() => openModal(item)}
+                  role="button"
+                  tabIndex={0}
+                >
+                  <div className="inspection-picker-info">
+                    <strong>{formatFieldCustomerName(item.customer)}</strong>
+                    <small>
+                      ตั๋วทั้งวัน {item.dailyPaid}/{item.dailyContracted} · รอบนี้ {item.roundActualUsed}/{item.roundContracted}
+                    </small>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-underpaid-edit"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openModal(item);
+                    }}
+                  >
+                    แก้
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="inspection-modal-actions" style={{ gridTemplateColumns: "1fr" }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={closeModal}
+              >
+                ปิดหน้าต่าง
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {editingCustomer && (
         <div className="inspection-modal-backdrop" onClick={closeModal}>
           <div className="inspection-modal" onClick={(e) => e.stopPropagation()}>
+            {roundCustomers.length > 1 && (
+              <button
+                type="button"
+                className="btn-back-picker"
+                disabled={saving}
+                onClick={() => {
+                  setEditingCustomer(null);
+                  setPickingCustomer(true);
+                }}
+              >
+                ← เลือกชื่อลูกค้าอื่น
+              </button>
+            )}
             <div className="inspection-modal-header">
               <strong>{formatFieldCustomerName(editingCustomer.customer)}</strong>
               <span>(ตั๋ว {editingCustomer.dailyPaid}/{editingCustomer.dailyContracted})</span>

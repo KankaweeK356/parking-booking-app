@@ -565,10 +565,18 @@ input[type="password"] {
 .mobile-slot-closed { background: #f1f5f9; border-color: #cbd5e1; color: #475569; }
 
 .underpaid-customer-list { display: grid; gap: 6px; margin-bottom: 12px; }
-.underpaid-customer-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border: 1px solid #fdba74; border-radius: 8px; background: #fff7ed; color: #9a3412; font-size: 13px; }
+.underpaid-customer-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border: 1px solid #fdba74; border-radius: 8px; background: #fff7ed; color: #9a3412; font-size: 13px; cursor: pointer; }
 .underpaid-customer-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .btn-underpaid-edit { flex-shrink: 0; border: 1px solid #ea580c; border-radius: 6px; background: #ea580c; color: #fff; padding: 4px 10px; font-size: 12px; font-weight: 700; cursor: pointer; }
 .btn-underpaid-edit:hover { background: #c2410c; }
+
+.inspection-picker-list { display: grid; gap: 8px; max-height: 260px; overflow-y: auto; margin: 14px 0; text-align: left; }
+.inspection-picker-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border: 1px solid #fdba74; border-radius: 8px; background: #fff7ed; cursor: pointer; }
+.inspection-picker-item:hover { background: #ffedd5; }
+.inspection-picker-info { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.inspection-picker-info strong { font-size: 14px; color: var(--navy-dark); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inspection-picker-info small { font-size: 12px; font-weight: 600; color: #9a3412; }
+.btn-back-picker { display: inline-flex; align-items: center; gap: 4px; margin-bottom: 8px; padding: 0; border: 0; background: transparent; color: var(--navy); font-size: 13px; font-weight: 700; cursor: pointer; }
 
 .inspection-modal-backdrop { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(15, 23, 42, 0.55); }
 .inspection-modal { width: 100%; max-width: 340px; border-radius: 12px; background: #fff; padding: 18px; box-shadow: 0 20px 35px rgba(15, 23, 42, 0.25); }
