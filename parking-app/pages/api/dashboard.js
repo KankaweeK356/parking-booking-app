@@ -3,7 +3,7 @@ import { getCurrentOperationalBlock, getCurrentOperationalDateIso } from "../../
 import { requireRole, ROLE } from "../../lib/auth";
 
 export default async function handler(req, res) {
-  if (!(await requireRole(req, res, [ROLE.ADMIN, ROLE.CS, ROLE.FIELD]))) return;
+  if (!(await requireRole(req, res, [ROLE.ADMIN, ROLE.CS, ROLE.FIELD, ROLE.ACCOUNTING, ROLE.ACCOUNT]))) return;
   res.setHeader("Cache-Control", "private, no-store");
   if (req.method !== "GET") return res.status(405).json({ error: "Method not allowed" });
   const { date, force } = req.query;

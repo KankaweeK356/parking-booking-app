@@ -39,7 +39,7 @@ export default async function handler(req, res) {
     catch (err) { return res.status(500).json({ error: err.message }); }
   }
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
-  const session = await requireRole(req, res, [ROLE.ADMIN, ROLE.FIELD]);
+  const session = await requireRole(req, res, [ROLE.ADMIN, ROLE.CS, ROLE.FIELD]);
   if (!session) return;
   if (date !== getBangkokCalendarDateIso()) return res.status(400).json({ error: "อัปเดตสถานะชำระเงินได้เฉพาะวันตามปฏิทินปัจจุบัน" });
   if (getBangkokMinutesAfterMidnight() < 5) return res.status(409).json({ error: "ระบบเริ่มสร้างสิทธิ์วันใหม่ได้ตั้งแต่ 00:05" });

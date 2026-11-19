@@ -1,0 +1,1047 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <title>คู่มือการใช้งานระบบสำหรับพนักงานจัดพื้นที่ (6 หน้าครบทุกฟังก์ชัน)</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&display=swap');
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Sarabun', 'Segoe UI', Tahoma, sans-serif;
+      background: #0f172a;
+      color: #0f172a;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 22px;
+    }
+
+    /* แถบเครื่องมือด้านบน (ซ่อนเวลาสั่งพิมพ์) */
+    .toolbar {
+      position: sticky;
+      top: 10px;
+      z-index: 100;
+      background: rgba(15, 23, 42, 0.95);
+      backdrop-filter: blur(8px);
+      border: 1px solid #334155;
+      padding: 8px 16px;
+      border-radius: 999px;
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      color: #f8fafc;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.45);
+    }
+    .toolbar-title {
+      font-weight: 800;
+      font-size: 14px;
+      margin-right: 6px;
+      color: #38bdf8;
+    }
+    .toolbar a {
+      color: #cbd5e1;
+      text-decoration: none;
+      font-size: 12.5px;
+      font-weight: 700;
+      padding: 5px 10px;
+      border-radius: 999px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      transition: all 0.15s;
+    }
+    .toolbar a:hover {
+      background: #334155;
+      color: #fff;
+    }
+    .toolbar button {
+      background: #ea580c;
+      color: #fff;
+      border: none;
+      padding: 6px 16px;
+      border-radius: 999px;
+      font-family: inherit;
+      font-weight: 800;
+      font-size: 13.5px;
+      cursor: pointer;
+      margin-left: 6px;
+    }
+    .toolbar button:hover { background: #c2410c; }
+
+    /* โครงสร้างหน้า A4 แนวนอน (Landscape) */
+    .slide {
+      width: 297mm;
+      height: 210mm;
+      background: #ffffff;
+      border-radius: 12px;
+      padding: 9mm 12mm;
+      box-shadow: 0 12px 32px rgba(0,0,0,0.4);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+      overflow: hidden;
+      page-break-after: always;
+    }
+
+    .slide-header {
+      background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 60%, #1d4ed8 100%);
+      color: #ffffff;
+      padding: 10px 18px;
+      border-radius: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .slide-header.orange {
+      background: linear-gradient(135deg, #7c2d12 0%, #c2410c 55%, #ea580c 100%);
+    }
+    .slide-header.teal {
+      background: linear-gradient(135deg, #0f172a 0%, #0f766e 60%, #0d9488 100%);
+    }
+    .slide-header h1 {
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: -0.2px;
+    }
+    .slide-header p {
+      font-size: 12.8px;
+      color: #dbeafe;
+      margin-top: 2px;
+    }
+    .slide-header.orange p { color: #ffedd5; }
+    .slide-header.teal p { color: #ccfbf1; }
+
+    .slide-num {
+      background: rgba(255,255,255,0.18);
+      border: 1px solid rgba(255,255,255,0.35);
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-weight: 800;
+      font-size: 13.5px;
+      white-space: nowrap;
+      text-align: center;
+    }
+
+    .slide-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      gap: 9px;
+      padding: 9px 0;
+      overflow: hidden;
+    }
+
+    .slide-footer {
+      border-top: 1.5px solid #e2e8f0;
+      padding-top: 6px;
+      display: flex;
+      justify-content: space-between;
+      font-size: 11.5px;
+      color: #64748b;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+
+    /* กล่องและการ์ด */
+    .box {
+      border: 1.5px solid #cbd5e1;
+      border-radius: 10px;
+      padding: 10px 14px;
+      background: #f8fafc;
+    }
+    .box-white {
+      border: 1.5px solid #cbd5e1;
+      border-radius: 10px;
+      padding: 10px 14px;
+      background: #ffffff;
+    }
+    .step-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: #1d4ed8;
+      color: #fff;
+      font-weight: 800;
+      font-size: 13px;
+      margin-right: 6px;
+      flex-shrink: 0;
+    }
+    .ui-frame {
+      border: 2px solid #94a3b8;
+      border-radius: 10px;
+      overflow: hidden;
+      background: #f1f5f9;
+      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+    }
+    .ui-topbar {
+      background: #0f172a;
+      color: #fff;
+      padding: 6px 12px;
+      font-size: 11.5px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .ui-header {
+      background: #1e3a8a;
+      color: #fff;
+      padding: 8px 12px;
+      font-weight: 800;
+      font-size: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    @page { size: A4 landscape; margin: 0; }
+    @media print {
+      body { background: #fff; padding: 0; gap: 0; }
+      .toolbar { display: none; }
+      .slide {
+        box-shadow: none;
+        border-radius: 0;
+        width: 297mm;
+        height: 210mm;
+        page-break-after: always;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- แถบควบคุมด้านบน -->
+  <div class="toolbar">
+    <span class="toolbar-title">📘 คู่มือพนักงานจัดพื้นที่ (6 หน้า)</span>
+    <a href="#page1">หน้า 1: สมัครสมาชิก</a>
+    <a href="#page2">หน้า 2: 3 เมนูใช้งาน</a>
+    <a href="#page3">หน้า 3: 6 สีสถานะ & เวลาตัดรอบ</a>
+    <a href="#page4">หน้า 4: มือถือตรวจลาน</a>
+    <a href="#page5">หน้า 5: ตารางสถานะลาน</a>
+    <a href="#page6">หน้า 6: สรุปยอดชำระเงิน</a>
+    <button onclick="window.print()">🖨️ พิมพ์ / บันทึกเป็น PDF (6 หน้า)</button>
+  </div>
+
+  <!-- ===================================================================== -->
+  <!-- หน้าที่ 1: วิธีสมัครสมาชิก & เข้าสู่ระบบ -->
+  <!-- ===================================================================== -->
+  <section class="slide" id="page1">
+    <div class="slide-header">
+      <div>
+        <h1>หน้าที่ 1 : วิธีสมัครสมาชิกและเข้าสู่ระบบสำหรับ “พนักงานจัดพื้นที่”</h1>
+        <p>ขั้นตอนการลงทะเบียนครั้งแรกด้วยรหัสพนักงาน 4 หลัก และการตั้งรหัสผ่านตัวเลข 5 หลัก</p>
+      </div>
+      <div class="slide-num">หน้า 1 / 6</div>
+    </div>
+
+    <div class="slide-body" style="display:grid; grid-template-columns: 1.15fr 1fr; gap: 16px; align-items: stretch;">
+      <!-- ฝั่งซ้าย: ขั้นตอนการสมัครทีละสเต็ป -->
+      <div style="display:flex; flex-direction:column; justify-content:space-between; gap:10px;">
+        <div class="box-white" style="border-left: 6px solid #1d4ed8; flex:1; display:flex; flex-direction:column; justify-content:space-around;">
+          <h2 style="font-size:16.5px; color:#1e3a8a; margin-bottom:4px;">📝 ขั้นตอนการสมัครใช้งานครั้งแรก (ทำครั้งเดียว)</h2>
+
+          <div style="display:flex; align-items:flex-start; gap:10px; background:#eff6ff; padding:9px 12px; border-radius:8px; border:1px solid #bfdbfe;">
+            <span class="step-badge">1</span>
+            <div style="font-size:13.5px; line-height:1.45;">
+              <strong style="color:#1e3a8a; font-size:14.5px;">กดปุ่มลิงก์ “สมัครใช้งาน”</strong><br/>
+              เมื่อเปิดเว็บระบบจองที่จอดรถ ในหน้าเข้าสู่ระบบ ให้แตะที่คำว่า <strong style="color:#2563eb; text-decoration:underline;">สมัครใช้งาน</strong> ด้านล่างสุดของการ์ด
+            </div>
+          </div>
+
+          <div style="display:flex; align-items:flex-start; gap:10px; background:#f8fafc; padding:9px 12px; border-radius:8px; border:1px solid #cbd5e1;">
+            <span class="step-badge">2</span>
+            <div style="font-size:13.5px; line-height:1.45;">
+              <strong style="color:#0f172a; font-size:14.5px;">กรอก “รหัสพนักงาน 4 หลัก”</strong><br/>
+              พิมพ์รหัสพนักงาน 4 หลักของตนเองที่ผู้ดูแลเพิ่มไว้ในระบบ (เช่น <code>9001</code>) — กรอกเฉพาะตัวเลข 4 ตัว
+            </div>
+          </div>
+
+          <div style="display:flex; align-items:flex-start; gap:10px; background:#f8fafc; padding:9px 12px; border-radius:8px; border:1px solid #cbd5e1;">
+            <span class="step-badge">3</span>
+            <div style="font-size:13.5px; line-height:1.45;">
+              <strong style="color:#0f172a; font-size:14.5px;">ตั้ง “รหัสผ่านตัวเลข 5 หลัก” และยืนยันรหัสผ่าน</strong><br/>
+              ตั้งรหัสผ่านเป็น<strong>ตัวเลข 5 ตัว</strong> ที่จำง่าย (เช่น <code>12345</code>) แล้วพิมพ์ซ้ำอีกครั้งในช่อง <strong>“ยืนยันรหัสผ่าน”</strong> ให้ตรงกัน
+            </div>
+          </div>
+
+          <div style="display:flex; align-items:flex-start; gap:10px; background:#f0fdf4; padding:9px 12px; border-radius:8px; border:1.5px solid #86efac;">
+            <span class="step-badge" style="background:#16a34a;">4</span>
+            <div style="font-size:13.5px; line-height:1.45;">
+              <strong style="color:#15803d; font-size:14.5px;">กดปุ่ม “สมัครใช้งาน” (เข้าสู่ระบบอัตโนมัติ)</strong><br/>
+              เมื่อกดสมัครเสร็จ ระบบจะพาเข้าสู่หน้าหลักของ <strong>“พนักงานจัดพื้นที่”</strong> ทันทีโดยไม่ต้องล็อกอินซ้ำ!
+            </div>
+          </div>
+        </div>
+
+        <!-- กล่องข้อควรรู้ -->
+        <div class="box" style="background:#fffbeb; border-color:#fde047; padding:9px 14px; font-size:12.8px; line-height:1.45;">
+          <strong style="color:#b45309; font-size:13.8px;">💡 ข้อควรรู้สำหรับการเข้าใช้งานครั้งต่อไป:</strong>
+          <ul style="margin-left:18px; margin-top:3px; color:#334155;">
+            <li>ครั้งถัดไปเมื่อเปิดเว็บ ให้กรอก <strong>รหัสพนักงาน 4 หลัก</strong> + <strong>รหัสผ่าน 5 หลัก</strong> ที่หน้า <strong>“เข้าสู่ระบบ”</strong> ได้เลย</li>
+            <li>หากเพิ่งเพิ่มรหัสพนักงานใหม่ใน Google Sheet ให้รอประมาณ <strong>1 นาที</strong> ระบบจะซิงค์ข้อมูลและกดสมัครได้ทันที</li>
+            <li>หากลืมรหัสผ่าน ให้แจ้งผู้ดูแลระบบ (Admin) เพื่อกดรีเซ็ตรหัสผ่านให้ใหม่</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- ฝั่งขวา: ภาพจำลองหน้าจอจริง (UI Mockup) -->
+      <div style="display:flex; flex-direction:column; justify-content:space-between; gap:10px;">
+        <div class="ui-frame" style="flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center; padding:14px; background:linear-gradient(180deg, #e2e8f0 0%, #f8fafc 100%);">
+          <div style="font-size:12px; font-weight:700; color:#475569; margin-bottom:8px;">📱 ภาพจำลองหน้าจอ “สมัครใช้งาน” บนมือถือ / คอมพิวเตอร์</div>
+
+          <!-- การ์ดจำลองหน้า Register -->
+          <div style="width:100%; max-width:360px; background:#ffffff; border-radius:12px; padding:18px 20px; box-shadow:0 10px 25px rgba(15,23,42,0.12); border:1.5px solid #cbd5e1;">
+            <h3 style="font-size:19px; font-weight:800; color:#0f172a; margin-bottom:2px;">สมัครใช้งาน</h3>
+            <p style="font-size:12px; color:#64748b; margin-bottom:12px;">ใช้รหัสพนักงาน 4 หลักที่ผู้ดูแลเพิ่มไว้ในระบบ</p>
+
+            <div style="margin-bottom:10px;">
+              <label style="display:block; font-size:12.5px; font-weight:700; color:#334155; margin-bottom:4px;">
+                ① รหัสพนักงาน 4 หลัก
+              </label>
+              <div style="border:2px solid #2563eb; background:#eff6ff; border-radius:7px; padding:7px 10px; font-size:15px; font-weight:800; color:#1e3a8a; display:flex; justify-content:space-between; align-items:center;">
+                <span>9001</span>
+                <span style="font-size:11px; background:#1d4ed8; color:#fff; padding:2px 7px; border-radius:4px;">ตัวเลข 4 หลัก</span>
+              </div>
+            </div>
+
+            <div style="margin-bottom:10px;">
+              <label style="display:block; font-size:12.5px; font-weight:700; color:#334155; margin-bottom:4px;">
+                ② ตั้งรหัสผ่านตัวเลข 5 หลัก
+              </label>
+              <div style="border:1.5px solid #94a3b8; background:#fff; border-radius:7px; padding:7px 10px; font-size:15px; font-weight:800; color:#0f172a; display:flex; justify-content:space-between; align-items:center;">
+                <span>• • • • • <span style="font-size:12px; color:#64748b; font-weight:600;">(เช่น 12345)</span></span>
+                <span style="font-size:11px; background:#0f766e; color:#fff; padding:2px 7px; border-radius:4px;">ตัวเลข 5 หลัก</span>
+              </div>
+            </div>
+
+            <div style="margin-bottom:14px;">
+              <label style="display:block; font-size:12.5px; font-weight:700; color:#334155; margin-bottom:4px;">
+                ③ ยืนยันรหัสผ่าน (พิมพ์ 5 หลักเดิมอีกครั้ง)
+              </label>
+              <div style="border:1.5px solid #94a3b8; background:#fff; border-radius:7px; padding:7px 10px; font-size:15px; font-weight:800; color:#0f172a; display:flex; justify-content:space-between; align-items:center;">
+                <span>• • • • •</span>
+                <span style="font-size:11px; color:#15803d; font-weight:800;">✔ ตรงกัน</span>
+              </div>
+            </div>
+
+            <div style="background:#1e3a8a; color:#ffffff; text-align:center; padding:9px; border-radius:8px; font-weight:800; font-size:14.5px; box-shadow:0 4px 10px rgba(30,58,138,0.25);">
+              ④ สมัครใช้งาน
+            </div>
+
+            <div style="text-align:center; font-size:12px; color:#64748b; margin-top:10px;">
+              มีบัญชีแล้ว? <span style="color:#2563eb; font-weight:700; text-decoration:underline;">เข้าสู่ระบบ</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="slide-footer">
+      <span>คู่มือการใช้งานระบบจองที่จอดรถเรียงสินค้า — สำหรับพนักงานจัดพื้นที่</span>
+      <span>หน้าที่ 1 : วิธีสมัครสมาชิกและเข้าสู่ระบบ</span>
+    </div>
+  </section>
+
+  <!-- ===================================================================== -->
+  <!-- หน้าที่ 2: แนะนำฟังก์ชันที่พนักงานจัดพื้นที่ใช้งานได้ (3 เมนูหลัก) -->
+  <!-- ===================================================================== -->
+  <section class="slide" id="page2">
+    <div class="slide-header">
+      <div>
+        <h1>หน้าที่ 2 : แนะนำฟังก์ชันที่ “พนักงานจัดพื้นที่” ใช้งานได้</h1>
+        <p>ประกอบด้วยเมนูติดตามสถานะช่องจอด 2 เมนู และเมนูสรุปยอดตั๋วและการชำระเงิน 1 เมนู (รวม 3 เมนูหลัก)</p>
+      </div>
+      <div class="slide-num">หน้า 2 / 6</div>
+    </div>
+
+    <div class="slide-body">
+      <!-- ภาพจำลองหน้าโฮมของพนักงานจัดพื้นที่ -->
+      <div class="ui-frame" style="background:#f8fafc;">
+        <div class="ui-topbar">
+          <span>เข้าสู่ระบบ: สมชาย · แผนกตรวจพื้นที่ · <strong style="color:#38bdf8;">ตรวจช่องจอด</strong></span>
+          <span style="background:#334155; padding:2px 8px; border-radius:4px;">ออกจากระบบ</span>
+        </div>
+        <div class="ui-header">
+          <span>ระบบจองที่จอดรถเรียงสินค้า</span>
+          <span style="font-size:11.5px; font-weight:600; color:#bfdbfe;">เมื่อล็อกอินแล้ว ระบบจะเปิดหน้านี้ให้อัตโนมัติ</span>
+        </div>
+        <div style="padding:12px 16px;">
+          <div style="font-size:14px; font-weight:800; color:#0f172a; margin-bottom:8px;">เลือกงานที่ต้องการทำ (แสดงเฉพาะ 2 แท็บสำหรับพนักงานจัดพื้นที่)</div>
+          <div style="display:flex; gap:10px; margin-bottom:6px;">
+            <div style="background:#1e3a8a; color:#fff; padding:7px 16px; border-radius:7px; font-weight:800; font-size:13.5px; box-shadow:0 2px 6px rgba(30,58,138,0.25);">
+              แท็บที่ 1 : การตรวจสอบพื้นที่ (เปิดเป็นค่าเริ่มต้น)
+            </div>
+            <div style="background:#e2e8f0; color:#1e293b; border:1.5px solid #94a3b8; padding:7px 16px; border-radius:7px; font-weight:800; font-size:13.5px;">
+              แท็บที่ 2 : 📊 สรุปยอดตั๋วและการชำระเงิน
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- รายละเอียด 3 เมนูหลัก แบ่งเป็น 2 กลุ่มชัดเจน -->
+      <div style="display:grid; grid-template-columns: 1.9fr 1fr; gap: 14px; flex:1;">
+        <!-- กลุ่มที่ 1: ติดตามสถานะช่องจอด 2 อัน -->
+        <div class="box-white" style="border:2px solid #1e3a8a; display:flex; flex-direction:column; justify-content:space-between;">
+          <div style="background:#1e3a8a; color:#fff; padding:7px 12px; border-radius:6px; display:flex; justify-content:space-between; align-items:center;">
+            <strong style="font-size:14.5px;">กลุ่มที่ 1 : ติดตามสถานะช่องจอด (2 เมนู ในแท็บ “การตรวจสอบพื้นที่”)</strong>
+            <span style="font-size:11.5px; background:rgba(255,255,255,0.2); padding:2px 8px; border-radius:4px;">ใช้ตรวจลานจอด</span>
+          </div>
+
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px; flex:1; padding-top:10px;">
+            <!-- เมนูที่ 1: มือถือ -->
+            <div style="background:#fff7ed; border:2px solid #ea580c; border-radius:9px; padding:12px; display:flex; flex-direction:column; justify-content:space-between;">
+              <div>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                  <span style="background:#ea580c; color:#fff; font-weight:800; font-size:12px; padding:2px 8px; border-radius:4px;">เมนูที่ 1 (ใช้บ่อยที่สุด)</span>
+                  <span style="font-size:11.5px; color:#9a3412; font-weight:700;">ดูรายละเอียดในหน้า 4</span>
+                </div>
+                <h3 style="font-size:16px; font-weight:800; color:#9a3412; margin-bottom:6px;">📱 ตรวจเช็กหน้างาน (มือถือ)</h3>
+                <p style="font-size:13px; color:#334155; line-height:1.45;">
+                  ใช้สำหรับ<strong>ถือมือถือเดินตรวจหน้าลานจอด</strong> แสดงรายการช่องจอดเฉพาะรอบเวลาปัจจุบัน พร้อมยอด <strong>“ต้องตรวจ X ช่อง”</strong>
+                </p>
+              </div>
+              <div style="background:#ffffff; border:1px solid #fdba74; border-radius:6px; padding:8px 10px; font-size:12.3px; color:#7c2d12; margin-top:8px;">
+                <strong>จุดเด่น:</strong> มีแถบสีส้ม 🟠 เด้งเตือนเมื่อลูกค้าตีตั๋วไม่ครบ ให้กดปุ่ม <strong>[แก้]</strong> เพื่อระบุจำนวนช่องที่ใช้จริงหน้างานได้ทันที
+              </div>
+            </div>
+
+            <!-- เมนูที่ 2: ตารางสถานะลานจอด -->
+            <div style="background:#eff6ff; border:2px solid #2563eb; border-radius:9px; padding:12px; display:flex; flex-direction:column; justify-content:space-between;">
+              <div>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                  <span style="background:#2563eb; color:#fff; font-weight:800; font-size:12px; padding:2px 8px; border-radius:4px;">เมนูที่ 2 (มุมมองตาราง)</span>
+                  <span style="font-size:11.5px; color:#1e40af; font-weight:700;">ดูรายละเอียดในหน้า 5</span>
+                </div>
+                <h3 style="font-size:16px; font-weight:800; color:#1e3a8a; margin-bottom:6px;">📊 ตารางสถานะลานจอด</h3>
+                <p style="font-size:13px; color:#334155; line-height:1.45;">
+                  ใช้ดู<strong>ตารางสถานะช่องจอดทั้งลานแบบภาพรวมครบทั้ง 6 รอบเวลา</strong> (07:00 – 03:00 น.) ในหน้าจอเดียว
+                </p>
+              </div>
+              <div style="background:#ffffff; border:1px solid #93c5fd; border-radius:6px; padding:8px 10px; font-size:12.3px; color:#1e3a8a; margin-top:8px;">
+                <strong>จุดเด่น:</strong> ดูภาพรวมทั้งวัน เลือกดูย้อนหลังได้ และกดปุ่ม <strong>“🖨 พิมพ์ตารางสถานะลาน”</strong> ออกกระดาษได้
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- กลุ่มที่ 2: สรุปรายการชำระเงิน 1 อัน -->
+        <div class="box-white" style="border:2px solid #0f766e; display:flex; flex-direction:column; justify-content:space-between;">
+          <div style="background:#0f766e; color:#fff; padding:7px 12px; border-radius:6px; display:flex; justify-content:space-between; align-items:center;">
+            <strong style="font-size:14.5px;">กลุ่มที่ 2 : สรุปรายการชำระเงิน (1 เมนู)</strong>
+          </div>
+
+          <div style="background:#f0fdfa; border:2px solid #0d9488; border-radius:9px; padding:12px; flex:1; margin-top:10px; display:flex; flex-direction:column; justify-content:space-between;">
+            <div>
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <span style="background:#0f766e; color:#fff; font-weight:800; font-size:12px; padding:2px 8px; border-radius:4px;">เมนูที่ 3 (ตรวจสอบยอดตั๋ว)</span>
+                <span style="font-size:11.5px; color:#0f766e; font-weight:700;">ดูรายละเอียดในหน้า 6</span>
+              </div>
+              <h3 style="font-size:16px; font-weight:800; color:#115e59; margin-bottom:6px;">📊 สรุปยอดตั๋วและการชำระเงิน</h3>
+              <p style="font-size:13px; color:#334155; line-height:1.45;">
+                อยู่ในแท็บที่ 2 ใช้สำหรับ<strong>ตรวจสอบยอดการตีตั๋วของลูกค้าแต่ละราย</strong> เทียบกับจำนวนช่องที่จองไว้
+              </p>
+            </div>
+            <div style="background:#ffffff; border:1px solid #5eead4; border-radius:6px; padding:8px 10px; font-size:12.3px; color:#134e4a; margin-top:8px;">
+              <strong>จุดเด่น:</strong> ค้นหาชื่อลูกค้า เลือกช่วงวันที่ ดูยอดตั๋วล่วงหน้า/ตั๋วรายวัน และเช็กว่าใครจ่าย <strong>ตรงตามยอดจอง / ต่ำกว่ายอดจอง / เกินยอดจอง</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="slide-footer">
+      <span>คู่มือการใช้งานระบบจองที่จอดรถเรียงสินค้า — สำหรับพนักงานจัดพื้นที่</span>
+      <span>หน้าที่ 2 : แนะนำ 3 เมนูหลักที่พนักงานจัดพื้นที่ใช้งานได้</span>
+    </div>
+  </section>
+
+  <!-- ===================================================================== -->
+  <!-- หน้าที่ 3: ความหมายแต่ละสีสถานะ & เวลาสรุปสถานะการจ่ายเงิน -->
+  <!-- ===================================================================== -->
+  <section class="slide" id="page3">
+    <div class="slide-header">
+      <div>
+        <h1>หน้าที่ 3 : ความหมายของสถานะทั้ง 6 สี และเวลาตัดรอบสรุปการจ่ายเงิน</h1>
+        <p>สีแต่ละสีเกิดขึ้นตอนไหนบ้าง? สรุปยอดจ่ายเงินตอนกี่โมง? และจัดสรรสิทธิ์ช่องจอดอย่างไร?</p>
+      </div>
+      <div class="slide-num">หน้า 3 / 6</div>
+    </div>
+
+    <div class="slide-body">
+      <!-- ส่วนบน: ไทม์ไลน์การตัดยอดเที่ยงคืน & จัดสรรสิทธิ์ 07:00 - 07:00 -->
+      <div class="box" style="background:#0f172a; color:#fff; border-color:#1e293b; padding:10px 14px;">
+        <div style="font-size:13.5px; font-weight:800; color:#38bdf8; margin-bottom:7px;">
+          ⏰ ไทม์ไลน์การสรุปสถานะการจ่ายเงินและการจัดสรรสิทธิ์ช่องจอด (สำคัญมาก!)
+        </div>
+        <div style="display:grid; grid-template-columns: 1fr 1fr 1.15fr; gap:10px; font-size:12.5px;">
+          <div style="background:#1e293b; border:1px solid #334155; border-left:5px solid #f59e0b; padding:8px 10px; border-radius:6px;">
+            <strong style="color:#fde68a; font-size:13.5px;">1. ตีตั๋วล่วงหน้าก่อนเที่ยงคืน (00:00 น.)</strong>
+            <p style="color:#cbd5e1; margin-top:3px; line-height:1.38;">
+              ลูกค้าที่จองประจำต้องชำระเงินตีตั๋วล่วงหน้า<strong>ก่อนเวลา 00:00 น. (เที่ยงคืน)</strong> เพื่อรักษาสิทธิ์ช่องจอดของวันถัดไป
+            </p>
+          </div>
+          <div style="background:#1e293b; border:1px solid #334155; border-left:5px solid #38bdf8; padding:8px 10px; border-radius:6px;">
+            <strong style="color:#7dd3fc; font-size:13.5px;">2. ระบบสรุปยอดจ่ายเงินตอน 00:00 น.</strong>
+            <p style="color:#cbd5e1; margin-top:3px; line-height:1.38;">
+              เมื่อถึง<strong>เที่ยงคืน (00:00 น.)</strong> ระบบจะสรุปยอดตั๋วล่วงหน้าทั้งหมด แล้วนำมาจับคู่กับช่องที่จองไว้เพื่อเตรียมเปิดสิทธิ์
+            </p>
+          </div>
+          <div style="background:#1e293b; border:1px solid #334155; border-left:5px solid #22c55e; padding:8px 10px; border-radius:6px;">
+            <strong style="color:#86efac; font-size:13.5px;">3. จัดสรรสิทธิ์ 07:00 น. เช้า – 07:00 น. วันถัดไป</strong>
+            <p style="color:#cbd5e1; margin-top:3px; line-height:1.38;">
+              สิทธิ์การจอด 1 วันเริ่มตั้งแต่ <strong>07:00 น. เช้าวันนี้ ถึง 07:00 น. เช้าวันพรุ่งนี้</strong> แบ่งเป็น <strong>6 รอบ (รอบละ 4 ชม.)</strong>: <code>07:00</code>, <code>11:00</code>, <code>15:00</code>, <code>19:00</code>, <code>23:00</code>, <code>03:00</code>
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ส่วนล่าง: 6 สีสถานะ เกิดขึ้นตอนไหน และต้องทำอะไร -->
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:9px; flex:1;">
+        <!-- 1. สีแดง -->
+        <div style="background:#fef2f2; border:1.5px solid #fca5a5; border-left:8px solid #dc2626; border-radius:8px; padding:9px 12px; display:flex; flex-direction:column; justify-content:center;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:3px;">
+            <strong style="color:#b91c1c; font-size:15px;">🔴 1. สีแดง = “จองแล้ว”</strong>
+            <span style="background:#dc2626; color:#fff; font-size:11px; font-weight:800; padding:2px 8px; border-radius:4px;">มีสิทธิ์จอดปกติ</span>
+          </div>
+          <div style="font-size:12.6px; color:#334155; line-height:1.4;">
+            <strong>เกิดขึ้นเมื่อ:</strong> ลูกค้าจองไว้และ<strong>มีการจ่ายเงิน (ตีตั๋วล่วงหน้า) ก่อนเที่ยงคืนครบถ้วน</strong> หรือพนักงานจัดพื้นที่กดยืนยันตั๋วหน้างานแล้ว<br/>
+            <strong>สิ่งที่ต้องทำ:</strong> ให้รถของลูกค้าตามชื่อที่แสดงบนช่องเข้าจอดได้ตามปกติ
+          </div>
+        </div>
+
+        <!-- 2. สีส้ม -->
+        <div style="background:#fff7ed; border:2px solid #ea580c; border-left:8px solid #ea580c; border-radius:8px; padding:9px 12px; display:flex; flex-direction:column; justify-content:center;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:3px;">
+            <strong style="color:#c2410c; font-size:15px;">🟠 2. สีส้ม = “ไม่ตีตั๋ว” (จองไว้แต่ไม่ตีตั๋ว)</strong>
+            <span style="background:#ea580c; color:#fff; font-size:11px; font-weight:800; padding:2px 8px; border-radius:4px;">ต้องเดินตรวจ!</span>
+          </div>
+          <div style="font-size:12.6px; color:#334155; line-height:1.4;">
+            <strong>เกิดขึ้นเมื่อ:</strong> ลูกค้ามีชื่อจองช่องไว้ แต่ตอนสรุปยอดเที่ยงคืน <strong>ไม่พบการจ่ายเงิน หรือจ่ายตั๋วมาไม่ครบตามจำนวนที่จอง</strong> (ตั๋วหมดในรอบนี้)<br/>
+            <strong>สิ่งที่ต้องทำ:</strong> เดินไปดูช่องจริง ถ้ามีรถจอดและมีตั๋วหน้าป้อมมาแสดง ให้กดปุ่ม <strong>[แก้] &rarr; ➕</strong>
+          </div>
+        </div>
+
+        <!-- 3. สีน้ำเงิน -->
+        <div style="background:#eff6ff; border:1.5px solid #93c5fd; border-left:8px solid #2563eb; border-radius:8px; padding:9px 12px; display:flex; flex-direction:column; justify-content:center;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:3px;">
+            <strong style="color:#1d4ed8; font-size:15px;">🔵 3. สีน้ำเงิน = “รอตรวจตั๋ว”</strong>
+            <span style="background:#2563eb; color:#fff; font-size:11px; font-weight:800; padding:2px 8px; border-radius:4px;">ต้องเดินตรวจ!</span>
+          </div>
+          <div style="font-size:12.6px; color:#334155; line-height:1.4;">
+            <strong>เกิดขึ้นเมื่อ:</strong> ลูกค้ามาติดต่อ <strong>“บริการลูกค้า”</strong> เพื่อทำรายการ <strong>จองรายวัน / หน้างาน</strong> เข้ามาใหม่ในระหว่างวัน<br/>
+            <strong>สิ่งที่ต้องทำ:</strong> เดินไปขอดูตั๋วหน้ารถเพื่อตรวจสอบว่าชื่อลูกค้าและรอบเวลาตรงกับในระบบ
+          </div>
+        </div>
+
+        <!-- 4. สีเหลือง -->
+        <div style="background:#fefce8; border:1.5px solid #fde047; border-left:8px solid #ca8a04; border-radius:8px; padding:9px 12px; display:flex; flex-direction:column; justify-content:center;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:3px;">
+            <strong style="color:#a16207; font-size:15px;">🟡 4. สีเหลือง = “หมดเวลาจอด”</strong>
+            <span style="background:#ca8a04; color:#fff; font-size:11px; font-weight:800; padding:2px 8px; border-radius:4px;">ต้องเดินตรวจ!</span>
+          </div>
+          <div style="font-size:12.6px; color:#334155; line-height:1.4;">
+            <strong>เกิดขึ้นเมื่อ:</strong> ช่องนั้นเคยมีรถจอดใน<strong>รอบเวลาก่อนหน้า</strong> แต่พอตัดเข้าสู่รอบเวลาใหม่ ลูกค้าไม่ได้จองต่อในรอบนี้ (หมดสิทธิ์จอดแล้ว)<br/>
+            <strong>สิ่งที่ต้องทำ:</strong> เดินไปดูว่ารถคันเดิมออกหรือยัง ถ้ายังจอดอยู่ให้แจ้งคนขับนำรถออก หรือไปติดต่อ “บริการลูกค้า”
+          </div>
+        </div>
+
+        <!-- 5. สีเขียว -->
+        <div style="background:#f0fdf4; border:1.5px solid #86efac; border-left:8px solid #16a34a; border-radius:8px; padding:9px 12px; display:flex; flex-direction:column; justify-content:center;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:3px;">
+            <strong style="color:#15803d; font-size:15px;">🟢 5. สีเขียว = “ว่าง”</strong>
+            <span style="background:#16a34a; color:#fff; font-size:11px; font-weight:800; padding:2px 8px; border-radius:4px;">ช่องว่าง</span>
+          </div>
+          <div style="font-size:12.6px; color:#334155; line-height:1.4;">
+            <strong>เกิดขึ้นเมื่อ:</strong> ไม่มีคนจองในรอบเวลานั้น หรือพนักงานจัดพื้นที่กดลดยอดรถใช้จริง <code>[ ➖ ]</code> แล้วระบบคืนช่องว่างให้<br/>
+            <strong>สิ่งที่ต้องทำ:</strong> หากพบรถแอบจอดในช่องสีเขียวโดยไม่มีชื่อในระบบ ให้เข้าไปตรวจสอบทันที
+          </div>
+        </div>
+
+        <!-- 6. สีเทา -->
+        <div style="background:#f8fafc; border:1.5px solid #cbd5e1; border-left:8px solid #64748b; border-radius:8px; padding:9px 12px; display:flex; flex-direction:column; justify-content:center;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:3px;">
+            <strong style="color:#475569; font-size:15px;">⚪ 6. สีเทา = “ปิดใช้งาน”</strong>
+            <span style="background:#64748b; color:#fff; font-size:11px; font-weight:800; padding:2px 8px; border-radius:4px;">ห้ามจอด</span>
+          </div>
+          <div style="font-size:12.6px; color:#334155; line-height:1.4;">
+            <strong>เกิดขึ้นเมื่อ:</strong> “บริการลูกค้า” หรือผู้ดูแลทำการล็อกช่องเนื่องจากปิดซ่อมบำรุง พื้นทรุด หรือเปิดเป็นทางวิ่งรถ<br/>
+            <strong>สิ่งที่ต้องทำ:</strong> กั้นกรวย/แผงกั้น <strong>ห้ามรถทุกคันเข้าจอดในช่องสีเทาเด็ดขาด</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="slide-footer">
+      <span>คู่มือการใช้งานระบบจองที่จอดรถเรียงสินค้า — สำหรับพนักงานจัดพื้นที่</span>
+      <span>หน้าที่ 3 : ความหมายของสถานะทั้ง 6 สี และเวลาสรุปสถานะการจ่ายเงิน</span>
+    </div>
+  </section>
+
+  <!-- ===================================================================== -->
+  <!-- หน้าที่ 4: รายละเอียดหน้ามือถือ (Journey & ตัวอย่าง "รุ่งเพชร") -->
+  <!-- ===================================================================== -->
+  <section class="slide" id="page4">
+    <div class="slide-header orange">
+      <div>
+        <h1>หน้าที่ 4 : วิธีใช้งานหน้า “📱 ตรวจเช็กหน้างาน (มือถือ)” และขั้นตอนกดปรับยอดใช้จริง</h1>
+        <p>ลำดับการใช้งาน (Journey) ตั้งแต่เลือกลาน ดูรายการช่องจอด จนถึงการกดเลือกช่องที่ใช้จริงเมื่อลูกค้าจ่ายไม่ครบ</p>
+      </div>
+      <div class="slide-num">หน้า 4 / 6</div>
+    </div>
+
+    <div class="slide-body" style="display:grid; grid-template-columns: 1.05fr 1.25fr; gap: 14px;">
+      <!-- ฝั่งซ้าย: ภาพจำลองหน้าจอมือถือ Journey -->
+      <div class="ui-frame" style="background:#f1f5f9; padding:10px 12px; display:flex; flex-direction:column; justify-content:space-between;">
+        <div>
+          <div style="background:#1e3a8a; color:#fff; padding:7px 12px; border-radius:7px; display:flex; justify-content:space-between; align-items:center; font-weight:800; font-size:13.5px; margin-bottom:8px;">
+            <span>📱 ตรวจเช็กหน้างาน</span>
+            <span style="font-size:11px; background:rgba(255,255,255,0.2); padding:2px 8px; border-radius:4px;">หน้าหลัก</span>
+          </div>
+
+          <!-- Step 1: เลือกลาน -->
+          <div style="background:#fff; border:1.5px solid #cbd5e1; border-radius:8px; padding:8px 10px; margin-bottom:7px;">
+            <div style="display:flex; justify-content:space-between; font-size:11.5px; color:#475569; margin-bottom:5px;">
+              <span>วันที่เข้าจอด: <strong>2026-11-20 · 07:00–07:00</strong></span>
+              <span style="color:#1d4ed8; font-weight:800;">① เลือกลานที่รับผิดชอบ</span>
+            </div>
+            <div style="display:flex; gap:6px; align-items:center; justify-content:space-between;">
+              <div style="display:flex; gap:5px;">
+                <span style="background:#1e3a8a; color:#fff; padding:4px 12px; border-radius:5px; font-size:12px; font-weight:800;">ลาน 1</span>
+                <span style="background:#e2e8f0; color:#334155; padding:4px 12px; border-radius:5px; font-size:12px; font-weight:700;">ลาน 2</span>
+                <span style="background:#e2e8f0; color:#334155; padding:4px 12px; border-radius:5px; font-size:12px; font-weight:700;">ลาน 3</span>
+              </div>
+              <span style="background:#f8fafc; border:1px solid #94a3b8; padding:3px 8px; border-radius:5px; font-size:11px; font-weight:700;">↻ อัปเดตสถานะล่าสุด</span>
+            </div>
+          </div>
+
+          <!-- Step 2: รอบปัจจุบัน & ต้องตรวจ X ช่อง -->
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:7px; padding:0 4px;">
+            <span style="font-size:12.5px; font-weight:700; color:#1e293b;">รอบปัจจุบัน: 07:00 - 11:00 · อัปเดต 07:05</span>
+            <span style="background:#fee2e2; color:#b91c1c; border:1.5px solid #f87171; padding:2px 10px; border-radius:999px; font-size:12.5px; font-weight:800;">② ต้องตรวจ 3 ช่อง</span>
+          </div>
+
+          <!-- Step 3: แถบสีส้ม + List ช่องจอด -->
+          <div style="background:#fff; border:1.5px solid #cbd5e1; border-radius:8px; padding:9px 10px;">
+            <div style="font-size:13px; font-weight:800; color:#0f172a; margin-bottom:6px;">สถานะช่องรอบ 07:00</div>
+
+            <!-- แถบสีส้มเด้งเตือน -->
+            <div style="background:#fff7ed; border:2px solid #ea580c; border-radius:7px; padding:7px 10px; display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+              <span style="font-size:13px; color:#9a3412;">🟠 <strong>รุ่งเพชร</strong> <span style="font-weight:700;">(ตั๋ว 50/60)</span></span>
+              <span style="background:#ea580c; color:#fff; padding:3px 12px; border-radius:5px; font-size:12px; font-weight:800;">③ แก้</span>
+            </div>
+
+            <!-- รายการการ์ดช่องจอด (Grid 2 คอลัมน์) -->
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; font-size:11.8px;">
+              <div style="background:#fef2f2; border:1.5px solid #fca5a5; border-left:5px solid #dc2626; padding:5px 8px; border-radius:6px;">
+                <strong>ช่อง 1</strong><br/><span style="color:#b91c1c; font-weight:700;">รุ่งเพชร</span>
+              </div>
+              <div style="background:#fef2f2; border:1.5px solid #fca5a5; border-left:5px solid #dc2626; padding:5px 8px; border-radius:6px;">
+                <strong>ช่อง 2</strong><br/><span style="color:#b91c1c; font-weight:700;">รุ่งเพชร</span>
+              </div>
+              <div style="background:#fff7ed; border:1.5px solid #fdba74; border-left:5px solid #ea580c; padding:5px 8px; border-radius:6px;">
+                <div style="display:flex; justify-content:space-between;"><strong>ช่อง 18</strong><span style="background:#ea580c; color:#fff; font-size:9.5px; padding:1px 5px; border-radius:3px;">ไม่ตีตั๋ว</span></div>
+                <span style="color:#c2410c; font-weight:700;">รุ่งเพชร</span>
+              </div>
+              <div style="background:#eff6ff; border:1.5px solid #93c5fd; border-left:5px solid #2563eb; padding:5px 8px; border-radius:6px;">
+                <strong>ช่อง 25</strong><br/><span style="color:#1d4ed8; font-weight:700;">เจ๊หมวย · รอตรวจตั๋ว</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- หน้าต่าง Modal เมื่อกด [แก้] -->
+        <div style="background:#0f172a; color:#fff; border:2px solid #ea580c; border-radius:9px; padding:8px 12px; display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <div style="font-size:11px; color:#fdba74; font-weight:700;">④ หน้าต่างที่เด้งเมื่อกดปุ่ม [แก้]</div>
+            <div style="font-size:13.5px; font-weight:800;">รุ่งเพชร <span style="font-size:11.5px; color:#cbd5e1; font-weight:600;">(ตั๋ว 50/60)</span></div>
+            <div style="font-size:11px; color:#94a3b8;">กด ➖ หรือ ➕ ตามจำนวนรถที่จอดจริงในรอบนี้</div>
+          </div>
+          <div style="text-align:center;">
+            <div style="font-size:10.5px; color:#cbd5e1;">ใช้จริงรอบนี้</div>
+            <div style="display:flex; align-items:center; gap:6px; margin:3px 0;">
+              <span style="background:#334155; padding:2px 8px; border-radius:4px; font-weight:800;">➖</span>
+              <strong style="font-size:16px; color:#fde68a;">15 <span style="font-size:12px; color:#94a3b8;">/ 20</span></strong>
+              <span style="background:#334155; padding:2px 8px; border-radius:4px; font-weight:800;">➕</span>
+            </div>
+            <div style="background:#dc2626; color:#fff; font-size:11px; font-weight:800; padding:2px 12px; border-radius:4px;">บันทึก</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ฝั่งขวา: อธิบาย Journey & ตัวอย่าง "รุ่งเพชร จอง 60 จ่าย 50" -->
+      <div style="display:flex; flex-direction:column; justify-content:space-between; gap:9px;">
+        <!-- Journey 3 ขั้นตอน -->
+        <div class="box-white" style="border-left:5px solid #1e3a8a; padding:9px 12px;">
+          <h3 style="font-size:14.8px; color:#1e3a8a; margin-bottom:4px;">🧭 ลำดับการเปิดดูหน้าจอมือถือ (User Journey)</h3>
+          <div style="font-size:12.6px; color:#334155; line-height:1.45; display:grid; gap:3px;">
+            <div><strong>① เลือกลานจอด:</strong> แตะปุ่ม <code>ลาน 1</code>, <code>ลาน 2</code> หรือ <code>ลาน 3</code> ระบบจะแสดงรอบเวลาปัจจุบัน (เช่น <code>07:00 - 11:00</code>)</div>
+            <div><strong>② ดูยอด “ต้องตรวจ X ช่อง” และ List ช่องจอด:</strong> ระบบจะแสดงการ์ดช่องจอดทั้งหมดในลานนั้น ช่องไหนเป็นสีส้ม 🟠, น้ำเงิน 🔵, เหลือง 🟡 ต้องเดินไปตรวจที่ช่องจริง</div>
+            <div><strong>③ สังเกตแถบสีส้ม 🟠 ด้านบนสุด:</strong> หากในรอบนั้นมีลูกค้าที่ตีตั๋วไม่ครบยอดจองทั้งวัน แถบสีส้มจะเด้งขึ้นมาเหนือรายการช่องจอดทันที!</div>
+          </div>
+        </div>
+
+        <!-- ตัวอย่าง รุ่งเพชร จอง 60 จ่าย 50 -->
+        <div class="box-white" style="border:2px solid #ea580c; background:#fffaf5; padding:10px 12px; flex:1; display:flex; flex-direction:column; justify-content:space-between;">
+          <div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+              <strong style="font-size:15px; color:#c2410c;">📌 ตัวอย่างจริง: ลูกค้า “รุ่งเพชร” จองทั้งวัน 60 ช่อง แต่จ่ายตั๋วมา 50 ใบ</strong>
+              <span style="background:#ea580c; color:#fff; font-size:11px; font-weight:800; padding:2px 8px; border-radius:4px;">ขาด 10 ใบ</span>
+            </div>
+            <p style="font-size:12.5px; color:#334155; line-height:1.42; margin-bottom:7px;">
+              สมมติ <strong>รุ่งเพชร</strong> จองทั้งวันรวม <strong>60 ช่อง</strong> (เช่น จองรอบ <code>07:00</code> ไว้ 20 ช่อง และรอบถัดๆ ไปอีก 40 ช่อง) แต่ตีตั๋วล่วงหน้ามาแค่ <strong>50 ใบ</strong> &rarr; พอถึง <strong>รอบ 07:00 น.</strong> บนจอมือถือจะเด้งแถบสีส้ม <code>🟠 รุ่งเพชร (ตั๋ว 50/60) [แก้]</code> ให้พนักงานจัดพื้นที่เดินนับรถจริงแล้วกดดังนี้:
+            </p>
+          </div>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; font-size:12.2px;">
+            <div style="background:#f0fdf4; border:1.5px solid #22c55e; border-radius:7px; padding:8px 10px;">
+              <strong style="color:#15803d; font-size:13px;">กรณีที่ 1: รอบ 07:00 รถมาจอดน้อยกว่าที่จอง</strong>
+              <p style="color:#334155; margin-top:3px; line-height:1.38;">
+                เช่น รอบ 07:00 จองไว้ 20 ช่อง แต่เดินนับรถรุ่งเพชรที่มาจอดจริงมีแค่ <strong>15 คัน</strong><br/>
+                👉 <strong>ต้องกด:</strong> กดปุ่ม <strong>[แก้]</strong> &rarr; กด <strong>[ ➖ ]</strong> ปรับเลขเป็น <strong>15 / 20</strong> &rarr; กด <strong>บันทึก</strong><br/>
+                ✅ <strong>ผลลัพธ์:</strong> ช่องที่เหลือ 5 ช่องจะกลายเป็น <strong>🟢 ว่าง</strong> และตั๋ว 5 ใบจะถูกเก็บไปเปิดช่องสีแดงให้รุ่งเพชรในรอบถัดไปอัตโนมัติ!
+              </p>
+            </div>
+
+            <div style="background:#fff7ed; border:1.5px solid #ea580c; border-radius:7px; padding:8px 10px;">
+              <strong style="color:#c2410c; font-size:13px;">กรณีที่ 2: รอบดึกขึ้นสีส้ม 🟠 แต่คนขับมีตั๋วหน้าป้อม</strong>
+              <p style="color:#334155; margin-top:3px; line-height:1.38;">
+                พอถึงรอบท้ายๆ ตั๋ว 50 ใบหมดลง ช่องที่ขาดอีก 10 ช่องจะขึ้น <strong>🟠 ไม่ตีตั๋ว</strong> หากมีรถมาจอดและคนขับ<strong>นำตั๋วที่ซื้อเพิ่มหน้าป้อมมาโชว์</strong><br/>
+                👉 <strong>ต้องกด:</strong> ตรวจตั๋ว &rarr; กด <strong>[แก้]</strong> &rarr; กด <strong>[ ➕ ]</strong> ตามจำนวนคันที่มีตั๋ว &rarr; กด <strong>บันทึก</strong><br/>
+                ✅ <strong>ผลลัพธ์:</strong> ช่องสีส้มจะเปลี่ยนเป็น <strong>🔴 จองแล้ว</strong> ทันที!
+              </p>
+            </div>
+          </div>
+
+          <div style="background:#fef2f2; border:1.5px solid #f87171; border-radius:6px; padding:6px 10px; font-size:12px; color:#991b1b; margin-top:6px;">
+            <strong>⚠️ ข้อห้ามสำคัญ:</strong> ถ้ามีรถจอดในช่อง <strong>🟠 ไม่ตีตั๋ว</strong> แต่คนขับ<strong>ไม่มีตั๋วมาแสดง</strong> หรือขอจอดเกินโควตาที่จองไว้ <strong>ห้ามกด [ ➕ ] เด็ดขาด!</strong> ให้ไล่ไปซื้อตั๋วหรือติดต่อ <strong>“บริการลูกค้า”</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="slide-footer">
+      <span>คู่มือการใช้งานระบบจองที่จอดรถเรียงสินค้า — สำหรับพนักงานจัดพื้นที่</span>
+      <span>หน้าที่ 4 : รายละเอียดหน้าตรวจเช็กหน้างาน (มือถือ) และการกดปรับยอดช่องที่ใช้จริง</span>
+    </div>
+  </section>
+
+  <!-- ===================================================================== -->
+  <!-- หน้าที่ 5: รายละเอียดหน้าตารางสถานะลานจอด (มุมมองตารางปกติ) -->
+  <!-- ===================================================================== -->
+  <section class="slide" id="page5">
+    <div class="slide-header">
+      <div>
+        <h1>หน้าที่ 5 : วิธีใช้งานหน้า “📊 ตารางสถานะลานจอด” (มุมมองตารางภาพรวมทั้งวัน)</h1>
+        <p>คล้ายกับหน้ามือถือ แต่แสดงเป็นตารางครบทั้ง 6 รอบเวลา (07:00 – 03:00 น.) สำหรับดูภาพรวมและสั่งพิมพ์ใบตารางลานจอด</p>
+      </div>
+      <div class="slide-num">หน้า 5 / 6</div>
+    </div>
+
+    <div class="slide-body" style="display:grid; grid-template-columns: 1.3fr 1fr; gap: 14px;">
+      <!-- ฝั่งซ้าย: ภาพจำลองหน้าตารางสถานะลานจอด -->
+      <div class="ui-frame" style="background:#f8fafc; padding:10px 12px; display:flex; flex-direction:column; justify-content:space-between;">
+        <div>
+          <div style="background:#1e3a8a; color:#fff; padding:7px 12px; border-radius:7px; display:flex; justify-content:space-between; align-items:center; font-weight:800; font-size:13.5px; margin-bottom:7px;">
+            <span>📊 ตารางสถานะลานจอด</span>
+            <span style="font-size:11px; background:rgba(255,255,255,0.2); padding:2px 8px; border-radius:4px;">← กลับหน้าหลัก</span>
+          </div>
+
+          <!-- แถบควบคุม: วันที่ + เลือกลาน + รีเฟรช + พิมพ์ -->
+          <div style="background:#fff; border:1.5px solid #cbd5e1; border-radius:7px; padding:7px 10px; display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; font-size:11.5px;">
+            <div>
+              <span style="color:#64748b;">① วันที่เข้าจอด:</span> <strong>2026-11-20</strong>
+            </div>
+            <div style="display:flex; gap:4px; align-items:center;">
+              <span style="color:#64748b;">② ลาน:</span>
+              <span style="background:#1e3a8a; color:#fff; padding:2px 8px; border-radius:4px; font-weight:800;">ลาน 1</span>
+              <span style="background:#e2e8f0; padding:2px 8px; border-radius:4px;">ลาน 2</span>
+              <span style="background:#e2e8f0; padding:2px 8px; border-radius:4px;">ลาน 3</span>
+            </div>
+            <div style="display:flex; gap:4px;">
+              <span style="background:#f1f5f9; border:1px solid #94a3b8; padding:2px 7px; border-radius:4px; font-weight:700;">↻ รีเฟรช</span>
+              <span style="background:#eff6ff; border:1px solid #2563eb; color:#1d4ed8; padding:2px 7px; border-radius:4px; font-weight:800;">③ 🖨 พิมพ์ตาราง</span>
+            </div>
+          </div>
+
+          <!-- แถบเขียวแจ้งสถานะความพร้อม -->
+          <div style="background:#dcfce7; border:1px solid #86efac; color:#166534; padding:5px 10px; border-radius:6px; font-size:11.2px; font-weight:700; margin-bottom:6px;">
+            ✔ สิทธิ์วันที่ 20/11/2026 พร้อมแล้ว · อัปเดต 07:00 (ใช้ตั๋ววันที่ 19/11/2026)
+          </div>
+
+          <!-- กล่องสรุปจำนวนช่อง 6 สถานะ -->
+          <div style="display:grid; grid-template-columns:repeat(6, 1fr); gap:5px; margin-bottom:8px; text-align:center; font-size:11px;">
+            <div style="background:#fef2f2; border:1px solid #fca5a5; padding:4px; border-radius:5px;"><div style="color:#b91c1c; font-weight:700;">จองแล้ว</div><strong style="font-size:14px;">38</strong></div>
+            <div style="background:#f0fdf4; border:1px solid #86efac; padding:4px; border-radius:5px;"><div style="color:#15803d; font-weight:700;">ว่าง</div><strong style="font-size:14px;">12</strong></div>
+            <div style="background:#fff7ed; border:1px solid #fdba74; padding:4px; border-radius:5px;"><div style="color:#c2410c; font-weight:700;">ไม่ตีตั๋ว</div><strong style="font-size:14px;">4</strong></div>
+            <div style="background:#eff6ff; border:1px solid #93c5fd; padding:4px; border-radius:5px;"><div style="color:#1d4ed8; font-weight:700;">รอตรวจตั๋ว</div><strong style="font-size:14px;">2</strong></div>
+            <div style="background:#fefce8; border:1px solid #fde047; padding:4px; border-radius:5px;"><div style="color:#a16207; font-weight:700;">หมดเวลาจอด</div><strong style="font-size:14px;">1</strong></div>
+            <div style="background:#f8fafc; border:1px solid #cbd5e1; padding:4px; border-radius:5px;"><div style="color:#475569; font-weight:700;">ปิดใช้งาน</div><strong style="font-size:14px;">1</strong></div>
+          </div>
+
+          <!-- ตาราง 6 รอบเวลา -->
+          <table style="width:100%; border-collapse:collapse; font-size:11px; background:#fff; text-align:center;">
+            <thead>
+              <tr style="background:#1e293b; color:#fff;">
+                <th style="padding:5px; border:1px solid #cbd5e1;">ช่อง</th>
+                <th style="padding:5px; border:1px solid #cbd5e1;">07:00-11:00</th>
+                <th style="padding:5px; border:2px solid #f59e0b; background:#1e3a8a;">11:00-15:00 (รอบนี้)</th>
+                <th style="padding:5px; border:1px solid #cbd5e1;">15:00-19:00</th>
+                <th style="padding:5px; border:1px solid #cbd5e1;">19:00-23:00</th>
+                <th style="padding:5px; border:1px solid #cbd5e1;">23:00-03:00</th>
+                <th style="padding:5px; border:1px solid #cbd5e1;">03:00-07:00</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="padding:5px; border:1px solid #cbd5e1; font-weight:800;">ช่อง 1</td>
+                <td style="padding:5px; border:1px solid #cbd5e1; background:#fef2f2; color:#b91c1c; font-weight:700;">รุ่งเพชร</td>
+                <td style="padding:5px; border:2px solid #f59e0b; background:#fef2f2; color:#b91c1c; font-weight:700;">รุ่งเพชร</td>
+                <td style="padding:5px; border:1px solid #cbd5e1; background:#fef2f2; color:#b91c1c; font-weight:700;">รุ่งเพชร</td>
+                <td style="padding:5px; border:1px solid #cbd5e1; background:#fff7ed; color:#c2410c; font-weight:700;">รุ่งเพชร (ไม่ตีตั๋ว)</td>
+                <td style="padding:5px; border:1px solid #cbd5e1; background:#f0fdf4; color:#15803d;">ว่าง</td>
+                <td style="padding:5px; border:1px solid #cbd5e1; background:#f0fdf4; color:#15803d;">ว่าง</td>
+              </tr>
+              <tr>
+                <td style="padding:5px; border:1px solid #cbd5e1; font-weight:800;">ช่อง 2</td>
+                <td style="padding:5px; border:1px solid #cbd5e1; background:#fef2f2; color:#b91c1c; font-weight:700;">สมชาย</td>
+                <td style="padding:5px; border:2px solid #f59e0b; background:#fefce8; color:#a16207; font-weight:700;">สมชาย (หมดเวลา)</td>
+                <td style="padding:5px; border:1px solid #cbd5e1; background:#f0fdf4; color:#15803d;">ว่าง</td>
+                <td style="padding:5px; border:1px solid #cbd5e1; background:#f0fdf4; color:#15803d;">ว่าง</td>
+                <td style="padding:5px; border:1px solid #cbd5e1; background:#f0fdf4; color:#15803d;">ว่าง</td>
+                <td style="padding:5px; border:1px solid #cbd5e1; background:#f0fdf4; color:#15803d;">ว่าง</td>
+              </tr>
+              <tr>
+                <td style="padding:5px; border:1px solid #cbd5e1; font-weight:800;">ช่อง 3</td>
+                <td style="padding:5px; border:1px solid #cbd5e1; background:#f0fdf4; color:#15803d;">ว่าง</td>
+                <td style="padding:5px; border:2px solid #f59e0b; background:#eff6ff; color:#1d4ed8; font-weight:700;">เจ๊หมวย (รอตรวจ)</td>
+                <td style="padding:5px; border:1px solid #cbd5e1; background:#f0fdf4; color:#15803d;">ว่าง</td>
+                <td style="padding:5px; border:1px solid #cbd5e1; background:#f0fdf4; color:#15803d;">ว่าง</td>
+                <td style="padding:5px; border:1px solid #cbd5e1; background:#f0fdf4; color:#15803d;">ว่าง</td>
+                <td style="padding:5px; border:1px solid #cbd5e1; background:#f0fdf4; color:#15803d;">ว่าง</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div style="font-size:11.5px; color:#475569; background:#e2e8f0; padding:6px 10px; border-radius:6px;">
+          💡 <strong>สังเกตง่าย:</strong> เมื่อกดปรับยอดใช้จริงในหน้ามือถือ (หน้า 4) ตารางในหน้านี้จะอัปเดตสีช่องจอดให้ตรงกันโดยอัตโนมัติ!
+        </div>
+      </div>
+
+      <!-- ฝั่งขวา: อธิบายจุดสำคัญของหน้าตารางสถานะลานจอด -->
+      <div style="display:flex; flex-direction:column; justify-content:space-between; gap:10px;">
+        <div class="box-white" style="border-left:6px solid #2563eb; flex:1; display:flex; flex-direction:column; justify-content:space-around;">
+          <h3 style="font-size:15.5px; color:#1e3a8a;">🔍 รายละเอียดและการใช้งานหน้าตารางสถานะลานจอด</h3>
+
+          <div style="background:#f8fafc; border:1px solid #cbd5e1; padding:8px 11px; border-radius:7px; font-size:12.8px; line-height:1.42;">
+            <strong style="color:#1e3a8a;">1. ดูภาพรวมล่วงหน้าได้ครบทั้ง 6 รอบเวลาในหน้าเดียว</strong><br/>
+            ต่างจากหน้ามือถือที่โชว์เฉพาะรอบปัจจุบัน หน้านี้จะแสดงตารางตั้งแต่รอบ <code>07:00</code> ถึง <code>03:00</code> ทำให้รู้ล่วงหน้าว่าช่องไหนลูกค้าจองยาวกี่รอบ หรือช่องไหนกำลังจะกลายเป็น <strong>🟡 หมดเวลาจอด</strong> ในรอบถัดไป
+          </div>
+
+          <div style="background:#f8fafc; border:1px solid #cbd5e1; padding:8px 11px; border-radius:7px; font-size:12.8px; line-height:1.42;">
+            <strong style="color:#1e3a8a;">2. กล่องสรุปยอดรวม 6 สีสถานะ (ด้านบนตาราง)</strong><br/>
+            สรุปตัวเลขในรอบปัจจุบันของลานที่เลือกทันทีว่ามีช่อง <strong>จองแล้ว</strong> กี่ช่อง, <strong>ว่าง</strong> กี่ช่อง, <strong>ไม่ตีตั๋ว</strong> กี่ช่อง, <strong>รอตรวจตั๋ว</strong> กี่ช่อง, <strong>หมดเวลาจอด</strong> กี่ช่อง และ <strong>ปิดใช้งาน</strong> กี่ช่อง
+          </div>
+
+          <div style="background:#f8fafc; border:1px solid #cbd5e1; padding:8px 11px; border-radius:7px; font-size:12.8px; line-height:1.42;">
+            <strong style="color:#1e3a8a;">3. เลือกดูวันที่ย้อนหลัง หรือสั่งพิมพ์ลงกระดาษได้</strong><br/>
+            • เปลี่ยนช่อง <strong>“วันที่เข้าจอด”</strong> เพื่อดูตารางย้อนหลังได้<br/>
+            • กดปุ่ม <strong>“🖨 พิมพ์ตารางสถานะลาน”</strong> เพื่อพิมพ์ใบตารางลานจอด (ขนาด A3 แนวตั้ง) ไปติดบอร์ดหน้าป้อมหรือถือตรวจลานได้
+          </div>
+
+          <div style="background:#fffbeb; border:1.5px solid #fde047; padding:8px 11px; border-radius:7px; font-size:12.5px; line-height:1.42; color:#92400e;">
+            <strong>⚡ ปุ่ม “อัปเดตข้อมูลใหม่”:</strong> หากตอนเช้าเปิดมาแล้วขึ้นแถบเตือนว่า <em>“ข้อมูลสำหรับวันนี้ยังไม่พร้อม”</em> พนักงานจัดพื้นที่สามารถกดปุ่ม <strong>[อัปเดตข้อมูลใหม่]</strong> เพื่อให้ระบบดึงยอดตั๋วล่าสุดมาคำนวณสิทธิ์ทันที
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="slide-footer">
+      <span>คู่มือการใช้งานระบบจองที่จอดรถเรียงสินค้า — สำหรับพนักงานจัดพื้นที่</span>
+      <span>หน้าที่ 5 : รายละเอียดหน้าตารางสถานะลานจอด (มุมมองตารางภาพรวม)</span>
+    </div>
+  </section>
+
+  <!-- ===================================================================== -->
+  <!-- หน้าที่ 6: รายละเอียดหน้าสรุปยอดตั๋วและการชำระเงิน -->
+  <!-- ===================================================================== -->
+  <section class="slide" id="page6">
+    <div class="slide-header teal">
+      <div>
+        <h1>หน้าที่ 6 : วิธีใช้งานหน้า “📊 สรุปยอดตั๋วและการชำระเงิน”</h1>
+        <p>การเลือกวันที่ การค้นหารายชื่อลูกค้า ความหมายของตั๋วล่วงหน้า/ตั๋วรายวัน และสถานะการชำระเงินทั้ง 3 แบบ</p>
+      </div>
+      <div class="slide-num">หน้า 6 / 6</div>
+    </div>
+
+    <div class="slide-body" style="display:grid; grid-template-columns: 1.25fr 1fr; gap: 14px;">
+      <!-- ฝั่งซ้าย: ภาพจำลองหน้าสรุปยอดตั๋วและการชำระเงิน -->
+      <div class="ui-frame" style="background:#f8fafc; padding:10px 12px; display:flex; flex-direction:column; justify-content:space-between;">
+        <div>
+          <div style="background:#0f172a; color:#fff; padding:7px 12px; border-radius:7px; display:flex; justify-content:space-between; align-items:center; font-weight:800; font-size:13px; margin-bottom:7px;">
+            <span>📊 สรุปยอดตั๋วและการชำระเงิน</span>
+            <span style="font-size:11px; color:#cbd5e1;">← กลับหน้าหลัก</span>
+          </div>
+
+          <!-- กล่องที่ 1: เลือกช่วงวันที่ -->
+          <div style="background:#fff; border:1.5px solid #cbd5e1; border-radius:7px; padding:7px 10px; margin-bottom:7px; font-size:11.3px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+              <strong style="color:#0f172a;">① 📅 เลือกช่วงวันที่ในตั๋ว</strong>
+              <div style="display:flex; gap:4px;">
+                <span style="background:#1e293b; color:#fff; padding:2px 8px; border-radius:4px; font-weight:700;">เมื่อวาน</span>
+                <span style="background:#f1f5f9; border:1px solid #cbd5e1; padding:2px 8px; border-radius:4px;">วันนี้</span>
+                <span style="background:#f1f5f9; border:1px solid #cbd5e1; padding:2px 8px; border-radius:4px;">เดือนนี้</span>
+              </div>
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:6px;">
+              <span>เริ่ม: <strong>2026-11-19</strong></span>
+              <span>สิ้นสุด: <strong>2026-11-19</strong></span>
+              <div style="display:flex; gap:4px;">
+                <span style="background:#1e293b; color:#fff; padding:3px 10px; border-radius:5px; font-weight:800;">🔍 ดูข้อมูล</span>
+                <span style="background:#fff; border:1px solid #94a3b8; padding:3px 8px; border-radius:5px; font-weight:700;">📤 ส่งออก ▾</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- กล่องที่ 2: 4 KPI Cards -->
+          <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:6px; margin-bottom:7px; font-size:10.8px;">
+            <div style="background:#fff; border:1px solid #cbd5e1; border-top:3px solid #1e293b; padding:6px 8px; border-radius:6px;">
+              <div style="color:#64748b; font-weight:700;">1. ยอดขายตั๋วรวม</div>
+              <strong style="font-size:14px; color:#0f172a;">฿45,000</strong>
+              <div style="color:#64748b; font-size:10px;">450 ใบ (ล่วงหน้า+รายวัน)</div>
+            </div>
+            <div style="background:#fff; border:1px solid #cbd5e1; border-top:3px solid #059669; padding:6px 8px; border-radius:6px;">
+              <div style="color:#059669; font-weight:700;">2. ตั๋วรายวัน</div>
+              <strong style="font-size:14px; color:#065f46;">฿3,000</strong>
+              <div style="color:#64748b; font-size:10px;">30 ใบ (เข้าจอดวันนั้น)</div>
+            </div>
+            <div style="background:#fff; border:1px solid #cbd5e1; border-top:3px solid #2563eb; padding:6px 8px; border-radius:6px;">
+              <div style="color:#2563eb; font-weight:700;">3. ตั๋วล่วงหน้า</div>
+              <strong style="font-size:14px; color:#1e40af;">฿42,000</strong>
+              <div style="color:#64748b; font-size:10px;">420 ใบ (เข้าจอดวันถัดไป)</div>
+            </div>
+            <div style="background:#f0f9ff; border:1px solid #7dd3fc; border-top:3px solid #0284c7; padding:6px 8px; border-radius:6px;">
+              <div style="color:#0284c7; font-weight:700;">4. เกินยอดจอง</div>
+              <strong style="font-size:14px; color:#0369a1;">฿400</strong>
+              <div style="color:#0369a1; font-size:10px; font-weight:700;">4 ใบ (คลิกกรองได้)</div>
+            </div>
+          </div>
+
+          <!-- แถบแจ้งเตือนต่ำกว่ายอดจอง -->
+          <div style="background:#fff1f2; border:1px solid #fecdd3; color:#9f1239; padding:5px 10px; border-radius:6px; font-size:11px; display:flex; justify-content:space-between; align-items:center; margin-bottom:7px;">
+            <span><strong>⚠️ ต่ำกว่ายอดจอง:</strong> รวม <strong>฿1,000</strong> (10 ใบ) — ลูกค้าตีตั๋วน้อยกว่าที่จอง</span>
+            <span style="background:#fff; border:1px solid #f43f5e; padding:1px 7px; border-radius:4px; font-size:10px; font-weight:700;">กรองดูเฉพาะรายที่ต่ำกว่ายอดจอง</span>
+          </div>
+
+          <!-- ตารางรายลูกค้า + ค้นหา -->
+          <div style="background:#fff; border:1.5px solid #cbd5e1; border-radius:7px; padding:7px 9px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; font-size:11px;">
+              <strong>③ 📋 ตรวจสอบรายการรายลูกค้า</strong>
+              <div style="display:flex; gap:4px;">
+                <span style="border:1px solid #94a3b8; padding:2px 6px; border-radius:4px; background:#f8fafc;">สถานะทั้งหมด ▾</span>
+                <span style="border:1.5px solid #2563eb; padding:2px 8px; border-radius:4px; background:#eff6ff; color:#1e3a8a; font-weight:700;">🔍 ค้นหาชื่อหรือรหัส...</span>
+              </div>
+            </div>
+            <table style="width:100%; border-collapse:collapse; font-size:10.5px;">
+              <thead>
+                <tr style="background:#f1f5f9; border-bottom:1.5px solid #cbd5e1; color:#334155;">
+                  <th style="padding:4px; text-align:left;">ชื่อลูกค้า</th>
+                  <th style="padding:4px; text-align:right;">จอง</th>
+                  <th style="padding:4px; text-align:right;">ชำระ</th>
+                  <th style="padding:4px; text-align:right;">ใช้เฉลี่ย</th>
+                  <th style="padding:4px; text-align:right;">ล่วงหน้า(฿)</th>
+                  <th style="padding:4px; text-align:right;">รายวัน(฿)</th>
+                  <th style="padding:4px; text-align:center;">สถานะ</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr style="border-bottom:1px solid #e2e8f0;">
+                  <td style="padding:4px; font-weight:700;">สมชาย</td>
+                  <td style="padding:4px; text-align:right;">20</td>
+                  <td style="padding:4px; text-align:right; font-weight:700;">20</td>
+                  <td style="padding:4px; text-align:right;">20</td>
+                  <td style="padding:4px; text-align:right; color:#2563eb;">2,000</td>
+                  <td style="padding:4px; text-align:right;">-</td>
+                  <td style="padding:4px; text-align:center;"><span style="background:#dcfce7; color:#166534; padding:1px 6px; border-radius:4px; font-weight:700;">ตรงตามยอดจอง</span></td>
+                </tr>
+                <tr style="border-bottom:1px solid #e2e8f0; background:#fff1f2;">
+                  <td style="padding:4px; font-weight:700;">รุ่งเพชร</td>
+                  <td style="padding:4px; text-align:right;">60</td>
+                  <td style="padding:4px; text-align:right; font-weight:700;">50</td>
+                  <td style="padding:4px; text-align:right;">50</td>
+                  <td style="padding:4px; text-align:right; color:#2563eb;">5,000</td>
+                  <td style="padding:4px; text-align:right;">-</td>
+                  <td style="padding:4px; text-align:center;"><span style="background:#fee2e2; color:#991b1b; padding:1px 6px; border-radius:4px; font-weight:700;">ต่ำกว่ายอดจอง</span></td>
+                </tr>
+                <tr>
+                  <td style="padding:4px; font-weight:700;">เจ๊หมวย</td>
+                  <td style="padding:4px; text-align:right;">10</td>
+                  <td style="padding:4px; text-align:right; font-weight:700;">14</td>
+                  <td style="padding:4px; text-align:right;">14</td>
+                  <td style="padding:4px; text-align:right; color:#2563eb;">1,000</td>
+                  <td style="padding:4px; text-align:right; color:#059669;">400</td>
+                  <td style="padding:4px; text-align:center;"><span style="background:#e0f2fe; color:#0369a1; padding:1px 6px; border-radius:4px; font-weight:700;">เกินยอดจอง</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div style="font-size:11.3px; color:#115e59; background:#ccfbf1; padding:6px 10px; border-radius:6px; font-weight:600;">
+          💡 <strong>ทิปส์:</strong> สามารถคลิกที่การ์ด <strong>“4. เกินยอดจอง”</strong> หรือปุ่มบนแถบ <strong>“⚠️ ต่ำกว่ายอดจอง”</strong> เพื่อกรองดูรายชื่อลูกค้ากลุ่มนั้นได้ทันที!
+        </div>
+      </div>
+
+      <!-- ฝั่งขวา: คำอธิบายการใช้งานและการอ่านความหมาย -->
+      <div style="display:flex; flex-direction:column; justify-content:space-between; gap:8px;">
+        <!-- 1. เลือกวันที่และค้นหา -->
+        <div class="box-white" style="border-left:5px solid #0f766e; padding:8px 12px;">
+          <h3 style="font-size:14.5px; color:#115e59; margin-bottom:3px;">1️⃣ การเลือกวันที่ และการค้นหารายชื่อลูกค้า</h3>
+          <ul style="font-size:12.3px; color:#334155; line-height:1.42; margin-left:16px;">
+            <li><strong>เลือกช่วงวันที่:</strong> กดปุ่มลัด <code>เมื่อวาน</code>, <code>วันนี้</code>, <code>เดือนนี้</code> หรือระบุวันที่เริ่มต้น–สิ้นสุด แล้วกด <strong>[🔍 ดูข้อมูล]</strong></li>
+            <li><strong>ค้นหาและกรอง:</strong> พิมพ์ชื่อลูกค้า (เช่น <code>รุ่งเพชร</code>) หรือรหัสลูกค้าในช่อง <strong>“ค้นหาชื่อหรือรหัส...”</strong> หรือเลือกตัวกรองสถานะได้ทันที</li>
+            <li><strong>ส่งออกรายงาน:</strong> กดปุ่ม <strong>[📤 ส่งออก ▾]</strong> เพื่อดาวน์โหลดไฟล์ <strong>Excel</strong> หรือสั่ง <strong>พิมพ์ / PDF</strong></li>
+          </ul>
+        </div>
+
+        <!-- 2. ความหมายของตั๋วล่วงหน้า vs ตั๋วรายวัน -->
+        <div class="box-white" style="border-left:5px solid #2563eb; padding:8px 12px;">
+          <h3 style="font-size:14.5px; color:#1e3a8a; margin-bottom:3px;">2️⃣ ความหมายของยอดตั๋วแต่ละประเภท (ใบละ 100 บาท)</h3>
+          <div style="font-size:12.3px; color:#334155; line-height:1.42; display:grid; gap:4px;">
+            <div>🔵 <strong>ตั๋วล่วงหน้า (รับล่วงหน้า):</strong> คือตั๋วที่ลูกค้าประจำชำระเงินตีตั๋วไว้ล่วงหน้าก่อนเที่ยงคืน เพื่อใช้สิทธิ์เข้าจอดในวันถัดไป (07:00–07:00)</div>
+            <div>🟢 <strong>ตั๋วรายวัน (รอบวัน):</strong> คือตั๋วที่ลูกค้าซื้อเพิ่มในวันนั้นเพื่อเข้าจอดทันที (รวมการจองรายวันผ่านบริการลูกค้า และตั๋วหน้าป้อมที่พนักงานจัดพื้นที่กด <code>[ ➕ ]</code> ยืนยันหน้างาน)</div>
+          </div>
+        </div>
+
+        <!-- 3. ความหมายของ 3 สถานะ -->
+        <div class="box-white" style="border-left:5px solid #ea580c; padding:8px 12px; flex:1; display:flex; flex-direction:column; justify-content:space-around;">
+          <h3 style="font-size:14.5px; color:#9a3412; margin-bottom:3px;">3️⃣ ความหมายของสถานะการชำระเงินทั้ง 3 แบบ</h3>
+          <div style="display:grid; gap:5px; font-size:12.2px;">
+            <div style="background:#f0fdf4; border:1px solid #86efac; padding:5px 9px; border-radius:6px;">
+              <strong style="color:#166534;">🟢 ตรงตามยอดจอง:</strong> ลูกค้าตีตั๋วชำระเงิน <strong>เท่ากับ</strong> จำนวนช่องที่จองไว้ในสัญญาพอดี (ครบถ้วน)
+            </div>
+            <div style="background:#fef2f2; border:1px solid #fca5a5; padding:5px 9px; border-radius:6px;">
+              <strong style="color:#991b1b;">🔴 ต่ำกว่ายอดจอง:</strong> ลูกค้าตีตั๋วชำระเงิน <strong>น้อยกว่า</strong> จำนวนช่องที่จองไว้ (เช่น จอง 60 ใบ จ่ายมา 50 ใบ ขาด 10 ใบ = <code>-฿1,000</code>)
+            </div>
+            <div style="background:#f0f9ff; border:1px solid #7dd3fc; padding:5px 9px; border-radius:6px;">
+              <strong style="color:#0369a1;">🔵 เกินยอดจอง:</strong> ลูกค้าซื้อตั๋วรวม <strong>มากกว่า</strong> จำนวนช่องที่จองไว้ในสัญญา (เช่น จอง 10 ใบ แต่ซื้อตั๋วรวม 14 ใบ เกินมา 4 ใบ = <code>+฿400</code>)
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="slide-footer">
+      <span>คู่มือการใช้งานระบบจองที่จอดรถเรียงสินค้า — สำหรับพนักงานจัดพื้นที่</span>
+      <span>หน้าที่ 6 : รายละเอียดหน้าสรุปยอดตั๋วและการชำระเงิน</span>
+    </div>
+  </section>
+
+</body>
+</html>
