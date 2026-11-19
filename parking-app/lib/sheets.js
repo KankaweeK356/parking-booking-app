@@ -38,7 +38,12 @@ function toOperationalMinutes(clockMinutes) {
   return clockMinutes < OPERATIONAL_DAY_START_MINUTES ? clockMinutes + 1440 : clockMinutes;
 }
 
+let cachedAuthClient = null;
+let cachedSheetsClient = null;
+let employeeDirectorySeeded = false;
+
 function getAuthClient() {
+  if (cachedAuthClient) return cachedAuthClient;
   const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
   const key = (process.env.GOOGLE_PRIVATE_KEY || "").replace(/\\n/g, "\n");
   if (!email || !key || !SHEET_ID) {
@@ -46,16 +51,19 @@ function getAuthClient() {
       "ยังไม่ได้ตั้งค่า GOOGLE_SHEET_ID / GOOGLE_SERVICE_ACCOUNT_EMAIL / GOOGLE_PRIVATE_KEY ใน .env.local"
     );
   }
-  return new google.auth.JWT({
+  cachedAuthClient = new google.auth.JWT({
     email,
     key,
     scopes: ["https://www.googleapis.com/auth/spreadsheets"],
   });
+  return cachedAuthClient;
 }
 
 function getSheetsClient() {
+  if (cachedSheetsClient) return cachedSheetsClient;
   const auth = getAuthClient();
-  return google.sheets({ version: "v4", auth });
+  cachedSheetsClient = google.sheets({ version: "v4", auth });
+  return cachedSheetsClient;
 }
 
 export async function executeWithRetry(apiFn, { maxRetries = 3, baseDelayMs = 1500 } = {}) {
@@ -300,12 +308,21 @@ async function ensureSheetInternal(title, headers, firstRow) {
     }
     knownSheetNames.add(title);
   }
-  if (title === "Employee_Directory") {
+  if (title === "Employee_Directory" && !employeeDirectorySeeded) {
+    employeeDirectorySeeded = true;
     const existing = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${title}!A2:E`, valueRenderOption: "UNFORMATTED_VALUE" });
     if (!(existing.data.values || []).some((row) => String(row[0]) === "2709")) {
       await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: `${title}!A${firstRow}:E`, valueInputOption: "USER_ENTERED", insertDataOption: "INSERT_ROWS", requestBody: { values: [["2709", "กันต์กวี แก้วแกมคง", "พัฒนากระบวนการ", "Admin", "ใช้งาน"]] } });
     }
   }
+}
+
+const AUTH_SHEETS_CACHE_TTL_MS = 55 * 1000;
+let authSheetsCache = { employees: null, users: null, expiresAt: 0 };
+let inFlightAuthSheets = null;
+
+export function invalidateAuthSheetsCache() {
+  authSheetsCache = { employees: null, users: null, expiresAt: 0 };
 }
 
 export async function ensureAuthSheets() {
@@ -314,55 +331,105 @@ export async function ensureAuthSheets() {
   await ensureSheet("Password_Reset_Log", RESET_HEADERS, 2);
 }
 
+async function loadAuthSheetsCached() {
+  const now = Date.now();
+  if (authSheetsCache.employees && authSheetsCache.users && authSheetsCache.expiresAt > now) {
+    return authSheetsCache;
+  }
+  if (inFlightAuthSheets) return inFlightAuthSheets;
+
+  inFlightAuthSheets = (async () => {
+    try {
+      await ensureAuthSheets();
+      const sheets = getSheetsClient();
+      const batchRes = await executeWithRetry(() =>
+        sheets.spreadsheets.values.batchGet({
+          spreadsheetId: SHEET_ID,
+          ranges: ["Employee_Directory!A2:E", "User_Accounts!A2:H"],
+          valueRenderOption: "UNFORMATTED_VALUE",
+        })
+      );
+      const valueRanges = batchRes.data.valueRanges || [];
+      const empRows = valueRanges[0]?.values || [];
+      const userRows = valueRanges[1]?.values || [];
+
+      const employees = empRows.filter((row) => row[0]).map((row, index) => {
+        const rawStatus = String(row[4] || "").trim().toLowerCase();
+        const isInactive = ["ลาออก", "ระงับ", "ปิดใช้งาน", "ไม่ใช้งาน", "inactive", "false", "0"].includes(rawStatus);
+        return {
+          rowNumber: index + 2,
+          employeeId: String(row[0]).trim(),
+          name: String(row[1] || "").trim(),
+          department: String(row[2] || "").trim(),
+          role: String(row[3] || "Field").trim(),
+          active: !isInactive,
+        };
+      });
+
+      const users = userRows.filter((row) => row[0]).map((row, index) => ({
+        rowNumber: index + 2,
+        employeeId: String(row[0]).trim(),
+        passwordHash: String(row[1] || ""),
+        registeredAt: String(row[2] || ""),
+        lastLoginAt: String(row[3] || ""),
+        active: ["ใช้งาน", "active", "true", "1"].includes(String(row[4] || "").trim().toLowerCase()),
+        sessionVersion: String(row[5] || "1"),
+        mustChangePassword: ["ใช่", "true", "1"].includes(String(row[6] || "").trim().toLowerCase()),
+        temporaryPasswordExpiresAt: String(row[7] || ""),
+      }));
+
+      authSheetsCache = {
+        employees,
+        users,
+        expiresAt: Date.now() + AUTH_SHEETS_CACHE_TTL_MS,
+      };
+      return authSheetsCache;
+    } finally {
+      inFlightAuthSheets = null;
+    }
+  })();
+
+  return inFlightAuthSheets;
+}
+
 export async function getEmployeeDirectory() {
-  await ensureAuthSheets();
-  const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "Employee_Directory!A2:E", valueRenderOption: "UNFORMATTED_VALUE" });
-  return (res.data.values || []).filter((row) => row[0]).map((row, index) => {
-    const rawStatus = String(row[4] || "").trim().toLowerCase();
-    const isInactive = ["ลาออก", "ระงับ", "ปิดใช้งาน", "ไม่ใช้งาน", "inactive", "false", "0"].includes(rawStatus);
-    return {
-      rowNumber: index + 2,
-      employeeId: String(row[0]).trim(),
-      name: String(row[1] || "").trim(),
-      department: String(row[2] || "").trim(),
-      role: String(row[3] || "Field").trim(),
-      active: !isInactive,
-    };
-  });
+  const { employees } = await loadAuthSheetsCached();
+  return employees;
 }
 
 export async function getUserAccounts() {
-  await ensureAuthSheets();
-  const sheets = getSheetsClient();
-  const res = await sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: "User_Accounts!A2:H", valueRenderOption: "UNFORMATTED_VALUE" });
-  return (res.data.values || []).filter((row) => row[0]).map((row, index) => ({ rowNumber: index + 2, employeeId: String(row[0]).trim(), passwordHash: String(row[1] || ""), registeredAt: String(row[2] || ""), lastLoginAt: String(row[3] || ""), active: ["ใช้งาน", "active", "true", "1"].includes(String(row[4] || "").trim().toLowerCase()), sessionVersion: String(row[5] || "1"), mustChangePassword: ["ใช่", "true", "1"].includes(String(row[6] || "").trim().toLowerCase()), temporaryPasswordExpiresAt: String(row[7] || "") }));
+  const { users } = await loadAuthSheetsCached();
+  return users;
 }
 
 export async function getEmployeeUser(employeeId) {
-  const [employees, users] = await Promise.all([getEmployeeDirectory(), getUserAccounts()]);
+  const { employees, users } = await loadAuthSheetsCached();
   const employee = employees.find((item) => item.employeeId === String(employeeId));
   const account = users.find((item) => item.employeeId === String(employeeId));
   return employee ? { ...employee, account } : null;
 }
 
 export async function createUserAccount({ employeeId, passwordHash }) {
+  invalidateAuthSheetsCache();
   const existing = await getEmployeeUser(employeeId);
   if (!existing) throw new Error("ไม่พบรหัสพนักงานในฐานข้อมูล กรุณาติดต่อ Admin");
   if (!existing.active) throw new Error("รหัสพนักงานนี้ถูกระงับการใช้งาน กรุณาติดต่อ Admin");
   if (existing.account) throw new Error("รหัสพนักงานนี้สมัครใช้งานแล้ว สามารถเข้าสู่ระบบได้เลย");
   const sheets = getSheetsClient();
   await sheets.spreadsheets.values.append({ spreadsheetId: SHEET_ID, range: "User_Accounts!A2:H", valueInputOption: "USER_ENTERED", insertDataOption: "INSERT_ROWS", requestBody: { values: [[employeeId, passwordHash, new Date().toISOString(), "", "ใช้งาน", "1", "ไม่", ""]] } });
+  invalidateAuthSheetsCache();
   return getEmployeeUser(employeeId);
 }
 
 export async function updateUserAccount(employeeId, values) {
+  invalidateAuthSheetsCache();
   const account = (await getUserAccounts()).find((item) => item.employeeId === String(employeeId));
   if (!account) throw new Error("ไม่พบบัญชีผู้ใช้");
   const sheets = getSheetsClient();
   const current = [account.employeeId, account.passwordHash, account.registeredAt, account.lastLoginAt, account.active ? "ใช้งาน" : "ปิดใช้งาน", account.sessionVersion, account.mustChangePassword ? "ใช่" : "ไม่", account.temporaryPasswordExpiresAt];
   const next = { passwordHash: current[1], lastLoginAt: current[3], active: current[4], sessionVersion: current[5], mustChangePassword: current[6], temporaryPasswordExpiresAt: current[7], ...values };
   await sheets.spreadsheets.values.update({ spreadsheetId: SHEET_ID, range: `User_Accounts!A${account.rowNumber}:H${account.rowNumber}`, valueInputOption: "USER_ENTERED", requestBody: { values: [[employeeId, next.passwordHash, current[2], next.lastLoginAt, next.active, next.sessionVersion, next.mustChangePassword, next.temporaryPasswordExpiresAt]] } });
+  invalidateAuthSheetsCache();
 }
 
 export async function appendPasswordResetLog({ employeeId, resetBy }) {
@@ -1804,6 +1871,7 @@ export async function recordCustomerDailySummary({
   activeByDoc,
   isPaidByBookingRow,
   ticketCountByDocId = null,
+  extraUsedByDoc = null,
   masterMap = null,
   urgentLogs = [],
   cancelledUrgentKeys = new Set(),
@@ -1830,6 +1898,14 @@ export async function recordCustomerDailySummary({
       urgentCountByDoc.set(doc, (urgentCountByDoc.get(doc) || 0) + (Number(log.ticketCount) || 1));
       if (log.customer) urgentCustomerNameByDoc.set(doc, String(log.customer).trim());
     });
+  if (extraUsedByDoc) {
+    extraUsedByDoc.forEach((extraCount, docKey) => {
+      const doc = String(docKey || "").trim();
+      if (doc && extraCount > 0) {
+        urgentCountByDoc.set(doc, (urgentCountByDoc.get(doc) || 0) + Number(extraCount));
+      }
+    });
+  }
 
   const ticketDocKeys = ticketCountByDocId
     ? Array.from(ticketCountByDocId.keys()).filter((k) => (ticketCountByDocId.get(k) || 0) > 0)
@@ -1965,6 +2041,7 @@ export async function createPaymentSnapshot(operationalDate) {
 
   // หักตั๋วรายวันที่ลูกค้าซื้อหน้าป้อมเพื่อปลดล็อกช่องสีส้ม (ไม่ตีตั๋ว) ในวัน sourceDate
   // เพื่อไม่ให้นำตั๋วที่ใช้จอดไปแล้วในวัน sourceDate มานับซ้ำเป็นตั๋วล่วงหน้าของวัน operationalDate
+  let extraUsedOnSourceByDoc = null;
   if (verticalSource && sourceInspectionLogs.length > 0 && sourceSnapshot) {
     const sourceActiveBookings = allBookings.filter((booking) => {
       const endEff = booking.endEffectiveSerial ?? FAR_FUTURE_SERIAL;
@@ -1990,6 +2067,7 @@ export async function createPaymentSnapshot(operationalDate) {
       advancePaidByDoc: advancePaidOnSourceByDoc,
       inspectionLogs: sourceInspectionLogs,
     });
+    extraUsedOnSourceByDoc = extraUsedByDoc;
     extraUsedByDoc.forEach((extraCount, key) => {
       if (extraCount > 0 && ticketCountByDocId.has(key)) {
         ticketCountByDocId.set(key, Math.max(0, (ticketCountByDocId.get(key) || 0) - extraCount));
@@ -2028,6 +2106,7 @@ export async function createPaymentSnapshot(operationalDate) {
       activeByDoc,
       isPaidByBookingRow,
       ticketCountByDocId,
+      extraUsedByDoc: extraUsedOnSourceByDoc,
       masterMap: masterNameByDocId,
       urgentLogs,
       cancelledUrgentKeys,
@@ -2046,6 +2125,7 @@ export async function createPaymentSnapshot(operationalDate) {
 export async function getDashboardData(dateStr) {
   const targetDateStr = dateStr || getCurrentOperationalDateIso();
   const currentOperationalDate = getCurrentOperationalDateIso();
+  const paymentDate = getBangkokCalendarDateIso();
   const targetSerial = isoDateToSerial(targetDateStr);
   const dayBeforeSerial = targetSerial - 1;
   const dayBeforeStr = isoFromSerial(dayBeforeSerial);
@@ -2064,6 +2144,7 @@ export async function getDashboardData(dateStr) {
     "Booking_Adjustment_Log!A2:H",
     "Payment_Snapshot_Run!A2:D",
     "Payment_Snapshot!A2:H",
+    "Payment_Refresh_Log!A2:E",
   ];
   if (verticalAllocationActive) {
     ranges.push("Field_Inspection_Log!A2:J");
@@ -2083,7 +2164,8 @@ export async function getDashboardData(dateStr) {
   const rawAdjustments = valueRanges[4]?.values || [];
   const rawRuns = valueRanges[5]?.values || [];
   const rawSnapshots = valueRanges[6]?.values || [];
-  const rawInspectionLogs = valueRanges[7]?.values || [];
+  const rawRefreshLogs = valueRanges[7]?.values || [];
+  const rawInspectionLogs = valueRanges[8]?.values || [];
 
   let masterMap = null;
   const hasEmptyDocId = rawBookings.some((r) => r[0] && (!r[1] || !String(r[1]).trim()));
@@ -2280,12 +2362,40 @@ export async function getDashboardData(dateStr) {
     closedReason: s.reason,
   }));
 
+  function buildPaymentUpdateForDate(pDate) {
+    const pRuns = rawRuns.filter((row) => String(row[0] || "") === pDate && String(row[3] || "") === "READY");
+    const pRun = pRuns.sort((a, b) => String(b[2] || "").localeCompare(String(a[2] || "")))[0];
+    let pSnap = null;
+    if (pRun) {
+      const pUpdatedAt = String(pRun[2] || "");
+      pSnap = { operationalDate: pDate, sourceDate: String(pRun[1] || ""), updatedAt: pUpdatedAt };
+    }
+    const pRefreshRow = rawRefreshLogs
+      .filter((row) => String(row[0] || "") === pDate)
+      .sort((a, b) => String(b[1] || "").localeCompare(String(a[1] || "")))[0];
+    const pRefresh = pRefreshRow
+      ? {
+          attemptedAt: String(pRefreshRow[1] || ""),
+          source: String(pRefreshRow[2] || ""),
+          status: String(pRefreshRow[3] || ""),
+          message: String(pRefreshRow[4] || ""),
+        }
+      : null;
+    return {
+      date: pDate,
+      status: pSnap ? "READY" : pRefresh?.status === "FAILED" ? "FAILED" : "UPDATING",
+      snapshot: pSnap,
+      refresh: pRefresh,
+    };
+  }
+
   return {
     date: targetDateStr,
     dayBefore: dayBeforeStr,
     paymentStatus: paymentSnapshot ? "READY" : "UPDATING",
     paymentSnapshotUpdatedAt: paymentSnapshot?.updatedAt || "",
     paymentSourceDate: paymentSnapshot?.sourceDate || dayBeforeStr,
+    paymentUpdate: buildPaymentUpdateForDate(paymentDate),
     isLiveOperationalDate: targetDateStr === currentOperationalDate,
     verticalAllocationActive,
     currentBlock: getCurrentOperationalBlock(),
@@ -2397,9 +2507,9 @@ export async function getCustomerSummaryData({ date, startDate, endDate, mode = 
   });
 
   const getStatusObj = (shortfall, surplus) => {
-    if ((surplus || 0) > 0) return { status: "เงินรับส่วนเกิน", statusKey: "surplus" };
-    if ((shortfall || 0) > 0) return { status: "รอตรวจยอดชำระ", statusKey: "shortfall" };
-    return { status: "กระทบยอดลงตัว", statusKey: "balanced" };
+    if ((surplus || 0) > 0) return { status: "เกินยอดจอง", statusKey: "surplus" };
+    if ((shortfall || 0) > 0) return { status: "ต่ำกว่ายอดจอง", statusKey: "shortfall" };
+    return { status: "ตรงตามยอดจอง", statusKey: "balanced" };
   };
 
   // คำนวณ "ใช้งานเฉลี่ย (ใบ)" (จำนวนเต็มเท่านั้น) จากวันปกติ (ตัดช่วงน้ำท่วม <= 2026-10-04, ตัดช่วงเปลี่ยนระบบ 2026-11-04..06, และไม่นับวันที่จ่าย = 0)

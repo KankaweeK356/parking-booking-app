@@ -1,7 +1,7 @@
 // pages/admin/revenue-reconciliation.js
-// หน้าสรุปการชำระเงินและกระทบยอดรายได้สำหรับฝ่ายบัญชีและการเงิน (Admin / Accounting / Account) - รองรับพิมพ์ PDF แนวนอนแยกวันละแผ่น
+// หน้าสรุปยอดตั๋วและการชำระเงิน (Admin / CS / Field / Accounting / Account) - รองรับพิมพ์ PDF แนวนอนแยกวันละแผ่น
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import Link from "next/link";
 import { exportRevenueReconciliationExcel } from "../../lib/excel-export";
 import { displayCustomerName } from "../../lib/display";
@@ -35,6 +35,12 @@ function getTodayIso() {
   return formatDate(getBangkokDateObj());
 }
 
+function getThisMonthStartIso() {
+  const d = getBangkokDateObj();
+  const firstDay = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1, 12));
+  return formatDate(firstDay);
+}
+
 function formatCurrency(val) {
   return Number(val || 0).toLocaleString("th-TH", {
     minimumFractionDigits: 2,
@@ -56,12 +62,25 @@ export default function RevenueReconciliationPage() {
 
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const exportMenuRef = useRef(null);
   const [error, setError] = useState("");
   const [reconData, setReconData] = useState(null);
 
   // ตัวกรองตารางตรวจสอบด่วน
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+
+  // ปิดเมนูส่งออกเมื่อคลิกด้านนอก
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target)) {
+        setExportMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   // ตรวจสอบสิทธิ์ผู้ใช้
   useEffect(() => {
@@ -76,6 +95,8 @@ export default function RevenueReconciliationPage() {
 
   const canAccess =
     user?.role === "Admin" ||
+    user?.role === "CS" ||
+    user?.role === "Field" ||
     user?.role === "Accounting" ||
     user?.role === "Account";
 
@@ -91,7 +112,7 @@ export default function RevenueReconciliationPage() {
       const res = await fetch(`/api/admin/revenue-reconciliation?${params.toString()}`);
       const json = await res.json();
       if (!res.ok) {
-        throw new Error(json.error || "เกิดข้อผิดพลาดในการคำนวณข้อมูลกระทบยอด");
+        throw new Error(json.error || "เกิดข้อผิดพลาดในการคำนวณข้อมูลสรุปยอดตั๋วและการชำระเงิน");
       }
       setReconData(json);
     } catch (err) {
@@ -111,6 +132,7 @@ export default function RevenueReconciliationPage() {
   // ฟังก์ชันส่งออก Excel
   async function handleExportExcel() {
     if (!reconData) return;
+    setExportMenuOpen(false);
     setExporting(true);
     try {
       await exportRevenueReconciliationExcel(reconData);
@@ -121,7 +143,7 @@ export default function RevenueReconciliationPage() {
     }
   }
 
-  // Preset Handlers สำหรับรอบการทำงานบัญชี (เปลี่ยนวันที่และโหลดข้อมูลทันที)
+  // Preset Handlers
   function setPresetYesterday() {
     const y = getYesterdayIso();
     setStartDate(y);
@@ -137,23 +159,19 @@ export default function RevenueReconciliationPage() {
   }
 
   function setPresetThisMonth() {
-    const d = getBangkokDateObj();
-    const firstDay = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1, 12));
-    const s = formatDate(firstDay);
-    const e = formatDate(d);
+    const s = getThisMonthStartIso();
+    const e = getTodayIso();
     setStartDate(s);
     setEndDate(e);
     loadData(s, e);
   }
 
-  function setPresetLastMonth() {
-    const d = getBangkokDateObj();
-    const firstDay = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - 1, 1, 12));
-    const lastDay = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 0, 12));
-
-    setStartDate(formatDate(firstDay));
-    setEndDate(formatDate(lastDay));
-  }
+  const yesterdayIso = getYesterdayIso();
+  const todayIso = getTodayIso();
+  const thisMonthStartIso = getThisMonthStartIso();
+  const isPresetYesterday = startDate === yesterdayIso && endDate === yesterdayIso;
+  const isPresetToday = startDate === todayIso && endDate === todayIso;
+  const isPresetThisMonth = startDate === thisMonthStartIso && endDate === todayIso;
 
   // กรองรายการลูกค้าในตารางตรวจสอบด่วน
   const filteredCustomers = useMemo(() => {
@@ -218,6 +236,7 @@ export default function RevenueReconciliationPage() {
   }, [filteredCustomers]);
 
   function handlePrintPdf() {
+    setExportMenuOpen(false);
     window.print();
   }
 
@@ -247,13 +266,13 @@ export default function RevenueReconciliationPage() {
       <div>
         <div className="top-bar">
           <div className="inner" style={{ maxWidth: 1040 }}>
-            <h1>📊 สรุปการชำระเงิน</h1>
+            <h1>📊 สรุปยอดตั๋วและการชำระเงิน</h1>
             <Link href="/" className="back">← กลับหน้าหลัก</Link>
           </div>
         </div>
         <div className="page" style={{ maxWidth: 1040 }}>
           <div className="card alert alert-error">
-            <strong>ไม่มีสิทธิ์เข้าถึง:</strong> หน้านี้เปิดให้เฉพาะฝ่ายบัญชีและการเงิน (Accounting) และผู้ดูแลระบบ (Admin) เท่านั้น
+            <strong>ไม่มีสิทธิ์เข้าถึง:</strong> กรุณาเข้าสู่ระบบเพื่อดูข้อมูลสรุปยอดตั๋วและการชำระเงิน
           </div>
           <Link href="/" className="btn btn-secondary">← กลับหน้าหลัก</Link>
         </div>
@@ -267,10 +286,10 @@ export default function RevenueReconciliationPage() {
         <div className="inner" style={{ maxWidth: 1040 }}>
           <div>
             <h1 style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span>📊 สรุปการชำระเงิน (ฝ่ายบัญชีและการเงิน)</span>
+              <span>📊 สรุปยอดตั๋วและการชำระเงิน</span>
             </h1>
             <span style={{ fontSize: 13, color: "#94a3b8" }}>
-              กระทบยอดเงินสดตั๋วรายวัน • รับรู้รายได้รอบวัน • บันทึกเงินรับล่วงหน้า
+              ตรวจสอบยอดตั๋วรายวัน • ตั๋วล่วงหน้า • เทียบยอดจองรายลูกค้า
             </span>
           </div>
           <Link href="/" className="back" style={{ color: "#cbd5e1" }}>← กลับหน้าหลัก</Link>
@@ -284,17 +303,23 @@ export default function RevenueReconciliationPage() {
           </div>
         )}
 
-        {/* กล่องเลือกช่วงวันที่ และปุ่มสั่งการ */}
-        <div className="card" style={{ marginBottom: 20, boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
+        {/* กล่องเลือกช่วงวันที่ และปุ่มสั่งการแบบกระชับแถวเดียว */}
+        <div className="card" style={{ marginBottom: 20, padding: "16px 20px", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
             <span style={{ fontWeight: 700, fontSize: 15, color: "#1e293b" }}>
-              📅 เลือกช่วงวันที่ในตั๋วรายวัน
+              📅 เลือกช่วงวันที่ในตั๋ว
             </span>
             <div style={{ display: "flex", gap: 6 }}>
               <button
                 type="button"
                 className="btn btn-secondary"
-                style={{ padding: "5px 14px", fontSize: 13, background: "#f8fafc", borderColor: "#cbd5e1", color: "#334155" }}
+                style={{
+                  padding: "5px 14px",
+                  fontSize: 13,
+                  background: isPresetYesterday ? "#1e293b" : "#f8fafc",
+                  borderColor: isPresetYesterday ? "#1e293b" : "#cbd5e1",
+                  color: isPresetYesterday ? "#ffffff" : "#334155",
+                }}
                 onClick={setPresetYesterday}
               >
                 เมื่อวาน
@@ -302,7 +327,13 @@ export default function RevenueReconciliationPage() {
               <button
                 type="button"
                 className="btn btn-secondary"
-                style={{ padding: "5px 14px", fontSize: 13, background: "#f8fafc", borderColor: "#cbd5e1", color: "#334155" }}
+                style={{
+                  padding: "5px 14px",
+                  fontSize: 13,
+                  background: isPresetToday ? "#1e293b" : "#f8fafc",
+                  borderColor: isPresetToday ? "#1e293b" : "#cbd5e1",
+                  color: isPresetToday ? "#ffffff" : "#334155",
+                }}
                 onClick={setPresetToday}
               >
                 วันนี้
@@ -310,7 +341,13 @@ export default function RevenueReconciliationPage() {
               <button
                 type="button"
                 className="btn btn-secondary"
-                style={{ padding: "5px 14px", fontSize: 13, background: "#f8fafc", borderColor: "#cbd5e1", color: "#334155" }}
+                style={{
+                  padding: "5px 14px",
+                  fontSize: 13,
+                  background: isPresetThisMonth ? "#1e293b" : "#f8fafc",
+                  borderColor: isPresetThisMonth ? "#1e293b" : "#cbd5e1",
+                  color: isPresetThisMonth ? "#ffffff" : "#334155",
+                }}
                 onClick={setPresetThisMonth}
               >
                 เดือนนี้
@@ -318,31 +355,33 @@ export default function RevenueReconciliationPage() {
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 14, alignItems: "flex-end" }}>
-            <div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end" }}>
+            <div style={{ flex: "1 1 180px" }}>
               <label style={{ fontSize: 13, color: "#475569", marginBottom: 4 }}>วันที่เริ่มต้น (วันที่ในตั๋ว)</label>
               <input
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
+                style={{ marginBottom: 0 }}
               />
             </div>
-            <div>
+            <div style={{ flex: "1 1 180px" }}>
               <label style={{ fontSize: 13, color: "#475569", marginBottom: 4 }}>วันที่สิ้นสุด (วันที่ในตั๋ว)</label>
               <input
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
+                style={{ marginBottom: 0 }}
               />
             </div>
-            {/* แถวปุ่มคำนวณ ส่งออก Excel และ พิมพ์ PDF */}
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flex: "0 0 auto" }}>
               <button
                 type="button"
                 className="btn btn-primary"
                 style={{
-                  flex: 1,
-                  padding: "10px 14px",
+                  minHeight: 42,
+                  padding: "0 18px",
                   background: "#1e293b",
                   display: "inline-flex",
                   alignItems: "center",
@@ -355,61 +394,113 @@ export default function RevenueReconciliationPage() {
                 disabled={loading}
               >
                 <span>🔍</span>
-                <span>{loading ? "กำลังคำนวณ..." : "คำนวณกระทบยอด"}</span>
+                <span>{loading ? "กำลังโหลด..." : "ดูข้อมูล"}</span>
               </button>
 
-              <button
-                type="button"
-                className="btn"
-                style={{
-                  flex: 1,
-                  padding: "10px 14px",
-                  background: "#107c41",
-                  color: "white",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 6,
-                  fontSize: 14,
-                  whiteSpace: "nowrap",
-                  cursor: exporting || loading || !reconData ? "not-allowed" : "pointer",
-                  opacity: exporting || loading || !reconData ? 0.65 : 1,
-                }}
-                onClick={handleExportExcel}
-                disabled={exporting || loading || !reconData}
-                title="ส่งออกไฟล์ Excel 2 แท็บ (สรุปภาพรวม + รายละเอียดตั๋วรายวัน)"
-              >
-                <span>📥</span>
-                <span>{exporting ? "กำลังส่งออก..." : "ส่งออก Excel"}</span>
-              </button>
+              {/* ปุ่มส่งออกรวมปุ่มเดียว [📤 ส่งออก ▾] ไม่เกะกะสายตา */}
+              <div ref={exportMenuRef} style={{ position: "relative" }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{
+                    minHeight: 42,
+                    padding: "0 14px",
+                    background: "#ffffff",
+                    borderColor: "#cbd5e1",
+                    color: "#334155",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 6,
+                    fontSize: 13.5,
+                    fontWeight: 700,
+                    whiteSpace: "nowrap",
+                    cursor: loading || !reconData ? "not-allowed" : "pointer",
+                    opacity: loading || !reconData ? 0.55 : 1,
+                  }}
+                  onClick={() => setExportMenuOpen((prev) => !prev)}
+                  disabled={loading || !reconData}
+                  title="ส่งออกรายงาน Excel หรือ พิมพ์ PDF"
+                >
+                  <span>📤</span>
+                  <span>{exporting ? "กำลังส่งออก..." : "ส่งออก ▾"}</span>
+                </button>
 
-              <button
-                type="button"
-                className="btn btn-secondary"
-                style={{
-                  flex: 1,
-                  padding: "10px 14px",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 6,
-                  fontSize: 14,
-                  whiteSpace: "nowrap",
-                  cursor: loading || !dailyPrintPages.length ? "not-allowed" : "pointer",
-                  opacity: loading || !dailyPrintPages.length ? 0.65 : 1,
-                }}
-                onClick={handlePrintPdf}
-                disabled={loading || !dailyPrintPages.length}
-                title="พิมพ์หรือบันทึกเป็น PDF แนวนอน (แยกแผ่นละ 1 วัน)"
-              >
-                <span>🖨️</span>
-                <span>พิมพ์ / PDF ({dailyPrintPages.length || 1} แผ่น)</span>
-              </button>
+                {exportMenuOpen && reconData && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      right: 0,
+                      top: "calc(100% + 6px)",
+                      zIndex: 30,
+                      minWidth: 210,
+                      background: "#ffffff",
+                      border: "1px solid #cbd5e1",
+                      borderRadius: 8,
+                      boxShadow: "0 10px 25px rgba(15, 23, 42, 0.14)",
+                      padding: 6,
+                      display: "grid",
+                      gap: 4,
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={handleExportExcel}
+                      disabled={exporting}
+                      style={{
+                        width: "100%",
+                        textAlign: "left",
+                        padding: "9px 12px",
+                        border: 0,
+                        borderRadius: 6,
+                        background: "transparent",
+                        color: "#0f172a",
+                        fontSize: 13.5,
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                      }}
+                      onMouseOver={(e) => (e.currentTarget.style.background = "#f1f5f9")}
+                      onMouseOut={(e) => (e.currentTarget.style.background = "transparent")}
+                    >
+                      <span>📥</span>
+                      <span>ส่งออก Excel (.xlsx)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handlePrintPdf}
+                      disabled={!dailyPrintPages.length}
+                      style={{
+                        width: "100%",
+                        textAlign: "left",
+                        padding: "9px 12px",
+                        border: 0,
+                        borderRadius: 6,
+                        background: "transparent",
+                        color: "#0f172a",
+                        fontSize: 13.5,
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                      }}
+                      onMouseOver={(e) => (e.currentTarget.style.background = "#f1f5f9")}
+                      onMouseOut={(e) => (e.currentTarget.style.background = "transparent")}
+                    >
+                      <span>🖨️</span>
+                      <span>พิมพ์ / PDF ({dailyPrintPages.length || 1} แผ่น)</span>
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
 
-        {/* บล็อก 4 KPI สรุปยอดทางบัญชี */}
+        {/* บล็อก 4 KPI สรุปยอดตั๋วและการชำระเงิน */}
         <div
           style={{
             display: "grid",
@@ -418,7 +509,7 @@ export default function RevenueReconciliationPage() {
             marginBottom: 20,
           }}
         >
-          {/* Card 1: เงินสดรับจริง */}
+          {/* Card 1: ยอดขายตั๋วรวมทั้งหมด */}
           <div
             className="card"
             style={{
@@ -427,10 +518,15 @@ export default function RevenueReconciliationPage() {
               borderTop: "4px solid #1e293b",
               background: "#ffffff",
               boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+              cursor: statusFilter !== "all" ? "pointer" : "default",
             }}
+            onClick={() => {
+              if (statusFilter !== "all") setStatusFilter("all");
+            }}
+            title={statusFilter !== "all" ? "คลิกเพื่อแสดงรายการทั้งหมด" : ""}
           >
             <div style={{ fontSize: 13, fontWeight: 700, color: "#64748b", marginBottom: 4 }}>
-              1. ยอดเงินสดจากตั๋วรายวัน
+              1. ยอดขายตั๋วรวมทั้งหมด
             </div>
             <div
               style={{
@@ -444,11 +540,11 @@ export default function RevenueReconciliationPage() {
               ฿{formatCurrency(totals.totalCash)}
             </div>
             <div style={{ fontSize: 12, color: "#64748b", marginTop: 6 }}>
-              {formatNumber(totals.totalTickets)} สิทธิ์ ({formatNumber(totals.transactionCount)} รายการตั๋ว)
+              {formatNumber(totals.totalTickets)} ใบ (รวมตั๋วล่วงหน้า + ตั๋วรายวัน)
             </div>
           </div>
 
-          {/* Card 2: รายได้รอบวัน (จอดวันนั้น) */}
+          {/* Card 2: ตั๋วรายวัน (เข้าจอดวันนั้น) */}
           <div
             className="card"
             style={{
@@ -460,7 +556,7 @@ export default function RevenueReconciliationPage() {
             }}
           >
             <div style={{ fontSize: 13, fontWeight: 700, color: "#059669", marginBottom: 4 }}>
-              2. รายได้ค่าบริการรอบวัน (จอดวันนั้น)
+              2. ตั๋วรายวัน (เข้าจอดวันนั้น)
             </div>
             <div
               style={{
@@ -474,11 +570,11 @@ export default function RevenueReconciliationPage() {
               ฿{formatCurrency(totals.earnedToday)}
             </div>
             <div style={{ fontSize: 12, color: "#64748b", marginTop: 6 }}>
-              {formatNumber(totals.earnedToday / 100)} สิทธิ์ (รับรู้รายได้ทันทีตามสิทธิ์ที่จองในรอบวัน)
+              {formatNumber(totals.earnedToday / 100)} ใบ (จองรายวัน / ซื้อตั๋วเพิ่มหน้างาน)
             </div>
           </div>
 
-          {/* Card 3: เงินรับล่วงหน้า (จอดพรุ่งนี้) */}
+          {/* Card 3: ตั๋วล่วงหน้า (เข้าจอดวันถัดไป) */}
           <div
             className="card"
             style={{
@@ -490,7 +586,7 @@ export default function RevenueReconciliationPage() {
             }}
           >
             <div style={{ fontSize: 13, fontWeight: 700, color: "#2563eb", marginBottom: 4 }}>
-              3. เงินรับล่วงหน้า (จอดพรุ่งนี้)
+              3. ตั๋วล่วงหน้า (เข้าจอดวันถัดไป)
             </div>
             <div
               style={{
@@ -504,26 +600,31 @@ export default function RevenueReconciliationPage() {
               ฿{formatCurrency(totals.advanceTomorrow)}
             </div>
             <div style={{ fontSize: 12, color: "#64748b", marginTop: 6 }}>
-              {formatNumber(totals.advanceTomorrow / 100)} สิทธิ์ (หนี้สินหมุนเวียน)
+              {formatNumber(totals.advanceTomorrow / 100)} ใบ (ตีตั๋วล่วงหน้าตามสัญญาจอง)
             </div>
           </div>
 
-          {/* Card 4: เงินรับส่วนเกิน */}
+          {/* Card 4: เกินยอดจอง (ตั๋วเกินสัญญา) */}
           <div
             className="card"
             style={{
               margin: 0,
               padding: "18px 20px",
               borderTop: "4px solid #0284c7",
-              background: "#ffffff",
+              background: statusFilter === "surplus" ? "#f0f9ff" : "#ffffff",
+              outline: statusFilter === "surplus" ? "2px solid #0284c7" : "none",
               boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
               cursor: totals.surplus > 0 ? "pointer" : "default",
             }}
-            onClick={() => { if (totals.surplus > 0) setStatusFilter("surplus"); }}
-            title={totals.surplus > 0 ? "คลิกเพื่อกรองดูเฉพาะรายที่จ่ายเกิน" : ""}
+            onClick={() => {
+              if (totals.surplus > 0) {
+                setStatusFilter((prev) => (prev === "surplus" ? "all" : "surplus"));
+              }
+            }}
+            title={totals.surplus > 0 ? "คลิกเพื่อกรองดูเฉพาะรายที่เกินยอดจอง (คลิกซ้ำเพื่อดูทั้งหมด)" : ""}
           >
             <div style={{ fontSize: 13, fontWeight: 700, color: "#0284c7", marginBottom: 4 }}>
-              4. เงินรับส่วนเกิน (ตั๋วเกิน)
+              4. เกินยอดจอง (ตั๋วเกินสัญญา)
             </div>
             <div
               style={{
@@ -536,21 +637,21 @@ export default function RevenueReconciliationPage() {
             >
               ฿{formatCurrency(totals.surplus)}
             </div>
-            <div style={{ fontSize: 12, color: "#64748b", marginTop: 6 }}>
+            <div style={{ fontSize: 12, color: statusFilter === "surplus" ? "#0369a1" : "#64748b", fontWeight: statusFilter === "surplus" ? 700 : 400, marginTop: 6 }}>
               {totals.surplus > 0
-                ? `฿${formatCurrency(totals.surplus)} (${formatNumber(totals.surplus / 100)} ใบ) — คลิกเพื่อกรองดูรายชื่อ`
-                : "0 สิทธิ์ (จ่ายเกินจำนวนที่จอง)"}
+                ? `${formatNumber(totals.surplus / 100)} ใบ — ${statusFilter === "surplus" ? "กำลังกรอง (คลิกซ้ำเพื่อดูทั้งหมด)" : "คลิกเพื่อกรองดูรายชื่อ"}`
+                : "0 ใบ (ซื้อตั๋วเกินจำนวนช่องที่จอง)"}
             </div>
           </div>
         </div>
 
-        {/* แถบเตือน Shortfall / ขาดชำระ หากมี */}
+        {/* แถบเตือน ต่ำกว่ายอดจอง หากมี */}
         {totals.shortfall > 0 && (
           <div
             className="alert"
             style={{
               background: "#fff1f2",
-              border: "1px solid #fecdd3",
+              border: statusFilter === "shortfall" ? "2px solid #e11d48" : "1px solid #fecdd3",
               color: "#9f1239",
               padding: "14px 18px",
               borderRadius: 8,
@@ -563,9 +664,9 @@ export default function RevenueReconciliationPage() {
             }}
           >
             <div>
-              <strong>⚠️ รอตรวจยอดชำระ:</strong> พบยอดขาดชำระรวม{" "}
+              <strong>⚠️ ต่ำกว่ายอดจอง:</strong> รวม{" "}
               <strong>฿{formatCurrency(totals.shortfall)}</strong> (
-              {formatNumber(totals.shortfall / 100)} สิทธิ์) — บริการลูกค้าทำการจองแต่ตั๋วไม่เพียงพอ
+              {formatNumber(totals.shortfall / 100)} ใบ) — ลูกค้าตีตั๋วน้อยกว่าจำนวนช่องที่จองไว้
             </div>
             <button
               type="button"
@@ -574,17 +675,17 @@ export default function RevenueReconciliationPage() {
                 padding: "4px 10px",
                 fontSize: 12,
                 borderColor: "#f43f5e",
-                color: "#9f1239",
-                background: "white",
+                color: statusFilter === "shortfall" ? "#ffffff" : "#9f1239",
+                background: statusFilter === "shortfall" ? "#e11d48" : "white",
               }}
-              onClick={() => setStatusFilter("shortfall")}
+              onClick={() => setStatusFilter((prev) => (prev === "shortfall" ? "all" : "shortfall"))}
             >
-              กรองดูเฉพาะรายที่ขาดชำระ
+              {statusFilter === "shortfall" ? "✖ แสดงทั้งหมด" : "กรองดูเฉพาะรายที่ต่ำกว่ายอดจอง"}
             </button>
           </div>
         )}
 
-        {/* ตารางตรวจสอบรายการรายลูกค้า (Lightweight Sanity Check) */}
+        {/* ตารางตรวจสอบรายการรายลูกค้า */}
         {reconData && (
           <div className="card" style={{ padding: 20 }}>
             <div
@@ -602,20 +703,40 @@ export default function RevenueReconciliationPage() {
                   📋 ตรวจสอบรายการรายลูกค้า ({filteredCustomers.length} ราย)
                 </h3>
                 <span style={{ fontSize: 12, color: "#64748b" }}>
-                  สามารถกรองหรือค้นหาเพื่อตรวจสอบความถูกต้องบนหน้าเว็บ หรือกดปุ่ม <strong>ส่งออก Excel</strong> ด้านบนเพื่อดาวน์โหลดรายงาน 2 แท็บ
+                  สามารถกรองตามสถานะหรือค้นหาชื่อ/รหัสลูกค้าได้ทันที
                 </span>
               </div>
 
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                {(statusFilter !== "all" || searchTerm.trim() !== "") && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    style={{
+                      padding: "6px 10px",
+                      fontSize: 12.5,
+                      background: "#f1f5f9",
+                      borderColor: "#cbd5e1",
+                      color: "#0f172a",
+                    }}
+                    onClick={() => {
+                      setStatusFilter("all");
+                      setSearchTerm("");
+                    }}
+                  >
+                    ✖ แสดงทั้งหมด
+                  </button>
+                )}
+
                 <select
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
-                  style={{ width: "auto", fontSize: 13, padding: "6px 10px" }}
+                  style={{ width: "auto", fontSize: 13, padding: "6px 10px", marginBottom: 0 }}
                 >
                   <option value="all">สถานะทั้งหมด</option>
-                  <option value="balanced">กระทบยอดลงตัว</option>
-                  <option value="surplus">เงินรับส่วนเกิน</option>
-                  <option value="shortfall">รอตรวจยอดชำระ</option>
+                  <option value="balanced">ตรงตามยอดจอง</option>
+                  <option value="surplus">เกินยอดจอง</option>
+                  <option value="shortfall">ต่ำกว่ายอดจอง</option>
                 </select>
 
                 <input
@@ -623,7 +744,7 @@ export default function RevenueReconciliationPage() {
                   placeholder="ค้นหาชื่อหรือรหัส..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  style={{ width: 180, fontSize: 13, padding: "6px 10px" }}
+                  style={{ width: 180, fontSize: 13, padding: "6px 10px", marginBottom: 0 }}
                 />
               </div>
             </div>
@@ -648,7 +769,7 @@ export default function RevenueReconciliationPage() {
                     <th style={{ padding: "8px 10px", textAlign: "right" }}>ใช้งานเฉลี่ย (ใบ)</th>
                     <th style={{ padding: "8px 10px", textAlign: "right" }}>รับล่วงหน้า (฿)</th>
                     <th style={{ padding: "8px 10px", textAlign: "right" }}>รอบวัน (฿)</th>
-                    <th style={{ padding: "8px 10px", textAlign: "right" }}>ส่วนเกิน / รอตรวจ (฿)</th>
+                    <th style={{ padding: "8px 10px", textAlign: "right" }}>ส่วนเกิน / ต่ำกว่าจอง (฿)</th>
                     <th style={{ padding: "8px 10px", textAlign: "center" }}>สถานะ</th>
                   </tr>
                 </thead>
@@ -758,7 +879,7 @@ export default function RevenueReconciliationPage() {
           >
             <div className="recon-print-header">
               <div>
-                <h2>รายงานสรุปการชำระเงินและกระทบยอดรายได้ประจำวัน — วันที่ในตั๋ว: {page.date}</h2>
+                <h2>รายงานสรุปยอดตั๋วและการชำระเงินประจำวัน — วันที่ในตั๋ว: {page.date}</h2>
                 <p>
                   ลูกค้าทั้งหมด {page.items.length} ราย · ยอดจองรวม {formatNumber(page.dayTotals.bookedTickets)} ใบ · ยอดชำระจริง {formatNumber(page.dayTotals.paidTickets)} ใบ
                 </p>
@@ -771,23 +892,23 @@ export default function RevenueReconciliationPage() {
 
             <div className="recon-print-kpis">
               <div className="recon-print-kpi">
-                <span>1. เงินสดรับจริง:</span>{" "}
+                <span>1. ยอดขายตั๋วรวม:</span>{" "}
                 <strong>฿{formatCurrency(page.dayTotals.totalPaid)}</strong> ({formatNumber(page.dayTotals.paidTickets)} ใบ)
               </div>
               <div className="recon-print-kpi">
-                <span>2. รายได้รอบวัน:</span>{" "}
+                <span>2. ตั๋วรายวัน (จอดวันนั้น):</span>{" "}
                 <strong>฿{formatCurrency(page.dayTotals.earnedToday)}</strong> ({formatNumber(page.dayTotals.earnedToday / 100)} ใบ)
               </div>
               <div className="recon-print-kpi">
-                <span>3. รับล่วงหน้า (จอดพรุ่งนี้):</span>{" "}
+                <span>3. ตั๋วล่วงหน้า (จอดวันถัดไป):</span>{" "}
                 <strong>฿{formatCurrency(page.dayTotals.advanceTomorrow)}</strong> ({formatNumber(page.dayTotals.advanceTomorrow / 100)} ใบ)
               </div>
               <div className="recon-print-kpi">
-                <span>4. ส่วนเกิน (ตีเบิ้ล):</span>{" "}
+                <span>4. เกินยอดจอง:</span>{" "}
                 <strong>+฿{formatCurrency(page.dayTotals.surplus)}</strong> ({formatNumber(page.dayTotals.surplus / 100)} ใบ)
               </div>
               <div className="recon-print-kpi">
-                <span>5. รอตรวจ (ขาดชำระ):</span>{" "}
+                <span>5. ต่ำกว่ายอดจอง:</span>{" "}
                 <strong>-฿{formatCurrency(page.dayTotals.shortfall)}</strong> ({formatNumber(page.dayTotals.shortfall / 100)} ใบ)
               </div>
             </div>
@@ -808,7 +929,7 @@ export default function RevenueReconciliationPage() {
                       <th style={{ width: "34px" }}>เฉลี่ย</th>
                       <th style={{ width: "54px" }}>รับล่วงหน้า</th>
                       <th style={{ width: "44px" }}>รอบวัน</th>
-                      <th style={{ width: "62px" }}>ส่วนเกิน/รอตรวจ</th>
+                      <th style={{ width: "62px" }}>เกิน/ต่ำกว่าจอง</th>
                       <th style={{ width: "68px" }}>สถานะ</th>
                     </tr>
                   </thead>
@@ -851,7 +972,7 @@ export default function RevenueReconciliationPage() {
 
             <div className="recon-print-footer">
               <strong>รวมประจำวันที่ {page.date} ({page.items.length} ราย):</strong>{" "}
-              จองรวม {formatNumber(page.dayTotals.bookedTickets)} ใบ | ชำระจริง {formatNumber(page.dayTotals.paidTickets)} ใบ | เงินสดรับจริง ฿{formatCurrency(page.dayTotals.totalPaid)} | รายได้รอบวัน ฿{formatCurrency(page.dayTotals.earnedToday)} | รับล่วงหน้า ฿{formatCurrency(page.dayTotals.advanceTomorrow)} | เงินรับส่วนเกิน +฿{formatCurrency(page.dayTotals.surplus)} | รอตรวจยอดชำระ -฿{formatCurrency(page.dayTotals.shortfall)}
+              จองรวม {formatNumber(page.dayTotals.bookedTickets)} ใบ | ชำระจริง {formatNumber(page.dayTotals.paidTickets)} ใบ | ยอดขายตั๋วรวม ฿{formatCurrency(page.dayTotals.totalPaid)} | ตั๋วรายวัน ฿{formatCurrency(page.dayTotals.earnedToday)} | ตั๋วล่วงหน้า ฿{formatCurrency(page.dayTotals.advanceTomorrow)} | เกินยอดจอง +฿{formatCurrency(page.dayTotals.surplus)} | ต่ำกว่ายอดจอง -฿{formatCurrency(page.dayTotals.shortfall)}
             </div>
           </div>
         ))}

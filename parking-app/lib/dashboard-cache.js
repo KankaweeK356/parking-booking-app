@@ -1,8 +1,8 @@
 import { getDashboardData, getPaymentRefreshState, getPaymentSnapshot } from "./sheets";
 
 // Dashboard เป็นข้อมูลเดียวกันสำหรับผู้ใช้ที่ผ่านการยืนยันสิทธิ์แล้ว
-// จึงเก็บผลฝั่ง server 60 วินาที เพื่อลดการอ่าน Google Sheet ซ้ำจากหลายเครื่อง
-const CACHE_TTL_MS = 60 * 1000;
+// จึงเก็บผลฝั่ง server 55 วินาที (ให้รับกับรอบรีเฟรชหน้าจอ 60 วินาที) เพื่อลดการอ่าน Google Sheet ซ้ำจากหลายเครื่อง
+const CACHE_TTL_MS = 55 * 1000;
 const FORCE_BUFFER_MS = 5 * 1000; // ป้องกันการกดย้ำใน 5 วินาที
 const dashboardCache = new Map();
 const paymentUpdateCache = new Map();

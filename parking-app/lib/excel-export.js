@@ -81,7 +81,7 @@ export async function exportRevenueReconciliationExcel(data) {
   });
 
   // หัวรายงาน
-  ws1.addRow(["รายงานสรุปการชำระเงินและกระทบยอดรายได้ (Revenue & Payment Reconciliation)"]);
+  ws1.addRow(["รายงานสรุปยอดตั๋วและการชำระเงิน (Ticket & Payment Summary)"]);
   ws1.getRow(1).font = { name: "Sarabun", size: 16, bold: true, color: { argb: "FF0F172A" } };
 
   ws1.addRow([`ช่วงวันที่ในตั๋ว: ${dateRange.startDate} ถึง ${dateRange.endDate} (รวม ${dateRange.days} วัน)`]);
@@ -102,11 +102,11 @@ export async function exportRevenueReconciliationExcel(data) {
 
   // บล็อกสรุปยอด KPI 5 รายการ (แถว 5-9)
   const kpiData = [
-    ["1. ยอดเงินสดรับจริงจากตั๋วรายวัน (Total Ticket Cash)", totals.totalCash, "บาท"],
-    ["2. รับรู้เป็นรายได้ค่าบริการรอบวัน (จอดวันนั้น) (Earned Revenue)", totals.earnedToday, "บาท"],
-    ["3. บันทึกเป็นเงินรับล่วงหน้า - จอดพรุ่งนี้ (Unearned Revenue / Advance)", totals.advanceTomorrow, "บาท"],
-    ["4. เงินรับส่วนเกิน - ตั๋วเกิน/ตีตั๋วแมนนวล (Surplus Cash)", totals.surplus, "บาท"],
-    ["5. ยอดรอตรวจชำระ - บริการลูกค้าทำรายการแต่ตั๋วไม่พอ (Underfunded / Shortfall)", totals.shortfall, "บาท"],
+    ["1. ยอดขายตั๋วรวมทั้งหมด (รวมตั๋วล่วงหน้า + ตั๋วรายวัน)", totals.totalCash, "บาท"],
+    ["2. ตั๋วรายวัน (เข้าจอดวันนั้น)", totals.earnedToday, "บาท"],
+    ["3. ตั๋วล่วงหน้า (เข้าจอดวันถัดไป)", totals.advanceTomorrow, "บาท"],
+    ["4. เกินยอดจอง (ตั๋วเกินสัญญา)", totals.surplus, "บาท"],
+    ["5. ต่ำกว่ายอดจอง (ลูกค้าตีตั๋วน้อยกว่าจำนวนช่องที่จองไว้)", totals.shortfall, "บาท"],
   ];
 
   kpiData.forEach((item, idx) => {
@@ -134,8 +134,8 @@ export async function exportRevenueReconciliationExcel(data) {
     "ใช้งานเฉลี่ย (ใบ)",
     "รับล่วงหน้า (บาท)",
     "รอบวัน (บาท)",
-    "ส่วนเกิน / รอตรวจ (บาท)",
-    "สถานะกระทบยอด",
+    "ส่วนเกิน / ต่ำกว่าจอง (บาท)",
+    "สถานะ",
   ];
 
   const headerRow1 = ws1.addRow(tableHeaders1);

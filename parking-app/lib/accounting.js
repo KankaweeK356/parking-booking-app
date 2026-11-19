@@ -24,9 +24,9 @@ import { isVerticalAllocationActive } from "./operational-day.js";
 import { TICKET_PRICE_PER_UNIT } from "./ticket-pricing.js";
 
 export const RECON_STATUS = {
-  BALANCED: "กระทบยอดลงตัว",
-  SURPLUS: "เงินรับส่วนเกิน",
-  UNDERFUNDED: "รอตรวจยอดชำระ",
+  BALANCED: "ตรงตามยอดจอง",
+  SURPLUS: "เกินยอดจอง",
+  UNDERFUNDED: "ต่ำกว่ายอดจอง",
 };
 
 export const RECON_STATUS_KEY = {
@@ -161,6 +161,44 @@ export async function getRevenueReconciliationData({ startDate, endDate, autoArc
       0
     );
 
+    // คำนวณตั๋วหน้าป้อมที่ปลดล็อกช่องสีส้ม (ไม่ตีตั๋ว) ในวัน dIso เพื่อนับเป็นตั๋วรายวันของวัน dIso
+    let extraUsedOnDayByDoc = new Map();
+    const dayInspectionLogs = (allInspectionLogs || []).filter((log) => log.operationalDate === dIso);
+    if (isVerticalAllocationActive(dIso) && dayInspectionLogs.length > 0) {
+      const adjustmentsToday = new Set(
+        allAdjustments
+          .filter(
+            (row) =>
+              (row.action.includes("ลด") || row.action.includes("พัก")) &&
+              isoDateToSerial(row.startDate) <= currentSerial &&
+              currentSerial <= isoDateToSerial(row.endDate)
+          )
+          .map((row) => row.rowNumber)
+      );
+      const activeTodayBookings = allBookings.filter((b) => {
+        const endEff = b.endEffectiveSerial ?? FAR_FUTURE_SERIAL;
+        return (
+          b.bookingType !== "Urgent" &&
+          b.startSerial &&
+          !isClosingReason(b.reason) &&
+          !adjustmentsToday.has(b.rowNumber) &&
+          b.startSerial <= currentSerial &&
+          currentSerial <= endEff
+        );
+      });
+      const advancePaidTodayByDoc = new Map();
+      (custSummaryRowsByOpDate.get(dIso) || []).forEach((r) => {
+        if (r.docId) advancePaidTodayByDoc.set(String(r.docId).trim(), Number(r.paid) || 0);
+      });
+      const { extraUsedByDoc } = computeDailyInspectionAdjustments({
+        activeBookings: activeTodayBookings,
+        slotNumberByCode,
+        advancePaidByDoc: advancePaidTodayByDoc,
+        inspectionLogs: dayInspectionLogs,
+      });
+      extraUsedOnDayByDoc = extraUsedByDoc;
+    }
+
     // กรณีที่ 1: ใช้ข้อมูลจาก Archive ถาวรเมื่อ:
     // 1) ใน Archive มีข้อมูล และมียอดตั๋ว paidTickets > 0
     // 2) และยอดตั๋วใน Archive ต้องไม่น้อยกว่าทั้ง liveTicketsCount และ custSumTotalPaid
@@ -173,8 +211,15 @@ export async function getRevenueReconciliationData({ startDate, endDate, autoArc
       const archivedTxForDay = (archiveData?.rawTransactions || []).filter((tx) => tx.posDate === dIso);
       archivedForDay.forEach((c) => {
         uniqueCustomers.add(c.boothCode);
+        const normalizedStatus =
+          c.statusKey === RECON_STATUS_KEY.UNDERFUNDED
+            ? RECON_STATUS.UNDERFUNDED
+            : c.statusKey === RECON_STATUS_KEY.SURPLUS
+              ? RECON_STATUS.SURPLUS
+              : RECON_STATUS.BALANCED;
         customerSummary.push({
           ...c,
+          status: normalizedStatus,
           avgUsed: avgByDocId[c.boothCode] ?? avgByDocId[c.customerName] ?? 0,
         });
         grandTotalCash += c.totalPaid || 0;
@@ -197,9 +242,28 @@ export async function getRevenueReconciliationData({ startDate, endDate, autoArc
         const docId = String(r.docId || "").trim();
         const custName = String(r.customerName || getCustomerName(docId)).trim();
         const advanceSlotsCount = Number(r.booked) || 0;
-        const urgentSlotsCount = Number(r.urgent) || 0;
+        const recordedUrgent = Number(r.urgent) || 0;
+        const recordedPaid = Number(r.paid) || 0;
+        const extraUsedToday = extraUsedOnDayByDoc.get(docId) || 0;
+
+        let urgentSlotsCount = recordedUrgent;
+        let advancePaidSlots = recordedPaid;
+        if (extraUsedToday > 0) {
+          const loggedUrgentOnDay = urgentLogs
+            .filter(
+              (log) =>
+                (log.accessDate === dIso || log.ticketIssuedDate === dIso) &&
+                String(log.docId).trim() === docId &&
+                !cancelledUrgentKeys.has(`${log.slot}::${log.startTime}`)
+            )
+            .reduce((sum, l) => sum + (Number(l.ticketCount) || 1), 0);
+          const targetUrgent = Math.max(recordedUrgent, loggedUrgentOnDay + extraUsedToday);
+          const unrecordedExtra = Math.max(0, targetUrgent - recordedUrgent);
+          urgentSlotsCount = targetUrgent;
+          advancePaidSlots = Math.max(0, recordedPaid - unrecordedExtra);
+        }
+
         const totalBookedSlots = advanceSlotsCount + urgentSlotsCount;
-        const advancePaidSlots = Number(r.paid) || 0;
         const totalPaidTickets = advancePaidSlots + urgentSlotsCount;
 
         const earnedTodaySlots = urgentSlotsCount;
@@ -273,7 +337,7 @@ export async function getRevenueReconciliationData({ startDate, endDate, autoArc
               customerName: custName,
               quantity: 1,
               amount: TICKET_PRICE_PER_UNIT,
-              attribution: "เงินรับล่วงหน้า / ค่าบริการตามสิทธิ์",
+              attribution: "ตั๋วล่วงหน้า / ค่าบริการตามสิทธิ์",
               serviceDate: tomorrowIso,
               slotInfo: "-",
             });
@@ -310,44 +374,6 @@ export async function getRevenueReconciliationData({ startDate, endDate, autoArc
         )
         .map((row) => row.rowNumber)
     );
-
-    // คำนวณตั๋วหน้าป้อมที่ปลดล็อกช่องสีส้ม (ไม่ตีตั๋ว) ในวัน dIso เพื่อนับเป็นตั๋วรายวันของวัน dIso
-    let extraUsedOnDayByDoc = new Map();
-    const dayInspectionLogs = (allInspectionLogs || []).filter((log) => log.operationalDate === dIso);
-    if (isVerticalAllocationActive(dIso) && dayInspectionLogs.length > 0) {
-      const adjustmentsToday = new Set(
-        allAdjustments
-          .filter(
-            (row) =>
-              (row.action.includes("ลด") || row.action.includes("พัก")) &&
-              isoDateToSerial(row.startDate) <= currentSerial &&
-              currentSerial <= isoDateToSerial(row.endDate)
-          )
-          .map((row) => row.rowNumber)
-      );
-      const activeTodayBookings = allBookings.filter((b) => {
-        const endEff = b.endEffectiveSerial ?? FAR_FUTURE_SERIAL;
-        return (
-          b.bookingType !== "Urgent" &&
-          b.startSerial &&
-          !isClosingReason(b.reason) &&
-          !adjustmentsToday.has(b.rowNumber) &&
-          b.startSerial <= currentSerial &&
-          currentSerial <= endEff
-        );
-      });
-      const advancePaidTodayByDoc = new Map();
-      (custSummaryRowsByOpDate.get(dIso) || []).forEach((r) => {
-        if (r.docId) advancePaidTodayByDoc.set(String(r.docId).trim(), Number(r.paid) || 0);
-      });
-      const { extraUsedByDoc } = computeDailyInspectionAdjustments({
-        activeBookings: activeTodayBookings,
-        slotNumberByCode,
-        advancePaidByDoc: advancePaidTodayByDoc,
-        inspectionLogs: dayInspectionLogs,
-      });
-      extraUsedOnDayByDoc = extraUsedByDoc;
-    }
 
     // ตั๋ว POS ในวัน dIso
     const dayTransactions = allTransactions.filter(
@@ -511,7 +537,7 @@ export async function getRevenueReconciliationData({ startDate, endDate, autoArc
 
           if (remUrgentToAssign > 0) {
             remUrgentToAssign--;
-            attribution = "รายได้ค่าบริการรอบวัน (จอดวันนั้น)";
+            attribution = "ตั๋วรายวัน (เข้าจอดวันนั้น)";
             serviceDate = dIso;
             const uItem = urgentQueue.shift();
             if (uItem) {
@@ -519,14 +545,14 @@ export async function getRevenueReconciliationData({ startDate, endDate, autoArc
             }
           } else if (remAdvanceToAssign > 0) {
             remAdvanceToAssign--;
-            attribution = "เงินรับล่วงหน้า (จอดพรุ่งนี้)";
+            attribution = "ตั๋วล่วงหน้า (เข้าจอดวันถัดไป)";
             serviceDate = tomorrowIso;
             const aItem = advanceQueue.shift();
             if (aItem) {
               slotInfo = `${aItem.slot || "-"} (${aItem.startTime || "-"})`;
             }
           } else {
-            attribution = "เงินรับส่วนเกิน (ตั๋วเกิน/แมนนวล)";
+            attribution = "เกินยอดจอง (ตั๋วเกินสัญญา)";
             serviceDate = "-";
             slotInfo = "-";
           }

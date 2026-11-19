@@ -1,5 +1,5 @@
 // pages/api/admin/revenue-reconciliation.js
-// API รายงานกระทบยอดการชำระเงินสำหรับฝ่ายบัญชี (Admin, Accounting, Account)
+// API รายงานสรุปยอดตั๋วและการชำระเงิน (Admin, CS, Field, Accounting, Account)
 
 import { requireRole, ROLE } from "../../../lib/auth";
 import { getRevenueReconciliationData } from "../../../lib/accounting";
@@ -9,7 +9,13 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method Not Allowed" });
   }
 
-  const session = await requireRole(req, res, [ROLE.ADMIN, ROLE.ACCOUNTING, ROLE.ACCOUNT]);
+  const session = await requireRole(req, res, [
+    ROLE.ADMIN,
+    ROLE.CS,
+    ROLE.FIELD,
+    ROLE.ACCOUNTING,
+    ROLE.ACCOUNT,
+  ]);
   if (!session) return;
 
   try {
@@ -22,7 +28,7 @@ export default async function handler(req, res) {
   } catch (error) {
     console.error("Revenue reconciliation error:", error);
     return res.status(500).json({
-      error: error.message || "เกิดข้อผิดพลาดในการดึงข้อมูลกระทบยอด",
+      error: error.message || "เกิดข้อผิดพลาดในการดึงข้อมูลสรุปยอดตั๋วและการชำระเงิน",
     });
   }
 }

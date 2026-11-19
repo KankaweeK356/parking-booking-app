@@ -1,9 +1,9 @@
 import crypto from "crypto";
-import { getEmployeeUser } from "./sheets";
+import { getEmployeeUser, invalidateAuthSheetsCache } from "./sheets";
 
 const COOKIE_NAME = "parking_session";
 const SESSION_DAYS = 30;
-const USER_CACHE_TTL_MS = 60 * 1000;
+const USER_CACHE_TTL_MS = 55 * 1000;
 const userCache = new Map();
 
 async function getCachedEmployeeUser(employeeId) {
@@ -17,6 +17,7 @@ async function getCachedEmployeeUser(employeeId) {
 
 export function clearCachedEmployeeUser(employeeId) {
   userCache.delete(String(employeeId || ""));
+  invalidateAuthSheetsCache();
 }
 
 function secret() {

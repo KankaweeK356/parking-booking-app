@@ -1,5 +1,5 @@
-import { getDashboardDataCached, getPaymentUpdateCached } from "../../lib/dashboard-cache";
-import { getBangkokCalendarDateIso, getCurrentOperationalBlock, getCurrentOperationalDateIso } from "../../lib/operational-day";
+import { getDashboardDataCached } from "../../lib/dashboard-cache";
+import { getCurrentOperationalBlock, getCurrentOperationalDateIso } from "../../lib/operational-day";
 import { requireRole, ROLE } from "../../lib/auth";
 
 export default async function handler(req, res) {
@@ -9,17 +9,12 @@ export default async function handler(req, res) {
   const { date, force } = req.query;
   const isForce = force === "true" || force === "1";
   try {
-    const paymentDate = getBangkokCalendarDateIso();
-    const [data, paymentUpdate] = await Promise.all([
-      getDashboardDataCached(date, { force: isForce }),
-      getPaymentUpdateCached(paymentDate, { force: isForce }),
-    ]);
+    const data = await getDashboardDataCached(date, { force: isForce });
     // เวลาเดินต่อเนื่องแม้ข้อมูลช่องจอดอยู่ใน cache จึงคำนวณรอบปัจจุบันใหม่ทุกคำขอ
     return res.status(200).json({
       ...data,
       isLiveOperationalDate: date === getCurrentOperationalDateIso(),
       currentBlock: getCurrentOperationalBlock(),
-      paymentUpdate,
     });
   } catch (err) {
     return res.status(500).json({ error: err.message });

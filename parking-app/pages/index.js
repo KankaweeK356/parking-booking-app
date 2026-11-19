@@ -13,14 +13,18 @@ export default function Home() {
         setUser(u);
         if (u?.role === "Accounting" || u?.role === "Account") {
           setTab("accounting");
+        } else if (u?.role === "Field") {
+          setTab("field");
         }
       });
   }, []);
 
   const canManage = user?.role === "Admin" || user?.role === "CS";
   const canAdmin = user?.role === "Admin";
-  const canAccounting =
+  const canViewSummary =
     user?.role === "Admin" ||
+    user?.role === "CS" ||
+    user?.role === "Field" ||
     user?.role === "Accounting" ||
     user?.role === "Account";
 
@@ -34,24 +38,26 @@ export default function Home() {
       <div className="page">
         <h2>เลือกงานที่ต้องการทำ</h2>
         <div className="home-tabs">
-          <button
-            className={`btn ${tab === "booking" ? "btn-primary" : "btn-secondary"}`}
-            onClick={() => setTab("booking")}
-          >
-            การจัดการการจอง
-          </button>
+          {canManage && (
+            <button
+              className={`btn ${tab === "booking" ? "btn-primary" : "btn-secondary"}`}
+              onClick={() => setTab("booking")}
+            >
+              การจัดการการจอง
+            </button>
+          )}
           <button
             className={`btn ${tab === "field" ? "btn-primary" : "btn-secondary"}`}
             onClick={() => setTab("field")}
           >
             การตรวจสอบพื้นที่
           </button>
-          {canAccounting && (
+          {canViewSummary && (
             <button
               className={`btn ${tab === "accounting" ? "btn-primary" : "btn-secondary"}`}
               onClick={() => setTab("accounting")}
             >
-              💼 งานการเงินและบัญชี
+              📊 สรุปยอดตั๋วและการชำระเงิน
             </button>
           )}
         </div>
@@ -88,22 +94,6 @@ export default function Home() {
                 <div className="desc">จัดการบัญชีพนักงานและรีเซ็ตรหัสผ่าน</div>
               </Link>
             )}
-            {canAdmin && (
-              <Link href="/admin/payment-summary" className="nav-card">
-                <div className="title">👥 สรุปพฤติกรรมลูกค้า</div>
-                <div className="desc">ดูสถิติยอดจอง ยอดจ่ายจริง และการใช้สิทธิ์รายลูกค้า</div>
-              </Link>
-            )}
-          </div>
-        )}
-
-        {tab === "booking" && user && !canManage && (
-          <div className="card">
-            <p className="subtitle">
-              {canAccounting
-                ? "บัญชีฝ่ายการเงินและบัญชีสามารถดูรายละเอียดได้ที่แท็บ 'งานการเงินและบัญชี'"
-                : "บัญชีทีมตรวจพื้นที่มีสิทธิ์ดูเฉพาะการตรวจสอบพื้นที่"}
-            </p>
           </div>
         )}
 
@@ -120,12 +110,12 @@ export default function Home() {
           </div>
         )}
 
-        {tab === "accounting" && canAccounting && (
+        {tab === "accounting" && canViewSummary && (
           <div className="nav-grid">
             <Link href="/admin/revenue-reconciliation" className="nav-card">
-              <div className="title">📊 สรุปการชำระเงิน</div>
+              <div className="title">📊 สรุปยอดตั๋วและการชำระเงิน</div>
               <div className="desc">
-                กระทบยอดตั๋วรายวัน ตั๋วล่วงหน้า และส่งออก Excel
+                ตรวจสอบยอดตั๋วรายวัน ตั๋วล่วงหน้า เทียบยอดจองรายลูกค้า และส่งออกรายงาน
               </div>
             </Link>
           </div>
