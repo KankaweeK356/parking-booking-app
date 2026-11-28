@@ -29,10 +29,29 @@ export default function MobileRoundSlotList({
   const [draftUsed, setDraftUsed] = useState(0);
   const [saving, setSaving] = useState(false);
   const [modalError, setModalError] = useState("");
+  // ผลที่เพิ่งบันทึกจากเครื่องนี้ ใช้แสดง "ตรวจแล้ว" ทันทีระหว่างรอข้อมูลใหม่จาก server
+  const [localChecks, setLocalChecks] = useState({});
+  const [lastSaved, setLastSaved] = useState(null);
 
-  const roundCustomers = (underpaidCustomers || []).filter(
-    (item) => item.lot === selectedLot && item.startTime === selectedRound
-  );
+  function inspectionKey(item) {
+    return `${operationalDate}::${item.docId || item.customer}::${item.lot}::${item.startTime}`;
+  }
+
+  const roundCustomers = (underpaidCustomers || [])
+    .filter((item) => item.lot === selectedLot && item.startTime === selectedRound)
+    .map((item) => {
+      const local = localChecks[inspectionKey(item)];
+      if (!local || String(item.checkedAt || "") >= local.checkedAt) return item;
+      return { ...item, hasOverride: true, roundActualUsed: local.used, checkedAt: local.checkedAt };
+    });
+  const pendingCustomers = roundCustomers.filter((item) => !item.hasOverride);
+  const checkedCustomers = roundCustomers.filter((item) => item.hasOverride);
+  const allChecked = roundCustomers.length > 0 && pendingCustomers.length === 0;
+  const singleCustomer = roundCustomers.length === 1 ? roundCustomers[0] : null;
+  const savedNotice =
+    lastSaved && roundCustomers.some((item) => inspectionKey(item) === lastSaved.key)
+      ? `✓ บันทึก ${lastSaved.name} แล้ว`
+      : "";
 
   function openModal(item) {
     setPickingCustomer(false);
@@ -42,13 +61,51 @@ export default function MobileRoundSlotList({
   }
 
   function openTopBarAction() {
-    if (roundCustomers.length === 1) {
-      openModal(roundCustomers[0]);
+    if (singleCustomer) {
+      openModal(singleCustomer);
     } else if (roundCustomers.length > 1) {
       setEditingCustomer(null);
       setModalError("");
+      setLastSaved(null);
       setPickingCustomer(true);
     }
+  }
+
+  function checkedDetail(item) {
+    const time = formatBangkokTime(item.checkedAt);
+    return `ใช้จริง ${item.roundActualUsed}/${item.roundContracted}${time ? ` · ${time} น.` : ""}`;
+  }
+
+  function renderPickerItem(item) {
+    const checked = item.hasOverride;
+    return (
+      <div
+        key={inspectionKey(item)}
+        className={`inspection-picker-item${checked ? " is-checked" : ""}`}
+        onClick={() => openModal(item)}
+        role="button"
+        tabIndex={0}
+      >
+        <div className="inspection-picker-info">
+          <strong>{checked ? "✓ " : ""}{formatFieldCustomerName(item.customer)}</strong>
+          <small>
+            {checked
+              ? checkedDetail(item)
+              : `ตั๋วทั้งวัน ${item.dailyPaid}/${item.dailyContracted} · รอบนี้ ${item.roundActualUsed}/${item.roundContracted}`}
+          </small>
+        </div>
+        <button
+          type="button"
+          className="btn-underpaid-edit"
+          onClick={(e) => {
+            e.stopPropagation();
+            openModal(item);
+          }}
+        >
+          {checked ? "แก้" : "ตรวจ"}
+        </button>
+      </div>
+    );
   }
 
   function closeModal() {
@@ -78,7 +135,11 @@ export default function MobileRoundSlotList({
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "บันทึกไม่สำเร็จ");
+      const key = inspectionKey(editingCustomer);
+      setLocalChecks((current) => ({ ...current, [key]: { used: draftUsed, checkedAt: new Date().toISOString() } }));
+      setLastSaved({ key, name: formatFieldCustomerName(editingCustomer.customer) });
       setEditingCustomer(null);
+      if (roundCustomers.length > 1) setPickingCustomer(true);
       if (onInspectionSaved) await onInspectionSaved();
     } catch (err) {
       setModalError(err.message || "บันทึกไม่สำเร็จ");
@@ -91,41 +152,39 @@ export default function MobileRoundSlotList({
     <section className="card mobile-round-slots">
       <h2>สถานะช่องรอบ {selectedRound}</h2>
 
-      {roundCustomers.length === 1 && (
+      {roundCustomers.length > 0 && (
         <div className="underpaid-customer-list">
+          {savedNotice && !pickingCustomer && !editingCustomer && (
+            <div className="inspection-saved-note" role="status">{savedNotice}</div>
+          )}
           <div
-            className="underpaid-customer-bar"
-            onClick={() => openModal(roundCustomers[0])}
-            role="button"
-            tabIndex={0}
-          >
-            <span className="underpaid-customer-text">
-              🟠 <strong>{formatFieldCustomerName(roundCustomers[0].customer)}</strong> (ตั๋ว {roundCustomers[0].dailyPaid}/{roundCustomers[0].dailyContracted})
-            </span>
-            <button
-              type="button"
-              className="btn-underpaid-edit"
-              onClick={(e) => {
-                e.stopPropagation();
-                openModal(roundCustomers[0]);
-              }}
-            >
-              แก้
-            </button>
-          </div>
-        </div>
-      )}
-
-      {roundCustomers.length > 1 && (
-        <div className="underpaid-customer-list">
-          <div
-            className="underpaid-customer-bar"
+            className={`underpaid-customer-bar${allChecked ? " is-checked" : ""}`}
             onClick={openTopBarAction}
             role="button"
             tabIndex={0}
           >
             <span className="underpaid-customer-text">
-              🟠 <strong>ลูกค้าตีตั๋วไม่ครบในรอบนี้ ({roundCustomers.length} ราย)</strong>
+              {singleCustomer ? (
+                <>
+                  <strong>
+                    {allChecked ? "✓ ตรวจแล้ว" : "🟠 รอตรวจ"}: {formatFieldCustomerName(singleCustomer.customer)}
+                  </strong>
+                  <small>
+                    {allChecked
+                      ? checkedDetail(singleCustomer)
+                      : `ตั๋ว ${singleCustomer.dailyPaid}/${singleCustomer.dailyContracted}`}
+                  </small>
+                </>
+              ) : (
+                <>
+                  <strong>
+                    {allChecked
+                      ? `✓ ตรวจครบแล้ว ${checkedCustomers.length}/${roundCustomers.length}`
+                      : `🟠 รอตรวจ ${pendingCustomers.length} ราย`}
+                  </strong>
+                  {!allChecked && <small>ตรวจแล้ว {checkedCustomers.length} จาก {roundCustomers.length}</small>}
+                </>
+              )}
             </span>
             <button
               type="button"
@@ -135,7 +194,7 @@ export default function MobileRoundSlotList({
                 openTopBarAction();
               }}
             >
-              เลือกชื่อ / แก้
+              {singleCustomer ? (allChecked ? "แก้" : "ตรวจ") : allChecked ? "ดู / แก้" : "เลือกชื่อ"}
             </button>
           </div>
         </div>
@@ -210,36 +269,19 @@ export default function MobileRoundSlotList({
         <div className="inspection-modal-backdrop" onClick={closeModal}>
           <div className="inspection-modal" onClick={(e) => e.stopPropagation()}>
             <div className="inspection-modal-header">
-              <strong>เลือกลูกค้าที่ต้องการแก้ยอด</strong>
-              <span>รอบ {selectedRound} ({roundCustomers.length} ราย)</span>
+              <strong>รอบ {selectedRound}</strong>
+              <span>ตรวจแล้ว {checkedCustomers.length} จาก {roundCustomers.length}</span>
             </div>
+            {savedNotice && <div className="inspection-saved-note" role="status">{savedNotice}</div>}
             <div className="inspection-picker-list">
-              {roundCustomers.map((item) => (
-                <div
-                  key={`${item.docId || item.customer}-${item.lot}-${item.startTime}`}
-                  className="inspection-picker-item"
-                  onClick={() => openModal(item)}
-                  role="button"
-                  tabIndex={0}
-                >
-                  <div className="inspection-picker-info">
-                    <strong>{formatFieldCustomerName(item.customer)}</strong>
-                    <small>
-                      ตั๋วทั้งวัน {item.dailyPaid}/{item.dailyContracted} · รอบนี้ {item.roundActualUsed}/{item.roundContracted}
-                    </small>
-                  </div>
-                  <button
-                    type="button"
-                    className="btn-underpaid-edit"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openModal(item);
-                    }}
-                  >
-                    แก้
-                  </button>
-                </div>
-              ))}
+              {pendingCustomers.length > 0 && (
+                <div className="inspection-group-title">รอตรวจ ({pendingCustomers.length})</div>
+              )}
+              {pendingCustomers.map(renderPickerItem)}
+              {checkedCustomers.length > 0 && (
+                <div className="inspection-group-title is-checked">ตรวจแล้ว ({checkedCustomers.length})</div>
+              )}
+              {checkedCustomers.map(renderPickerItem)}
             </div>
             <div className="inspection-modal-actions" style={{ gridTemplateColumns: "1fr" }}>
               <button
@@ -321,7 +363,7 @@ export default function MobileRoundSlotList({
                 disabled={saving}
                 onClick={saveInspection}
               >
-                {saving ? "กำลังบันทึก..." : "บันทึก"}
+                {saving ? "กำลังบันทึก..." : "บันทึกผลตรวจ"}
               </button>
             </div>
           </div>

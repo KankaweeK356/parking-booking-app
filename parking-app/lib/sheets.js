@@ -1037,6 +1037,7 @@ export function computeDailyInspectionAdjustments({
         roundDefaultRed: defaultRed,
         roundActualUsed: effectiveUsed,
         hasOverride,
+        checkedAt: override?.createdAt || "",
       });
     });
 
